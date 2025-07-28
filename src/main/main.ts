@@ -1,6 +1,9 @@
 import { app, BrowserWindow, Menu, shell, ipcMain } from 'electron';
 import * as path from 'path';
-import { isDev } from '../shared/utils';
+
+const isDev = () => {
+  return process.env.NODE_ENV === 'development' || !app.isPackaged;
+};
 
 class App {
   private mainWindow: BrowserWindow | null = null;
@@ -34,9 +37,9 @@ class App {
 
     // Security: Prevent new window creation
     app.on('web-contents-created', (_, contents) => {
-      contents.on('new-window', (navigationEvent, navigationUrl) => {
-        navigationEvent.preventDefault();
-        shell.openExternal(navigationUrl);
+      contents.setWindowOpenHandler(({ url }) => {
+        shell.openExternal(url);
+        return { action: 'deny' };
       });
     });
   }
@@ -51,7 +54,6 @@ class App {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        enableRemoteModule: false,
         preload: path.join(__dirname, 'preload.js'),
       },
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -131,7 +133,7 @@ class App {
           { role: 'cut' },
           { role: 'copy' },
           { role: 'paste' },
-          { role: 'selectall' },
+          { role: 'selectAll' },
         ],
       },
       {

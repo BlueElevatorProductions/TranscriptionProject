@@ -8,10 +8,10 @@
     "strict": true,
     "skipLibCheck": true,
     "outDir": "build/main",
-    "rootDir": "src/main",
+    "rootDir": "src",
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["src/main/**/*"],
+  "include": ["src/main/**/*", "src/shared/**/*"],
   "exclude": ["node_modules", "build", "dist"]
 }

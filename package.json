@@ -2,7 +2,7 @@
   "name": "podcast-transcriber",
   "version": "0.1.0",
   "description": "A cross-platform podcast transcript editor with integrated audio editing capabilities",
-  "main": "build/main/main.js",
+  "main": "build/main/main/main.js",
   "homepage": "./",
   "author": "BlueElevatorProductions",
   "license": "MIT",
@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "echo 'Run npm run dev:vite in one terminal and npm run dev:electron in another'",
     "dev:vite": "vite",
-    "dev:electron": "electron .",
+    "dev:electron": "npm run build:main && electron .",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc --project tsconfig.main.json",
