@@ -171,6 +171,218 @@ body {
   opacity: 0.8;
 }
 
+/* Model selection */
+.model-selection {
+  margin-top: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.model-selection label {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.model-selection select {
+  padding: 0.5rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  background: white;
+  color: #2d3748;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.model-selection select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Transcription jobs */
+.transcription-jobs {
+  margin: 3rem 0;
+}
+
+.transcription-jobs h3 {
+  font-size: 1.5rem;
+  color: #2d3748;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.job-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-left: 4px solid #667eea;
+}
+
+.job-card.job-processing {
+  border-left-color: #f59e0b;
+}
+
+.job-card.job-completed {
+  border-left-color: #10b981;
+}
+
+.job-card.job-error {
+  border-left-color: #ef4444;
+}
+
+.job-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.job-header h4 {
+  color: #2d3748;
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.job-status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.job-pending .job-status {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.job-processing .job-status {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.job-completed .job-status {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.job-error .job-status {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Progress bar */
+.progress-bar {
+  position: relative;
+  background: #e5e7eb;
+  border-radius: 8px;
+  height: 24px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.progress-fill {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Error message */
+.error-message {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* Transcription result */
+.transcription-result p {
+  margin-bottom: 0.5rem;
+  color: #4b5563;
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.result-stats {
+  flex: 1;
+}
+
+.transcription-result details {
+  margin-top: 1rem;
+}
+
+.transcription-result summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #667eea;
+  padding: 0.5rem 0;
+}
+
+.transcription-result summary:hover {
+  color: #5a6fd8;
+}
+
+.transcription-text {
+  background: #f9fafb;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-top: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.segment {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.segment:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.timestamp {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.8rem;
+  color: #6b7280;
+  min-width: 120px;
+  white-space: nowrap;
+}
+
+.segment .text {
+  flex: 1;
+  line-height: 1.5;
+  color: #374151;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .app-main {
@@ -197,5 +409,25 @@ body {
   .footer-content {
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  .model-selection {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .job-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .segment {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .timestamp {
+    min-width: auto;
   }
 }

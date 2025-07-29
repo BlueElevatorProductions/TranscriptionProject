@@ -1,81 +1,116 @@
 # TranscriptionProject
 
-> A cross-platform podcast transcript editor with integrated audio editing capabilities
+> A professional podcast transcript editor with advanced audio editing capabilities
 
 ## Overview
 
-TranscriptionProject is an Electron-based desktop application designed for podcast producers and audio editors. It combines AI-powered transcription with non-destructive audio editing, enabling seamless workflow from raw interview recordings to polished final products.
+TranscriptionProject is an Electron-based desktop application designed for podcast producers and audio editors. It features a document-focused interface for professional transcript editing with integrated audio playback and sophisticated clip management system.
 
-## Key Features
+## ✅ Implemented Features
 
-- **Offline Transcription**: On-device WhisperX processing with word-level timestamps
-- **Multi-Speaker Support**: Automatic speaker diarization with color-coded transcripts
-- **Integrated Audio Editing**: Non-destructive cuts, fades, and volume control via Tracktion Engine
-- **Professional Export**: Support for audio formats (MP3/WAV/AIFF), text formats (TXT/DOC), and professional formats (AAF/OMF)
-- **Cross-Platform**: Built with Electron for Mac, Windows, and Linux support
+### **Document-Focused Interface**
+- Light theme with serif typography for reading comfort
+- Two-column layout: main transcript area with compact right sidebar
+- Natural text selection and copying capabilities
+- Professional typography hierarchy optimized for long-form content
+
+### **Advanced Transcript Editing**
+- **Right-click Context Menu**: Select clips, create new clips, add speaker labels
+- **Clips Management System**: Organize content into navigable clips with metadata
+- **Speaker Management**: Inline editing of speaker names with real-time updates
+- **Word-level Audio Sync**: Click any word to jump to that timestamp
+
+### **Professional Audio Controls**
+- **Clip Navigation**: Previous/Next clip buttons with auto-play
+- **Transport Controls**: Play/pause, skip back/forward 10 seconds
+- **Keyboard Shortcuts**: Spacebar for global play/pause
+- **Timeline Scrubbing**: Visual progress indicator with click-to-seek
+
+### **Responsive UI Components**
+- Scrollable speakers panel with custom styling
+- Clips panel with type indicators and metadata
+- Hover states and visual feedback throughout
+- Loading states and error handling
 
 ## Technology Stack
 
-### Core Technologies
-- **Frontend**: React with React-Quill text editor (Lexical as fallback)
-- **Desktop Framework**: Electron
-- **Transcription**: WhisperX (offline, on-device processing)
-- **Audio Engine**: Tracktion Engine (free personal tier)
-- **Project Format**: JSON container with edit history
-- **Export Integration**: pyaaf2/OTIO for professional format support
+### Current Implementation
+- **Frontend**: React 18 with TypeScript
+- **Desktop Framework**: Electron 32.2.1  
+- **Build System**: Vite for fast development
+- **Audio Processing**: Custom useAudioPlayer hook with Blob URL handling
+- **State Management**: React hooks (useState, useMemo, useEffect)
+- **Styling**: Custom CSS with CSS variables for theming
+- **Development**: Hot reload with concurrent dev servers
 
-## Architecture
+## Current Architecture
 
-The application is built around four core modules:
+### Component Structure
+```
+PlaybackModeContainer (Main Container)
+├── TranscriptPanel (Document View)
+│   ├── Context Menu System
+│   ├── Word-level Click Handlers
+│   └── Text Selection Management
+└── Sidebar (Right Panel)
+    ├── Speakers Section (with editing)
+    ├── Clips Panel (with navigation)
+    └── Playback Controls (transport + timeline)
+```
 
-1. **Import & Transcription** - Audio file processing and WhisperX integration
-2. **Alignment & Transcript Editor** - Timestamp refinement and text editing
-3. **Audio Engine & Editing** - Playback and non-destructive audio modifications
-4. **Export & Persistence** - Project saving and multi-format export
+### Key Modules
+- **useClips Hook**: Manages clip data structure and operations (create, split, speaker assignment)
+- **useAudioPlayer Hook**: Handles audio loading, playback state, and Blob URL management
+- **Context Menu System**: Provides right-click editing functionality
+- **IPC Communication**: Secure file access between main and renderer processes
 
-All modules share synchronized timestamp metadata to maintain audio-text alignment.
+## Development Status
 
-## Development Roadmap
+### ✅ **Phase 1: Foundation & Core Interface (COMPLETED)**
+- [x] Electron/React scaffold with TypeScript
+- [x] Document-focused layout design implementation
+- [x] Light theme with professional typography
+- [x] Audio playback restoration and optimization
+- [x] Text spacing and readability optimization
 
-### Phase 1: Setup & Infrastructure
-- [x] Git repository and CI setup
-- [ ] Electron/React scaffold
-- [ ] WhisperX model integration
-- [ ] Tracktion Engine licensing and integration
+### ✅ **Phase 2: Advanced Editing Features (COMPLETED)**
+- [x] Right-click context menu system
+- [x] Clip management and navigation
+- [x] Speaker editing with inline controls
+- [x] Word-level audio synchronization
+- [x] Keyboard shortcuts (spacebar play/pause)
+- [x] Enhanced transport controls with clip navigation
 
-### Phase 2: Core Features
-- [ ] Alignment and transcript editing
-- [ ] React-Quill integration
-- [ ] Tracktion playback and editing (cut, fade, undo/redo)
-- [ ] Multi-speaker diarization support
+### 🚧 **Current Phase: Polish & Functionality**
+- [x] Critical functionality fixes implemented
+- [x] All major features tested and working
+- [ ] Additional refinements and user experience improvements
+- [ ] Integration testing and performance optimization
 
-### Phase 3: Persistence & Export
-- [ ] JSON project schema implementation
-- [ ] Save/load functionality
-- [ ] Audio/text format exports
-- [ ] AAF/OMF integration via pyaaf2/OTIO
-- [ ] Non-destructive editing history
+### 📋 **Next Phase: Transcription Integration**
+- [ ] WhisperX model integration for offline transcription
+- [ ] File import and processing pipeline
+- [ ] Speaker diarization and automatic labeling
+- [ ] Export functionality for audio and text formats
 
-### Phase 4: Polish & Release
-- [ ] Responsive UI design
-- [ ] Electron packaging and code signing
-- [ ] Preferences and settings
-- [ ] Error handling and update checker
-- [ ] Beta testing and v1.0 release
+## Current Workflow
 
-## User Story
+**Professional Transcript Editing Experience**
 
-**Persona**: Chris, a podcast producer
+Load a transcript with audio file and experience a professional editing interface. Click any word to jump to that timestamp in the audio. Right-click to select entire clips, create new clips at word boundaries, or add new speaker labels. Navigate between clips using transport controls or keyboard shortcuts. Edit speaker names inline in the sidebar. Use the clips panel to organize and navigate content efficiently.
 
-Chris imports a 90-minute interview and watches WhisperX transcribe offline with a progress indicator. The transcript appears with speaker color-coding. In Playback mode, he reviews and highlights unneeded segments. Using Transcript Edit mode, he corrects misrecognized words via React-Quill. In Audio Edit mode, he non-destructively removes segments using Tracktion Engine. Finally, he exports a clean MP3 and AAF project for sound engineering in Pro Tools.
+**Key User Interactions:**
+- **Document Navigation**: Click words to jump to timestamps, spacebar to play/pause
+- **Clip Management**: Right-click → "Create New Clip" to split at any word boundary  
+- **Speaker Editing**: Right-click → "Add New Speaker Label" or edit names in sidebar
+- **Audio Control**: Transport buttons for clip navigation and timeline scrubbing
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js and npm
-- Python (for pyaaf2 and OTIO dependencies)
-- Tracktion Engine license (free personal tier available)
+- Node.js 18+ and npm
+- Git for version control
 
 ### Installation
 
@@ -86,49 +121,63 @@ cd TranscriptionProject
 
 # Install dependencies
 npm install
-
-# Install Python dependencies for export features
-pip install pyaaf2 opentimelineio
 ```
 
 ### Development
 
 ```bash
-# Start development server
+# Start Vite development server
+npm run dev:vite
+
+# In another terminal, start Electron
+npm run dev:electron
+
+# Or use the combined command (shows both commands)
 npm run dev
-
-# Build for production
-npm run build
-
-# Package for distribution
-npm run package
 ```
 
-## License Setup
+### Current Build Status
 
-This project requires a Tracktion Engine license:
-1. Create account at [engine.tracktion.com](https://engine.tracktion.com)
-2. Obtain free Personal license (includes branding requirement and $50k revenue limit)
-3. Each developer requires a separate license seat
+```bash
+# The app currently runs in development mode
+# Production builds are not yet configured
+# Focus is on core functionality development
+```
 
-## Contributing
+## Recent Development History
 
-We welcome contributions! Please see our contributing guidelines and engage with the podcasting and audio editing community for feedback and feature prioritization.
+### Major Implementation Phases Completed:
 
-## Performance Considerations
+**Document-Focused Layout Redesign** (Phase 1)
+- Transformed from dark three-panel to light document-focused interface
+- Implemented serif typography for transcript readability
+- Added two-column layout with professional styling
 
-- WhisperX model files (~1-3 GB) included in project assets
-- Benchmark transcription time and memory usage on target hardware
-- WCAG accessibility standards compliance
-- Color-blind friendly speaker color palette
+**Advanced Editing System** (Phase 2)  
+- Built comprehensive clip management system
+- Added right-click context menus for professional editing workflow
+- Implemented speaker management with inline editing
 
-## Future Roadmap
+**Critical Functionality Fixes** (Phase 3)
+- Fixed all context menu actions (Select Clip, Create New Clip, Add Speaker)
+- Added clip navigation controls and keyboard shortcuts
+- Resolved UI responsiveness and scrolling issues
 
-- Multi-language ASR model support
-- Modular architecture for additional diarization modules
-- Community-driven feature development
-- Enhanced accessibility features
+### Code Quality & Architecture
+- TypeScript implementation throughout
+- Custom React hooks for state management  
+- Modular component architecture with clear separation of concerns
+- CSS variables for consistent theming and maintainability
+
+## Next Steps
+
+The application now has a solid foundation for professional transcript editing. The next major development phase will focus on:
+
+1. **Transcription Pipeline Integration**: WhisperX model integration for offline processing
+2. **File Import System**: Support for various audio formats with metadata handling  
+3. **Export Functionality**: Multiple format support (text, audio, professional formats)
+4. **Performance Optimization**: Memory usage and large file handling
 
 ---
 
-*Built with ❤️ for the podcasting community*
+*Built with ❤️ for professional podcast production workflows*
