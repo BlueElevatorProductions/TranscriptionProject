@@ -25,12 +25,13 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [userClips, setUserClips] = useState<Clip[]>([]);
 
-  // Generate clips from segments
+  // Generate clips from segments - only create clips on speaker changes
   const clips = useMemo(() => {
     if (!segments || segments.length === 0) return [];
 
     const generatedClips: Clip[] = [];
     let runningWordIndex = 0;
+    let currentClip: Clip | null = null;
 
     segments.forEach((segment: any, segmentIndex: number) => {
       const speakerId = segment.speaker || 'SPEAKER_00';
@@ -42,34 +43,44 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
       const endWordIndex = startWordIndex + wordCount - 1;
       runningWordIndex += wordCount;
 
-      // Determine clip type
-      let clipType: Clip['type'] = 'speaker-change';
-      if (segmentIndex > 0) {
-        const prevSegment = segments[segmentIndex - 1];
-        const prevSpeakerId = prevSegment.speaker || 'SPEAKER_00';
-        if (prevSpeakerId === speakerId) {
-          clipType = 'paragraph-break';
+      // Only create new clip if speaker changes (not for every segment)
+      if (!currentClip || currentClip.speaker !== speakerName) {
+        // Finish previous clip
+        if (currentClip) {
+          generatedClips.push(currentClip);
         }
+        
+        // Start new clip
+        currentClip = {
+          id: `clip-${generatedClips.length}`,
+          speaker: speakerName,
+          startTime: segment.start,
+          endTime: segment.end,
+          startWordIndex,
+          endWordIndex,
+          words: segment.words || [{ word: segment.text, start: segment.start, end: segment.end }],
+          type: 'speaker-change',
+          text: segment.text,
+          duration: segment.end - segment.start,
+          createdAt: Date.now(),
+          modifiedAt: Date.now()
+        };
+      } else {
+        // Extend current clip
+        currentClip.endTime = segment.end;
+        currentClip.endWordIndex = endWordIndex;
+        currentClip.words = [...currentClip.words, ...(segment.words || [{ word: segment.text, start: segment.start, end: segment.end }])];
+        currentClip.text += ' ' + segment.text;
+        currentClip.duration = currentClip.endTime - currentClip.startTime;
       }
-
-      const clip: Clip = {
-        id: `clip-${segmentIndex}`,
-        speaker: speakerName,
-        startTime: segment.start,
-        endTime: segment.end,
-        startWordIndex,
-        endWordIndex,
-        words: segment.words || [{ word: segment.text, start: segment.start, end: segment.end }],
-        type: clipType,
-        text: segment.text,
-        duration: segment.end - segment.start,
-        createdAt: Date.now(),
-        modifiedAt: Date.now()
-      };
-
-      generatedClips.push(clip);
     });
 
+    // Add the last clip
+    if (currentClip) {
+      generatedClips.push(currentClip);
+    }
+
+    console.log(`Generated ${generatedClips.length} clips from ${segments.length} segments (speaker changes only)`);
     return generatedClips;
   }, [segments, speakerNames]);
 

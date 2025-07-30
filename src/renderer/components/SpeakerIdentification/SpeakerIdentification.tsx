@@ -293,7 +293,7 @@ const SpeakerIdentification: React.FC<SpeakerIdentificationProps> = ({
       return acc;
     }, {} as { [key: string]: string });
     
-    onComplete(genericNames);
+    onComplete({ speakerNames: genericNames, speakerMerges: mergeMapping });
   };
 
   // Handle speaker merging
@@ -303,24 +303,24 @@ const SpeakerIdentification: React.FC<SpeakerIdentificationProps> = ({
     // Update merged speakers set
     setMergedSpeakers(prev => new Set([...prev, secondarySpeakerId]));
     
-    // Update merge mapping
+    // Update merge mapping - map the merged speaker to the primary one
     setMergeMapping(prev => ({ ...prev, [secondarySpeakerId]: primarySpeakerId }));
     
-    // Combine total duration
-    const updatedSpeakerData = { ...speakerData };
-    updatedSpeakerData[primarySpeakerId].totalDuration += updatedSpeakerData[secondarySpeakerId].totalDuration;
-    updatedSpeakerData[primarySpeakerId].segmentCount += updatedSpeakerData[secondarySpeakerId].segmentCount;
+    // Combine total duration and segment count
+    setSpeakerData(prevData => {
+      const updatedData = { ...prevData };
+      updatedData[primarySpeakerId].totalDuration += updatedData[secondarySpeakerId].totalDuration;
+      updatedData[primarySpeakerId].segmentCount += updatedData[secondarySpeakerId].segmentCount;
+      return updatedData;
+    });
     
-    setSpeakerData(updatedSpeakerData);
-    
-    // Set the primary speaker's name if the secondary speaker had a name
-    const secondaryName = speakerNames[secondarySpeakerId];
-    if (secondaryName && !speakerNames[primarySpeakerId]) {
-      setSpeakerNames(prev => ({ ...prev, [primarySpeakerId]: secondaryName }));
+    // If the primary speaker doesn't have a name yet, and the secondary one does, use it.
+    if (!speakerNames[primarySpeakerId] && speakerNames[secondarySpeakerId]) {
+      setSpeakerNames(prev => ({ ...prev, [primarySpeakerId]: speakerNames[secondarySpeakerId] }));
     }
     
-    // Hide merge options
-    setShowMergeOptions(prev => ({ ...prev, [secondarySpeakerId]: false, [primarySpeakerId]: false }));
+    // Hide merge options dropdown
+    setShowMergeOptions(prev => ({ ...prev, [primarySpeakerId]: false, [secondarySpeakerId]: false }));
     
     console.log(`✅ ${secondarySpeakerId} merged into ${primarySpeakerId}`);
   };

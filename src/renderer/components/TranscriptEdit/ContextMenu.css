@@ -37,6 +37,27 @@
   background: #f8f8f8;
 }
 
+.context-menu-item.has-submenu::after {
+  content: '▶';
+  font-size: 10px;
+  color: #999999;
+  margin-left: auto;
+}
+
+.submenu {
+  position: absolute;
+  top: -5px; /* Align with parent item */
+  left: 100%;
+  background: #ffffff;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 4px 0;
+  min-width: 180px;
+  z-index: 1001;
+  animation: contextMenuFadeIn 0.1s ease-out;
+}
+
 .context-menu-item.disabled {
   color: #999999;
   cursor: not-allowed;

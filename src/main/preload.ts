@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTranscriptionComplete: (callback: (job: any) => void) => {
     ipcRenderer.on('transcription-complete', (event, job) => callback(job));
   },
+  onTranscriptionError: (callback: (job: any) => void) => {
+    ipcRenderer.on('transcription-error', (event, job) => callback(job));
+  },
 
   // Remove listeners
   removeAllListeners: (channel: string) => {
@@ -64,6 +67,7 @@ export interface ElectronAPI {
   getAllTranscriptions: () => Promise<any[]>;
   onTranscriptionProgress: (callback: (job: any) => void) => void;
   onTranscriptionComplete: (callback: (job: any) => void) => void;
+  onTranscriptionError: (callback: (job: any) => void) => void;
   removeAllListeners: (channel: string) => void;
   readAudioFile: (filePath: string) => Promise<ArrayBuffer>;
 }

@@ -2,6 +2,10 @@ import { app, BrowserWindow, Menu, shell, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
+import * as dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
 
 const isDev = () => {
   return process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -69,7 +73,9 @@ class App {
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
       },
-      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      titleBarStyle: 'default',
+      movable: true, // Explicitly enable window movement
+      resizable: true, // Ensure resizing is enabled
       show: false, // Don't show until ready-to-show
     });
 
@@ -317,7 +323,9 @@ class App {
       console.log('Whisper service path:', whisperServicePath);
       console.log('File exists:', fs.existsSync(whisperServicePath));
       
-      const pythonProcess = spawn('python3', [whisperServicePath, 'transcribe', filePath, modelSize]);
+      const pythonProcess = spawn('python3', [whisperServicePath, 'transcribe', filePath, modelSize], {
+        env: process.env,
+      });
       
       let output = '';
       let errorOutput = '';
@@ -356,14 +364,17 @@ class App {
               job.status = 'completed';
               job.progress = 100;
               job.result = result;
+              this.mainWindow?.webContents.send('transcription-complete', job);
             } else {
               job.status = 'error';
               job.error = result.message || 'Transcription failed with unknown error';
+              this.mainWindow?.webContents.send('transcription-error', job);
             }
           } catch (parseError) {
             console.error('JSON parse error:', parseError);
             job.status = 'error';
             job.error = 'Failed to parse transcription result. Raw output: ' + output.substring(0, 300);
+            this.mainWindow?.webContents.send('transcription-error', job);
           }
         } else {
           job.status = 'error';
@@ -384,15 +395,14 @@ class App {
           }
           
           job.error = errorMessage;
+          this.mainWindow?.webContents.send('transcription-error', job);
         }
-
-        this.mainWindow?.webContents.send('transcription-complete', job);
       });
 
     } catch (error) {
       job.status = 'error';
       job.error = error instanceof Error ? error.message : 'Unknown error';
-      this.mainWindow?.webContents.send('transcription-complete', job);
+      this.mainWindow?.webContents.send('transcription-error', job);
     }
   }
 }

@@ -13,6 +13,14 @@ interface TranscriptPanelProps {
   onSelectClip?: (clipId: string) => void;
   onCreateNewClip?: (wordIndex: number) => boolean;
   onAddNewSpeaker?: (wordIndex: number, speakerName: string) => boolean;
+  editingSpeakerId?: string | null;
+  tempSpeakerName?: string;
+  onSpeakerEditStart?: (speakerId: string, currentName: string) => void;
+  onSpeakerEditSave?: (speakerId: string) => void;
+  onSpeakerEditCancel?: () => void;
+  onSpeakerNameChange?: (name: string) => void;
+  onWordEdit?: (segmentIndex: number, wordIndex: number, originalWord: string, newWord: string) => void;
+  onWordInsert?: (segmentIndex: number, wordIndex: number, newWordText: string) => void;
 }
 
 const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
@@ -26,7 +34,15 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   selectedClipId,
   onSelectClip,
   onCreateNewClip,
-  onAddNewSpeaker
+  onAddNewSpeaker,
+  editingSpeakerId,
+  tempSpeakerName,
+  onSpeakerEditStart,
+  onSpeakerEditSave,
+  onSpeakerEditCancel,
+  onSpeakerNameChange,
+  onWordEdit,
+  onWordInsert,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeLineRef = useRef<HTMLDivElement>(null);
@@ -38,6 +54,12 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
     y: 0,
     wordData: null as any
   });
+
+  // Word editing state
+  const [editingWord, setEditingWord] = useState<{segmentIndex: number, wordIndex: number} | null>(null);
+  const [tempWordText, setTempWordText] = useState('');
+  const [insertingWord, setInsertingWord] = useState<{segmentIndex: number, afterWordIndex: number} | null>(null);
+  const [newWordText, setNewWordText] = useState('');
 
   // Auto-scroll to active line
   useEffect(() => {
@@ -112,6 +134,41 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
     });
   };
 
+  // Word editing handlers
+  const handleWordDoubleClick = (segmentIndex: number, wordIndex: number, word: any) => {
+    setEditingWord({ segmentIndex, wordIndex });
+    setTempWordText(word.word);
+  };
+
+  const handleWordEditSave = () => {
+    if (editingWord && tempWordText.trim() && onWordEdit) {
+      const originalWord = segments[editingWord.segmentIndex]?.words?.[editingWord.wordIndex]?.word;
+      if (originalWord !== tempWordText.trim()) {
+        onWordEdit(editingWord.segmentIndex, editingWord.wordIndex, originalWord, tempWordText.trim());
+      }
+    }
+    setEditingWord(null);
+    setTempWordText('');
+  };
+
+  const handleWordEditCancel = () => {
+    setEditingWord(null);
+    setTempWordText('');
+  };
+
+  const handleNewWordSave = () => {
+    if (insertingWord && newWordText.trim() && onWordInsert) {
+      onWordInsert(insertingWord.segmentIndex, insertingWord.afterWordIndex + 1, newWordText.trim());
+    }
+    setInsertingWord(null);
+    setNewWordText('');
+  };
+
+  const handleNewWordCancel = () => {
+    setInsertingWord(null);
+    setNewWordText('');
+  };
+
   // Context menu actions
   const contextMenuItems = [
     {
@@ -166,24 +223,45 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
       }
     },
     {
-      label: "Add New Speaker Label",
-      icon: "👤",
+      label: "New Word",
+      icon: "✏️",
       action: () => {
-        if (contextMenu.wordData && onAddNewSpeaker) {
-          // For now, prompt with a simple prompt
-          const speakerName = prompt("Enter new speaker name:");
-          if (speakerName && speakerName.trim()) {
-            const wordIndex = contextMenu.wordData.wordIndex;
-            const success = onAddNewSpeaker(wordIndex, speakerName.trim());
-            
-            if (success) {
-              console.log(`Added new speaker "${speakerName.trim()}" at word index ${wordIndex}`);
-            } else {
-              console.log(`Failed to add speaker "${speakerName.trim()}" at word index ${wordIndex}`);
+        if (contextMenu.wordData) {
+          setInsertingWord({ 
+            segmentIndex: contextMenu.wordData.segmentIndex, 
+            afterWordIndex: contextMenu.wordData.wordIndex 
+          });
+        }
+      }
+    },
+    {
+      label: "Assign Speaker",
+      icon: "👤",
+      isSubmenu: true,
+      submenu: [
+        ...(Object.entries(speakerNames || {}).map(([id, name]) => ({
+          label: name,
+          action: () => {
+            if (contextMenu.wordData && onAddNewSpeaker) {
+              const wordIndex = contextMenu.wordData.wordIndex;
+              onAddNewSpeaker(wordIndex, name);
+            }
+          }
+        }))),
+        { isSeparator: true },
+        {
+          label: "Add New Speaker...",
+          action: () => {
+            if (contextMenu.wordData && onAddNewSpeaker) {
+              const speakerName = prompt("Enter new speaker name:");
+              if (speakerName && speakerName.trim()) {
+                const wordIndex = contextMenu.wordData.wordIndex;
+                onAddNewSpeaker(wordIndex, speakerName.trim());
+              }
             }
           }
         }
-      }
+      ]
     }
   ];
 
@@ -221,7 +299,8 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
         {segments.map((segment, segmentIndex) => {
           const isActive = isLineActive(segment);
           const isSelected = selectedSegments.includes(segmentIndex);
-          
+          const isEditing = editingSpeakerId === segment.speaker;
+
           return (
             <div
               key={segmentIndex}
@@ -234,7 +313,29 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                   {formatTime(segment.start)}
                 </div>
                 <div className="transcript-speaker">
-                  • {speakerNames?.[segment.speaker] || segment.speaker || 'Unknown'}
+                  • {isEditing && onSpeakerEditSave ? (
+                    <input
+                      className="speaker-name-input-inline"
+                      value={tempSpeakerName}
+                      onChange={(e) => onSpeakerNameChange?.(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') onSpeakerEditSave(segment.speaker);
+                        if (e.key === 'Escape') onSpeakerEditCancel?.();
+                      }}
+                      onBlur={() => onSpeakerEditSave(segment.speaker)}
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className="speaker-name-clickable"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSpeakerEditStart?.(segment.speaker, speakerNames?.[segment.speaker] || '');
+                      }}
+                    >
+                      {speakerNames?.[segment.speaker] || segment.speaker || 'Unknown'}
+                    </span>
+                  )}
                 </div>
               </div>
               
@@ -255,21 +356,70 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                     return segment.words.map((word: any, wordIndex: number) => {
                       const globalWordIndex = runningWordIndex + wordIndex;
                       const isCurrent = currentWordIndex === globalWordIndex;
+                      const isEditing = editingWord?.segmentIndex === segmentIndex && 
+                                       editingWord?.wordIndex === wordIndex;
                       
                       return (
-                        <span
-                          key={wordIndex}
-                          className={`word ${isCurrent ? 'current' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onWordClick(word.start);
-                          }}
-                          onContextMenu={(e) => handleWordRightClick(e, word, globalWordIndex, segmentIndex)}
-                          title={`${word.start.toFixed(1)}s - ${word.end.toFixed(1)}s`}
-                        >
-                          {word.word}
-                          {wordIndex < segment.words.length - 1 ? ' ' : ''}
-                        </span>
+                        <React.Fragment key={wordIndex}>
+                          {/* Insert new word field if needed */}
+                          {insertingWord?.segmentIndex === segmentIndex && 
+                           insertingWord?.afterWordIndex === wordIndex - 1 && (
+                            <input
+                              type="text"
+                              value={newWordText}
+                              onChange={(e) => setNewWordText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleNewWordSave();
+                                } else if (e.key === 'Escape') {
+                                  handleNewWordCancel();
+                                }
+                              }}
+                              onBlur={handleNewWordSave}
+                              className="new-word-input"
+                              placeholder="New word..."
+                              autoFocus
+                            />
+                          )}
+                          
+                          {/* Word display or edit field */}
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={tempWordText}
+                              onChange={(e) => setTempWordText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleWordEditSave();
+                                } else if (e.key === 'Escape') {
+                                  handleWordEditCancel();
+                                }
+                              }}
+                              onBlur={handleWordEditSave}
+                              className="word-edit-input"
+                              autoFocus
+                            />
+                          ) : (
+                            <span
+                              className={`word ${isCurrent ? 'current' : ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onWordClick(word.start);
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                handleWordDoubleClick(segmentIndex, wordIndex, word);
+                              }}
+                              onContextMenu={(e) => handleWordRightClick(e, word, globalWordIndex, segmentIndex)}
+                              title={`${word.start.toFixed(1)}s - ${word.end.toFixed(1)}s | Double-click to edit, right-click for options`}
+                            >
+                              {word.word}
+                            </span>
+                          )}
+                          
+                          {/* Add space after word if not editing and not last word */}
+                          {!isEditing && wordIndex < segment.words.length - 1 && ' '}
+                        </React.Fragment>
                       );
                     });
                   })()

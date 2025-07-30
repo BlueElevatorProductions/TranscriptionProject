@@ -1,11 +1,14 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './ContextMenu.css';
 
 interface ContextMenuItem {
   label: string;
-  action: () => void;
-  icon: string;
+  action?: () => void;
+  icon?: string;
   disabled?: boolean;
+  isSubmenu?: boolean;
+  submenu?: ContextMenuItem[];
+  isSeparator?: boolean;
 }
 
 interface ContextMenuProps {
@@ -24,6 +27,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   visible
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [openSubmenu, setOpenSubmenu] = useState<number | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -80,7 +84,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   if (!visible) return null;
 
   const handleItemClick = (item: ContextMenuItem) => {
-    if (!item.disabled) {
+    if (!item.disabled && item.action) {
       item.action();
       onClose();
     }
@@ -96,17 +100,47 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         top: y,
         zIndex: 1000
       }}
+      onMouseLeave={() => setOpenSubmenu(null)}
     >
-      {items.map((item, index) => (
-        <div
-          key={index}
-          className={`context-menu-item ${item.disabled ? 'disabled' : ''}`}
-          onClick={() => handleItemClick(item)}
-        >
-          <span className="context-menu-icon">{item.icon}</span>
-          <span className="context-menu-label">{item.label}</span>
-        </div>
-      ))}
+      {items.map((item, index) => {
+        if (item.isSeparator) {
+          return <div key={index} className="context-menu-separator" />;
+        }
+        
+        return (
+          <div
+            key={index}
+            className={`context-menu-item ${item.disabled ? 'disabled' : ''} ${item.isSubmenu ? 'has-submenu' : ''}`}
+            onClick={() => handleItemClick(item)}
+            onMouseEnter={() => item.isSubmenu && setOpenSubmenu(index)}
+          >
+            {item.icon && <span className="context-menu-icon">{item.icon}</span>}
+            <span className="context-menu-label">{item.label}</span>
+            {item.isSubmenu && openSubmenu === index && (
+              <div className="submenu">
+                {item.submenu?.map((subItem, subIndex) => {
+                  if (subItem.isSeparator) {
+                    return <div key={subIndex} className="context-menu-separator" />;
+                  }
+                  return (
+                    <div
+                      key={subIndex}
+                      className={`context-menu-item ${subItem.disabled ? 'disabled' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleItemClick(subItem);
+                      }}
+                    >
+                      {subItem.icon && <span className="context-menu-icon">{subItem.icon}</span>}
+                      <span className="context-menu-label">{subItem.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };

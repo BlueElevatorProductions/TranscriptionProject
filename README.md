@@ -8,29 +8,31 @@ TranscriptionProject is an Electron-based desktop application designed for podca
 
 ## ✅ Implemented Features
 
-### **Document-Focused Interface**
-- Light theme with serif typography for reading comfort
-- Two-column layout: main transcript area with compact right sidebar
-- Natural text selection and copying capabilities
-- Professional typography hierarchy optimized for long-form content
+### **Dual Mode Interface**
+- **Playbook Mode**: Clean paragraph-based reading interface for listening
+- **Transcript Edit Mode**: Detailed word-level editing with full functionality
+- **Mode Switching**: Seamless transitions between playback and editing workflows
+- **Resizable Panels**: User-customizable layout with draggable dividers
 
 ### **Advanced Transcript Editing**
+- **Word-Level Editing**: Double-click any word to edit, right-click for "New Word" insertion
+- **Undo/Redo System**: Full history tracking with Cmd+Z/Cmd+Shift+Z keyboard shortcuts
 - **Right-click Context Menu**: Select clips, create new clips, add speaker labels
-- **Clips Management System**: Organize content into navigable clips with metadata
-- **Speaker Management**: Inline editing of speaker names with real-time updates
-- **Word-level Audio Sync**: Click any word to jump to that timestamp
+- **Clips Management**: Organize content into navigable clips with metadata
+- **Speaker Management**: Inline editing in both transcript and sidebar with real-time updates
 
 ### **Professional Audio Controls**
-- **Clip Navigation**: Previous/Next clip buttons with auto-play
-- **Transport Controls**: Play/pause, skip back/forward 10 seconds
-- **Keyboard Shortcuts**: Spacebar for global play/pause
+- **Shared Media Player**: Consistent controls across all modes
+- **Transport Controls**: Play/pause, skip back/forward 10 seconds, previous/next clip
+- **Advanced Playback**: Volume control, variable speed (0.5× to 2.0×)
 - **Timeline Scrubbing**: Visual progress indicator with click-to-seek
+- **Global Keyboard Shortcuts**: Spacebar for play/pause across all modes
 
-### **Responsive UI Components**
-- Scrollable speakers panel with custom styling
-- Clips panel with type indicators and metadata
-- Hover states and visual feedback throughout
-- Loading states and error handling
+### **Modern UI/UX Architecture**
+- **Shared Component System**: Single source of truth for panels and controls
+- **Responsive Design**: Resizable layout adapts to user preferences
+- **Professional Typography**: Document-focused design optimized for long-form content
+- **Accessibility**: Keyboard navigation and screen reader friendly
 
 ## Technology Stack
 
@@ -45,23 +47,36 @@ TranscriptionProject is an Electron-based desktop application designed for podca
 
 ## Current Architecture
 
-### Component Structure
+### Dual Mode Structure
 ```
-PlaybackModeContainer (Main Container)
-├── TranscriptPanel (Document View)
-│   ├── Context Menu System
-│   ├── Word-level Click Handlers
-│   └── Text Selection Management
-└── Sidebar (Right Panel)
-    ├── Speakers Section (with editing)
-    ├── Clips Panel (with navigation)
-    └── Playback Controls (transport + timeline)
+App Container
+├── PlaybackModeContainer (Clean Reading Interface)
+│   ├── CleanTranscriptDisplay (Paragraph-based view)
+│   └── Shared Panels
+│       ├── SpeakersPanel (Speaker management)
+│       └── AudioControlsPanel (Professional media player)
+└── TranscriptEditContainer (Detailed Editing Interface)
+    ├── TranscriptPanel (Word-level editing)
+    │   ├── Context Menu System
+    │   ├── Word Editing (double-click, insertion)
+    │   └── Undo/Redo System
+    └── Enhanced Sidebar
+        ├── Shared SpeakersPanel
+        ├── Clips Management Panel
+        └── Shared AudioControlsPanel
 ```
+
+### Shared Component Architecture
+- **AudioControlsPanel**: Professional media player used across all modes
+- **SpeakersPanel**: Unified speaker management with inline editing
+- **Resizable Layout System**: User-customizable panel widths with constraints
+- **Undo/Redo System**: Complete edit history with 50-action memory
 
 ### Key Modules
 - **useClips Hook**: Manages clip data structure and operations (create, split, speaker assignment)
 - **useAudioPlayer Hook**: Handles audio loading, playback state, and Blob URL management
-- **Context Menu System**: Provides right-click editing functionality
+- **Context Menu System**: Provides right-click editing functionality with word insertion
+- **Edit History System**: Tracks all changes for undo/redo functionality
 - **IPC Communication**: Secure file access between main and renderer processes
 
 ## Development Status
@@ -81,11 +96,14 @@ PlaybackModeContainer (Main Container)
 - [x] Keyboard shortcuts (spacebar play/pause)
 - [x] Enhanced transport controls with clip navigation
 
-### 🚧 **Current Phase: Polish & Functionality**
-- [x] Critical functionality fixes implemented
-- [x] All major features tested and working
-- [ ] Additional refinements and user experience improvements
-- [ ] Integration testing and performance optimization
+### ✅ **Phase 3: Professional UI/UX & Architecture (COMPLETED)**
+- [x] Dual mode system (Playback vs Transcript Edit)
+- [x] Word-level editing with double-click and insertion
+- [x] Complete undo/redo system with keyboard shortcuts
+- [x] Shared component architecture for consistency
+- [x] Professional media player controls
+- [x] Resizable layout system with user customization
+- [x] Global keyboard shortcuts across all modes
 
 ### 📋 **Next Phase: Transcription Integration**
 - [ ] WhisperX model integration for offline transcription
@@ -95,15 +113,27 @@ PlaybackModeContainer (Main Container)
 
 ## Current Workflow
 
-**Professional Transcript Editing Experience**
+### **Dual Mode Professional Experience**
 
-Load a transcript with audio file and experience a professional editing interface. Click any word to jump to that timestamp in the audio. Right-click to select entire clips, create new clips at word boundaries, or add new speaker labels. Navigate between clips using transport controls or keyboard shortcuts. Edit speaker names inline in the sidebar. Use the clips panel to organize and navigate content efficiently.
+**Playback Mode (Clean Reading Interface)**
+- Paragraph-based transcript display optimized for listening
+- Click speaker names to edit across all instances
+- Professional media player with volume and speed controls
+- Spacebar for global play/pause, resizable panels
+
+**Transcript Edit Mode (Detailed Editing Interface)**
+- Word-level editing: double-click any word to edit in-place
+- Right-click context menu: "New Word" insertion, clip management, speaker assignment
+- Complete undo/redo system with Cmd+Z/Cmd+Shift+Z shortcuts
+- Advanced clip organization and navigation tools
 
 **Key User Interactions:**
-- **Document Navigation**: Click words to jump to timestamps, spacebar to play/pause
-- **Clip Management**: Right-click → "Create New Clip" to split at any word boundary  
-- **Speaker Editing**: Right-click → "Add New Speaker Label" or edit names in sidebar
-- **Audio Control**: Transport buttons for clip navigation and timeline scrubbing
+- **Mode Switching**: Header badges for seamless transition between modes
+- **Word Editing**: Double-click to edit, right-click to insert new words
+- **Speaker Management**: Click speaker names in transcript or sidebar to edit
+- **Layout Customization**: Drag panel dividers to resize transcript and sidebar areas
+- **Professional Audio**: Volume control, variable playback speed, timeline scrubbing
+- **Keyboard Shortcuts**: Spacebar (play/pause), Cmd+Z (undo), Cmd+Shift+Z (redo)
 
 ## Getting Started
 
@@ -158,16 +188,21 @@ npm run dev
 - Added right-click context menus for professional editing workflow
 - Implemented speaker management with inline editing
 
-**Critical Functionality Fixes** (Phase 3)
-- Fixed all context menu actions (Select Clip, Create New Clip, Add Speaker)
-- Added clip navigation controls and keyboard shortcuts
-- Resolved UI responsiveness and scrolling issues
+**Professional UI/UX & Architecture** (Phase 3)
+- Implemented dual mode system with seamless mode switching
+- Added word-level editing with double-click and insertion capabilities
+- Built complete undo/redo system with full edit history tracking
+- Created shared component architecture for consistency and maintainability
+- Implemented resizable layout system with user-customizable panels
+- Added professional media player controls with advanced audio features
 
 ### Code Quality & Architecture
-- TypeScript implementation throughout
-- Custom React hooks for state management  
-- Modular component architecture with clear separation of concerns
-- CSS variables for consistent theming and maintainability
+- **TypeScript Implementation**: Complete type safety throughout the application
+- **Shared Component System**: Single source of truth for UI panels and controls
+- **Custom React Hooks**: Advanced state management (useClips, useAudioPlayer, edit history)
+- **Modular Architecture**: Clear separation between modes, components, and functionality
+- **Professional Styling**: CSS variables for consistent theming and maintainability
+- **Accessibility**: Keyboard navigation, ARIA labels, and screen reader support
 
 ## Next Steps
 

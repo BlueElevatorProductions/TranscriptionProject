@@ -259,7 +259,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             return (
               <div
                 key={clip.id}
-                className={`clip-item ${isSelected ? 'selected' : ''} ${isNearCurrent ? 'near-current' : ''}`}
+                className={`clip-item ${isSelected ? 'selected' : ''}`}
                 onClick={() => {
                   onClipSelect(clip.id);
                   onTimeSeek(clip.startTime);
