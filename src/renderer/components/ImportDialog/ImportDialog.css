@@ -164,3 +164,181 @@
   background: #ffffff10;
   border-color: #888888;
 }
+
+/* Enhanced styles for cloud transcription features */
+.import-dialog.enhanced {
+  max-width: 600px;
+}
+
+/* Provider Selection */
+.provider-selection {
+  margin-bottom: 1.5rem;
+}
+
+.provider-tabs {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #404040;
+  margin-bottom: 1rem;
+}
+
+.provider-tab {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: #1a1a1a;
+  color: #cccccc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.provider-tab.active {
+  background: #4a9eff;
+  color: white;
+}
+
+.provider-tab:hover:not(.active) {
+  background: #2a2a2a;
+  color: #ffffff;
+}
+
+/* Section Headers */
+.section-header {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #404040;
+}
+
+.section-header h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.1rem;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.section-header p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #888888;
+}
+
+/* Model Options */
+.model-options {
+  margin-bottom: 1.5rem;
+}
+
+.model-option {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.model-option:hover {
+  border-color: #4a9eff;
+  background: #ffffff05;
+}
+
+.model-option input[type="radio"] {
+  margin-right: 0.75rem;
+  margin-top: 0.25rem;
+  accent-color: #4a9eff;
+}
+
+.model-option label {
+  flex: 1;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.model-name {
+  font-size: 14px;
+  color: #ffffff;
+  line-height: 1.3;
+}
+
+.speed-indicator {
+  font-size: 0.8rem;
+  color: #4a9eff;
+  font-weight: 500;
+}
+
+.cost-indicator {
+  font-size: 0.8rem;
+  color: #888888;
+  font-style: italic;
+}
+
+/* API Key Notice */
+.api-key-notice {
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+  border: 1px solid;
+}
+
+.api-key-notice.has-keys {
+  background: #d4edda;
+  border-color: #c3e6cb;
+  color: #155724;
+}
+
+.api-key-notice.needs-keys {
+  background: #fff3cd;
+  border-color: #ffeaa7;
+  color: #856404;
+}
+
+.api-key-notice p {
+  margin: 0 0 0.5rem 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.settings-link {
+  background: none;
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.settings-link:hover {
+  background: currentColor;
+  color: white;
+}
+
+/* Disabled state for primary button */
+.primary-btn:disabled {
+  background: #666666;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.primary-btn:disabled:hover {
+  background: #666666;
+}
+
+.primary-btn.disabled {
+  background: #666666;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.primary-btn.disabled:hover {
+  background: #666666;
+  transform: none;
+  box-shadow: none;
+}

@@ -434,6 +434,26 @@
   color: var(--text-muted);
 }
 
+/* Word Highlighting Styles */
+.word {
+  transition: background-color 0.2s ease, color 0.2s ease;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+.word:hover {
+  background-color: var(--bg-accent);
+}
+
+.word.current-word {
+  background-color: var(--accent-blue);
+  color: white;
+  font-weight: 500;
+  padding: 2px 4px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(74, 158, 255, 0.3);
+}
+
 /* Dark Mode Support */
 @media (prefers-color-scheme: dark) {
   :root {
@@ -444,5 +464,11 @@
     --text-secondary: #cccccc;
     --text-muted: #888888;
     --border-color: #404040;
+  }
+  
+  .word.current-word {
+    background-color: var(--accent-blue);
+    color: white;
+    box-shadow: 0 1px 3px rgba(74, 158, 255, 0.5);
   }
 }

@@ -1,3 +1,8 @@
+/* Global body padding for fixed audio player */
+body {
+  padding-bottom: 80px; /* Space for fixed audio player */
+}
+
 /* Design System Variables - Matching PlaybackMode.css */
 :root {
   --bg-primary: #ffffff;

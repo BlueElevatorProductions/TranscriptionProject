@@ -80,9 +80,11 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
       generatedClips.push(currentClip);
     }
 
-    console.log(`Generated ${generatedClips.length} clips from ${segments.length} segments (speaker changes only)`);
-    return generatedClips;
-  }, [segments, speakerNames]);
+    // Combine generated clips with user clips
+    const allClips = [...generatedClips, ...userClips];
+    console.log(`Generated ${generatedClips.length} clips from ${segments.length} segments + ${userClips.length} user clips = ${allClips.length} total`);
+    return allClips;
+  }, [segments, speakerNames, userClips]);
 
   // Find clip by word index
   const findClipByWordIndex = (wordIndex: number): Clip | null => {
@@ -123,58 +125,54 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
 
   // Create new clip by splitting existing clip
   const createNewClip = (splitWordIndex: number) => {
+    console.log('Creating new clip at word index:', splitWordIndex);
+    
     const currentClip = findClipByWordIndex(splitWordIndex);
     if (!currentClip) {
       console.log('No clip found for word index:', splitWordIndex);
       return false;
     }
 
+    // Create a simple user clip based on the current clip position
     const splitPoint = splitWordIndex - currentClip.startWordIndex;
-    if (splitPoint <= 0 || splitPoint >= currentClip.words.length) {
-      console.log('Invalid split point:', splitPoint, 'for clip with', currentClip.words.length, 'words');
-      return false;
-    }
-
-    // Calculate split time based on word position
     const splitWord = currentClip.words[splitPoint];
-    const splitTime = splitWord?.start || currentClip.startTime + (currentClip.duration * (splitPoint / currentClip.words.length));
-
-    console.log('Splitting clip at word index:', splitWordIndex, 'split time:', splitTime);
     
-    // Find the segment index that corresponds to this clip
-    const segmentIndex = parseInt(currentClip.id.replace('clip-', ''));
-    if (isNaN(segmentIndex) || !segments[segmentIndex]) {
-      console.log('Cannot find segment for clip:', currentClip.id);
+    if (!splitWord) {
+      console.log('No word found at split point');
       return false;
     }
 
-    const originalSegment = segments[segmentIndex];
-    
-    // Create text for first part and second part
-    const firstPartWords = currentClip.words.slice(0, splitPoint);
-    const secondPartWords = currentClip.words.slice(splitPoint);
-    
-    const firstPartText = firstPartWords.map(w => w.word).join(' ');
-    const secondPartText = secondPartWords.map(w => w.word).join(' ');
-
-    // Update the original segment to end at split point
-    originalSegment.end = splitTime;
-    originalSegment.text = firstPartText;
-    originalSegment.words = firstPartWords;
-
-    // Create new segment for the second part
-    const newSegment = {
-      ...originalSegment,
-      start: splitTime,
-      end: currentClip.endTime,
-      text: secondPartText,
-      words: secondPartWords
+    const timestamp = Date.now();
+    const newUserClip: Clip = {
+      id: `user-clip-${timestamp}`,
+      speaker: currentClip.speaker,
+      startTime: splitWord.start,
+      endTime: splitWord.start + 30, // 30 second clip
+      startWordIndex: splitWordIndex,
+      endWordIndex: splitWordIndex + 20, // Approximate 20 words
+      words: [splitWord],
+      type: 'user-created',
+      text: `Clip: ${currentClip.text.substring(0, 50)}...`,
+      duration: 30,
+      createdAt: timestamp,
+      modifiedAt: timestamp
     };
 
-    // Insert the new segment into the segments array
-    segments.splice(segmentIndex + 1, 0, newSegment);
+    // Add to user clips with duplicate prevention
+    setUserClips(prev => {
+      const exists = prev.find(clip => 
+        Math.abs(clip.startWordIndex - splitWordIndex) < 3
+      );
+      
+      if (exists) {
+        console.log('Similar clip already exists at word index:', exists.startWordIndex);
+        return prev;
+      }
+      
+      console.log('Created new user clip:', newUserClip.id, 'at time:', newUserClip.startTime);
+      return [...prev, newUserClip];
+    });
 
-    console.log('Successfully created new clip/segment at', splitTime);
     return true;
   };
 

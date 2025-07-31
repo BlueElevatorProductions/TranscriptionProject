@@ -1,13 +1,23 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import CleanTranscriptDisplay from './CleanTranscriptDisplay';
 import SpeakersPanel from '../shared/SpeakersPanel';
-import AudioControlsPanel from '../shared/AudioControlsPanel';
 import './PlaybackMode.css';
+
+interface SharedAudioState {
+  currentTime: number;
+  isPlaying: boolean;
+  volume: number;
+  playbackSpeed: number;
+}
 
 interface PlaybackModeProps {
   transcriptionJob: any;
+  speakers?: { [key: string]: string };
+  onSpeakersUpdate?: (speakers: { [key: string]: string }) => void;
   onBack: () => void;
   onSwitchToTranscriptEdit: () => void;
+  sharedAudioState: SharedAudioState;
+  onAudioStateUpdate: (updates: Partial<SharedAudioState>) => void;
 }
 
 interface Paragraph {
@@ -21,18 +31,19 @@ interface Paragraph {
 
 const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({ 
   transcriptionJob, 
+  speakers = {},
+  onSpeakersUpdate,
   onBack, 
-  onSwitchToTranscriptEdit 
+  onSwitchToTranscriptEdit,
+  sharedAudioState,
+  onAudioStateUpdate
 }) => {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [speakerNames, setSpeakerNames] = useState<{ [key: string]: string }>(
-    transcriptionJob.speakerNames || {}
-  );
+  // Use shared audio state instead of local state
+  const { currentTime, isPlaying, volume, playbackSpeed } = sharedAudioState;
+  
+  // Local UI state
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
   const [tempSpeakerName, setTempSpeakerName] = useState('');
-  const [volume, setVolume] = useState(0.7);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   
   // Resizable layout state
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -40,19 +51,34 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const segments = transcriptionJob.result?.segments || [];
+  
+  // Debug log the transcription job to see audio path
+  useEffect(() => {
+    console.log('PlaybackModeContainer - transcriptionJob:', {
+      fileName: transcriptionJob.fileName,
+      audioPath: transcriptionJob.audioPath,
+      originalPath: transcriptionJob.originalPath,
+      fullTranscriptionJob: transcriptionJob,
+      hasResult: !!transcriptionJob.result,
+      segmentCount: segments.length
+    });
+  }, [transcriptionJob, segments.length]);
+
+  // Get the correct audio path from transcription job
+  const audioPath = transcriptionJob.audioPath || transcriptionJob.originalPath || transcriptionJob.filePath;
 
   // Group segments by speaker for paragraph display
   const paragraphs = useMemo(() => {
     return groupSegmentsByParagraph(segments);
   }, [segments]);
 
-  // Extract speakers from segments
-  const speakers = useMemo(() => {
+  // Extract speaker data from segments for display
+  const speakerData = useMemo(() => {
     const speakerMap = new Map();
     segments.forEach((segment: any) => {
       const speakerId = segment.speaker || 'SPEAKER_00';
       if (!speakerMap.has(speakerId)) {
-        const speakerName = speakerNames[speakerId] || `Speaker ${speakerId.replace('SPEAKER_', '')}`;
+        const speakerName = speakers[speakerId] || `Speaker ${speakerId.replace('SPEAKER_', '')}`;
         speakerMap.set(speakerId, {
           id: speakerId,
           name: speakerName,
@@ -67,24 +93,25 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
     });
     
     return Array.from(speakerMap.values());
-  }, [segments, speakerNames]);
+  }, [segments, speakers]);
 
   const handleTimeSeek = (time: number) => {
-    setCurrentTime(time);
-    // TODO: Integrate with audio player
-    console.log('Seeking to time:', time);
+    console.log('PlaybackMode - Parent received time update:', time);
+    onAudioStateUpdate({ currentTime: time });
   };
 
   const handleSpeakerNameEdit = (speakerId: string, newName: string) => {
     console.log('Updating speaker name:', speakerId, '->', newName);
-    setSpeakerNames(prev => ({
-      ...prev,
+    const updatedSpeakers = {
+      ...speakers,
       [speakerId]: newName
-    }));
+    };
+    onSpeakersUpdate?.(updatedSpeakers);
   };
 
   const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
+    console.log('PlaybackMode - PlayPause clicked, current state:', isPlaying, '-> new state:', !isPlaying);
+    onAudioStateUpdate({ isPlaying: !isPlaying });
   };
 
   const getDuration = () => {
@@ -113,25 +140,23 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
 
   // Audio control handlers
   const handleVolumeChange = (newVolume: number) => {
-    setVolume(newVolume);
-    // TODO: Connect to audio player
-    console.log('Volume changed to:', newVolume);
+    console.log('PlaybackMode - Volume changed to:', newVolume);
+    onAudioStateUpdate({ volume: newVolume });
   };
 
   const handleSpeedChange = (newSpeed: number) => {
-    setPlaybackSpeed(newSpeed);
-    // TODO: Connect to audio player
-    console.log('Speed changed to:', newSpeed);
+    console.log('PlaybackMode - Speed changed to:', newSpeed);
+    onAudioStateUpdate({ playbackSpeed: newSpeed });
   };
 
   const handleSkipBack = () => {
-    const newTime = Math.max(0, currentTime - 10);
-    handleTimeSeek(newTime);
+    const newTime = Math.max(0, currentTime - 15);
+    onAudioStateUpdate({ currentTime: newTime });
   };
 
   const handleSkipForward = () => {
-    const newTime = Math.min(getDuration(), currentTime + 10);
-    handleTimeSeek(newTime);
+    const newTime = Math.min(getDuration(), currentTime + 15);
+    onAudioStateUpdate({ currentTime: newTime });
   };
 
   // Resizable layout handlers
@@ -176,7 +201,7 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
       if (event.code === 'Space' && 
           !['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement)?.tagName)) {
         event.preventDefault();
-        setIsPlaying(prev => !prev);
+        onAudioStateUpdate({ isPlaying: !isPlaying });
       }
     };
 
@@ -214,7 +239,7 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
         <div className="document-container" style={{ width: transcriptWidth }}>
           <CleanTranscriptDisplay 
             paragraphs={paragraphs}
-            speakerNames={speakerNames}
+            speakerNames={speakers}
             onSpeakerNameEdit={handleSpeakerNameEdit}
             currentTime={currentTime}
             onTimeSeek={handleTimeSeek}
@@ -226,8 +251,8 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
         <div className="right-sidebar" style={{ width: `${sidebarWidth}px` }}>
           <SpeakersPanel
             mode="playback"
-            speakers={speakers}
-            speakerNames={speakerNames}
+            speakers={speakerData}
+            speakerNames={speakers}
             editingSpeakerId={editingSpeakerId}
             tempSpeakerName={tempSpeakerName}
             onSpeakerEdit={handleSpeakerEdit}
@@ -236,20 +261,6 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
             onTempNameChange={setTempSpeakerName}
           />
           
-          <AudioControlsPanel
-            mode="playback"
-            currentTime={currentTime}
-            duration={getDuration()}
-            isPlaying={isPlaying}
-            volume={volume}
-            playbackSpeed={playbackSpeed}
-            onPlayPause={handlePlayPause}
-            onSeek={handleTimeSeek}
-            onVolumeChange={handleVolumeChange}
-            onSpeedChange={handleSpeedChange}
-            onSkipBack={handleSkipBack}
-            onSkipForward={handleSkipForward}
-          />
         </div>
       </div>
     </div>

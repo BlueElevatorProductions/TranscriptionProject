@@ -49,6 +49,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Audio file handling
   readAudioFile: (filePath: string) => ipcRenderer.invoke('read-audio-file', filePath),
+
+  // API key management
+  saveApiKeys: (apiKeys: { [service: string]: string }) => 
+    ipcRenderer.invoke('save-api-keys', apiKeys),
+  getApiKeys: () => ipcRenderer.invoke('get-api-keys'),
+
+  // Project file management
+  saveProject: (projectData: any, savePath: string, options?: any) => 
+    ipcRenderer.invoke('save-project', projectData, savePath, options),
+  loadProject: (projectPath: string) => 
+    ipcRenderer.invoke('load-project', projectPath),
+  showSaveProjectDialog: (options?: any) => 
+    ipcRenderer.invoke('show-save-project-dialog', options),
+  showOpenProjectDialog: () => 
+    ipcRenderer.invoke('show-open-project-dialog'),
+
+  // API connection testing
+  testCloudConnection: (provider: string) => 
+    ipcRenderer.invoke('test-cloud-connection', provider),
 });
 
 console.log('Preload script loaded successfully, electronAPI exposed');
@@ -70,6 +89,13 @@ export interface ElectronAPI {
   onTranscriptionError: (callback: (job: any) => void) => void;
   removeAllListeners: (channel: string) => void;
   readAudioFile: (filePath: string) => Promise<ArrayBuffer>;
+  saveApiKeys: (apiKeys: { [service: string]: string }) => Promise<{success: boolean; error?: string}>;
+  getApiKeys: () => Promise<{ [service: string]: string }>;
+  saveProject: (projectData: any, savePath: string, options?: any) => Promise<{success: boolean; path?: string; error?: string}>;
+  loadProject: (projectPath: string) => Promise<{success: boolean; project?: any; error?: string}>;
+  showSaveProjectDialog: (options?: any) => Promise<{success: boolean; canceled?: boolean; filePath?: string; error?: string}>;
+  showOpenProjectDialog: () => Promise<{success: boolean; canceled?: boolean; filePaths?: string[]; error?: string}>;
+  testCloudConnection: (provider: string) => Promise<{success: boolean; connected?: boolean; error?: string}>;
 }
 
 declare global {

@@ -8,7 +8,8 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "echo 'Run npm run dev:vite in one terminal and npm run dev:electron in another'",
+    "dev": "echo '🚀 Use: npm run start-dev for concurrent development' && echo '⚡ Or run dev:vite and dev:electron in separate terminals'",
+    "start-dev": "echo '🚀 Starting development servers...' && npm run dev:vite & sleep 3 && npm run dev:electron",
     "dev:vite": "vite",
     "dev:electron": "npm run build:main && electron .",
     "build": "npm run build:renderer && npm run build:main",
@@ -16,13 +17,15 @@
     "build:main": "tsc --project tsconfig.main.json",
     "start": "electron build/main/main.js",
     "clean": "rm -rf build dist node_modules",
-    "postinstall": "echo 'Setup complete! Run npm run dev:vite then npm run dev:electron'"
+    "postinstall": "echo 'Setup complete! Run npm run start-dev for development'"
   },
   "dependencies": {
     "dotenv": "^17.2.1",
     "electron-store": "^10.1.0",
+    "form-data": "^4.0.4",
     "mime-types": "^3.0.1",
     "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

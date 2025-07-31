@@ -4,6 +4,8 @@ import PlaybackModeContainer from './components/PlaybackMode/PlaybackModeContain
 import TranscriptEditContainer from './components/TranscriptEdit/TranscriptEditContainer';
 import SpeakerIdentification from './components/SpeakerIdentification/SpeakerIdentification';
 import ImportDialog from './components/ImportDialog/ImportDialog';
+import ApiSettings from './components/Settings/ApiSettings';
+import BottomAudioPlayer from './components/shared/BottomAudioPlayer';
 
 interface TranscriptionJob {
   id: string;
@@ -28,6 +30,8 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'home' | 'transcription-progress' | 'speaker-identification' | 'playback'>('home');
   const [selectedJob, setSelectedJob] = useState<TranscriptionJob | null>(null);
   const [showImportDialog, setShowImportDialog] = useState<boolean>(false);
+  const [showApiSettings, setShowApiSettings] = useState<boolean>(false);
+  const [currentApiKeys, setCurrentApiKeys] = useState<{ [service: string]: string }>({});
   const [currentTranscriptionId, setCurrentTranscriptionId] = useState<string | null>(null);
   const [progressData, setProgressData] = useState({
     fileName: '',
@@ -37,8 +41,46 @@ const App: React.FC = () => {
   
   // Mode switching state
   const [playbackMode, setPlaybackMode] = useState<'playback' | 'transcript-edit'>('playback');
+  
+  // Shared speaker state management
+  const [globalSpeakers, setGlobalSpeakers] = useState<{[key: string]: string}>({});
+  
+  // Shared audio state management
+  const [sharedAudioState, setSharedAudioState] = useState({
+    currentTime: 0,
+    isPlaying: false,
+    volume: 0.7,
+    playbackSpeed: 1.0
+  });
+  
+  // Audio source management
+  const currentAudioPath = selectedJob ? selectedJob.filePath : null;
+    
+  // Debug logging for audio player visibility
+  useEffect(() => {
+    console.log('App - Debug audio player visibility:', {
+      selectedJob: !!selectedJob,
+      currentView,
+      currentAudioPath,
+      shouldShowPlayer: selectedJob && currentView === 'playback',
+      selectedJobDetails: selectedJob ? {
+        fileName: selectedJob.fileName,
+        filePath: selectedJob.filePath,
+        id: selectedJob.id,
+        status: selectedJob.status
+      } : null
+    });
+  }, [selectedJob, currentView, currentAudioPath]);
 
   console.log('React App component rendering...', { isInitialized, initError, currentView, currentTranscriptionId });
+
+  // Sync speakers when selected job changes
+  useEffect(() => {
+    if (selectedJob?.speakerNames) {
+      console.log('Loading speakers from job:', selectedJob.speakerNames);
+      setGlobalSpeakers(selectedJob.speakerNames);
+    }
+  }, [selectedJob]);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -103,6 +145,9 @@ const App: React.FC = () => {
 
       // Load existing transcription jobs
       loadTranscriptionJobs();
+      
+      // Load API keys
+      loadApiKeys();
 
     } catch (error) {
       console.error('Failed to setup Electron API:', error);
@@ -222,8 +267,20 @@ const App: React.FC = () => {
     }
   };
 
-  // Simplified import workflow - direct transcription with base model
-  const handleImport = async (filePath: string) => {
+  const loadApiKeys = async () => {
+    try {
+      if ((window as any).electronAPI?.getApiKeys) {
+        const apiKeys = await (window as any).electronAPI.getApiKeys();
+        setCurrentApiKeys(apiKeys || {});
+      }
+    } catch (error) {
+      console.error('Failed to load API keys:', error);
+      setCurrentApiKeys({});
+    }
+  };
+
+  // Enhanced import workflow with model selection support
+  const handleImport = async (filePath: string, modelSize: string) => {
     if (!(window as any).electronAPI) {
       alert('This feature is only available in the Electron app, not in the browser.');
       return;
@@ -232,16 +289,17 @@ const App: React.FC = () => {
     try {
       console.log('🎵 Starting audio import...');
       console.log('File selected:', filePath);
+      console.log('Model selected:', modelSize);
       
       const fileName = filePath.split('/').pop() || 'Unknown file';
       
       // Close import dialog
       setShowImportDialog(false);
       
-      // Start transcription immediately (no model selection for now)
+      // Start transcription with selected model
       const transcriptionResult = await (window as any).electronAPI.startTranscription(
         filePath, 
-        'base' // Use base model by default
+        modelSize
       );
       
       if (transcriptionResult.success) {
@@ -251,7 +309,7 @@ const App: React.FC = () => {
         setProgressData({
           fileName,
           progress: 0,
-          status: 'Starting transcription...'
+          status: modelSize.startsWith('cloud-') ? 'Connecting to cloud service...' : 'Starting transcription...'
         });
         
         // Get the transcription ID from the jobs list
@@ -275,6 +333,35 @@ const App: React.FC = () => {
     }
   };
 
+  // API Settings handlers
+  const handleOpenApiSettings = async () => {
+    // Refresh API keys before opening dialog
+    await loadApiKeys();
+    setShowApiSettings(true);
+  };
+
+  const handleSaveApiKeys = async (apiKeys: { [service: string]: string }) => {
+    try {
+      if ((window as any).electronAPI?.saveApiKeys) {
+        const result = await (window as any).electronAPI.saveApiKeys(apiKeys);
+        if (result.success) {
+          console.log('✅ API keys saved successfully');
+          setCurrentApiKeys(apiKeys);
+          setShowApiSettings(false);
+        } else {
+          throw new Error(result.error || 'Failed to save API keys');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to save API keys:', error);
+      alert(`Failed to save API keys: ${(error as any).message}`);
+    }
+  };
+
+  const handleCancelApiSettings = () => {
+    setShowApiSettings(false);
+  };
+
   const handleOpenPlaybackMode = (job: TranscriptionJob) => {
     setSelectedJob(job);
     
@@ -290,15 +377,40 @@ const App: React.FC = () => {
     }
   };
 
-  // Add mode switching handlers
+  // Add mode switching handlers with audio state preservation
   const handleSwitchToTranscriptEdit = () => {
-    console.log('Switching to Transcript Edit mode');
+    console.log('Switching to Transcript Edit mode - preserving audio state:', sharedAudioState);
     setPlaybackMode('transcript-edit');
   };
 
   const handleSwitchToPlayback = () => {
-    console.log('Switching to Playback mode');
+    console.log('Switching to Playback mode - preserving audio state:', sharedAudioState);
     setPlaybackMode('playback');
+  };
+  
+  // Shared audio control handlers
+  const handleSharedAudioUpdate = (updates: Partial<typeof sharedAudioState>) => {
+    setSharedAudioState(prev => ({ ...prev, ...updates }));
+  };
+
+  // Handle speaker updates from either mode
+  const handleSpeakersUpdate = (newSpeakers: {[key: string]: string}) => {
+    console.log('Updating speakers:', newSpeakers);
+    setGlobalSpeakers(newSpeakers);
+    
+    // Update the selected job with new speaker names
+    if (selectedJob) {
+      const updatedJob = { 
+        ...selectedJob, 
+        speakerNames: newSpeakers
+      };
+      setSelectedJob(updatedJob);
+      
+      // Update transcription jobs list
+      setTranscriptionJobs(prev => 
+        prev.map(job => job.id === selectedJob.id ? updatedJob : job)
+      );
+    }
   };
 
   const handleSpeakerIdentificationComplete = (result: { speakerNames: { [key: string]: string }, speakerMerges?: { [key: string]: string } }) => {
@@ -325,7 +437,6 @@ const App: React.FC = () => {
   const handleBackToHome = () => {
     setCurrentView('home');
     setSelectedJob(null);
-    setTranscriptionError(null);
   };
 
   const handleOpenProject = async () => {
@@ -508,23 +619,45 @@ const App: React.FC = () => {
   }
 
   if (currentView === 'playback' && selectedJob) {
-    if (playbackMode === 'playback') {
-      return (
-        <PlaybackModeContainer
-          transcriptionJob={selectedJob}
-          onBack={handleBackToHome}
-          onSwitchToTranscriptEdit={handleSwitchToTranscriptEdit}
-        />
-      );
-    } else {
-      return (
-        <TranscriptEditContainer
-          transcriptionJob={selectedJob}
-          onBack={handleBackToHome}
-          onSwitchToPlayback={handleSwitchToPlayback}
-        />
-      );
-    }
+    const playbackContent = playbackMode === 'playback' ? (
+      <PlaybackModeContainer
+        transcriptionJob={selectedJob}
+        speakers={globalSpeakers}
+        onSpeakersUpdate={handleSpeakersUpdate}
+        onBack={handleBackToHome}
+        onSwitchToTranscriptEdit={handleSwitchToTranscriptEdit}
+        sharedAudioState={sharedAudioState}
+        onAudioStateUpdate={handleSharedAudioUpdate}
+      />
+    ) : (
+      <TranscriptEditContainer
+        transcriptionJob={selectedJob}
+        speakers={globalSpeakers}
+        onSpeakersUpdate={handleSpeakersUpdate}
+        onBack={handleBackToHome}
+        onSwitchToPlayback={handleSwitchToPlayback}
+        sharedAudioState={sharedAudioState}
+        onAudioStateUpdate={handleSharedAudioUpdate}
+      />
+    );
+
+    return (
+      <>
+        {playbackContent}
+        
+        {/* Bottom Fixed Audio Player - show when we have an active transcription job in playback or transcript-edit mode */}
+        
+        {/* Render audio player for both playback and transcript-edit modes */}
+        {selectedJob && currentAudioPath && (
+          <BottomAudioPlayer
+            audioSrc={currentAudioPath}
+            fileName={selectedJob.fileName || 'Test Audio'}
+            sharedAudioState={sharedAudioState}
+            onAudioStateUpdate={handleSharedAudioUpdate}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -533,6 +666,14 @@ const App: React.FC = () => {
         <ImportDialog
           onClose={() => setShowImportDialog(false)}
           onImport={handleImport}
+          onOpenApiSettings={handleOpenApiSettings}
+        />
+      )}
+      {showApiSettings && (
+        <ApiSettings
+          onSave={handleSaveApiKeys}
+          onCancel={handleCancelApiSettings}
+          currentKeys={currentApiKeys}
         />
       )}
       <div className="launch-container">
@@ -647,6 +788,32 @@ const App: React.FC = () => {
           </div>
         </div>
       </div>
+      
+      {/* Bottom Fixed Audio Player - show when we have an active transcription job in playback or transcript-edit mode */}
+      {/* Debug logging */}
+      {console.log('App - Render check:', {
+        selectedJob: !!selectedJob,
+        currentView,
+        playbackMode,
+        currentAudioPath,
+        fileName: selectedJob?.fileName,
+        shouldRender: selectedJob && (currentView === 'playback') && currentAudioPath
+      })}
+      
+      {/* Always show debug info */}
+      <div style={{position: 'fixed', bottom: 0, left: 0, background: selectedJob && (currentView === 'playback') && currentAudioPath ? 'green' : 'red', color: 'white', padding: '5px', zIndex: 9999, fontSize: '12px'}}>
+        selectedJob: {selectedJob ? 'YES' : 'NO'} | view: {currentView} | playbackMode: {playbackMode} | path: {currentAudioPath ? 'YES' : 'NONE'} | Should render: {(selectedJob && (currentView === 'playback') && currentAudioPath) ? 'YES' : 'NO'}
+      </div>
+      
+      {/* Render audio player for both playback and transcript-edit modes */}
+      {selectedJob && (currentView === 'playback') && currentAudioPath && (
+        <BottomAudioPlayer
+          audioSrc={currentAudioPath}
+          fileName={selectedJob.fileName || 'Test Audio'}
+          sharedAudioState={sharedAudioState}
+          onAudioStateUpdate={handleSharedAudioUpdate}
+        />
+      )}
     </>
   );
 };

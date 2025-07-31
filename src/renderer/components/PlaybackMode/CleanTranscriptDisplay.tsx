@@ -46,6 +46,42 @@ const CleanTranscriptDisplay: React.FC<CleanTranscriptDisplayProps> = ({
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+  const renderWordsWithHighlighting = (paragraph: Paragraph) => {
+    // Check if we have word-level data in the segments
+    const hasWordData = paragraph.segments.some(segment => segment.words && segment.words.length > 0);
+    
+    if (!hasWordData) {
+      // Fallback to paragraph text if no word data
+      return paragraph.text;
+    }
+    
+    // Render individual words with highlighting
+    return paragraph.segments.map((segment, segmentIndex) => {
+      if (!segment.words || segment.words.length === 0) {
+        return <span key={segmentIndex}>{segment.text}</span>;
+      }
+      
+      return segment.words.map((word: any, wordIndex: number) => {
+        const isCurrentWord = currentTime >= word.start && currentTime <= word.end;
+        const key = `${segmentIndex}-${wordIndex}`;
+        
+        return (
+          <span key={key}>
+            <span
+              className={`word ${isCurrentWord ? 'current-word' : ''}`}
+              onClick={() => onTimeSeek(word.start)}
+              style={{ cursor: 'pointer' }}
+              title={`${word.start.toFixed(1)}s - ${word.end.toFixed(1)}s`}
+            >
+              {word.word}
+            </span>
+            {wordIndex < segment.words.length - 1 && ' '}
+          </span>
+        );
+      });
+    });
+  };
+
   return (
     <div className="clean-transcript-display">
       <div className="transcript-content">
@@ -94,7 +130,7 @@ const CleanTranscriptDisplay: React.FC<CleanTranscriptDisplayProps> = ({
               </div>
               
               <div className="paragraph-text">
-                {paragraph.text}
+                {renderWordsWithHighlighting(paragraph)}
               </div>
             </div>
           );

@@ -3,6 +3,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 import * as dotenv from 'dotenv';
+import * as crypto from 'crypto';
+import { SimpleCloudTranscriptionService } from './services/SimpleCloudTranscriptionService';
+import { ProjectFileManager } from './services/ProjectFileManager';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -24,8 +27,20 @@ interface TranscriptionJob {
 class App {
   private mainWindow: BrowserWindow | null = null;
   private transcriptionJobs: Map<string, TranscriptionJob> = new Map();
+  private readonly encryptionKey: string;
+  private readonly apiKeysPath: string;
+  private readonly projectManager: ProjectFileManager;
 
   constructor() {
+    // Initialize encryption key (derived from machine-specific info)
+    this.encryptionKey = this.generateEncryptionKey();
+    
+    // Set API keys storage path
+    this.apiKeysPath = path.join(app.getPath('userData'), 'api-keys.enc');
+    
+    // Initialize project manager
+    this.projectManager = new ProjectFileManager();
+    
     this.initialize();
   }
 
@@ -231,6 +246,7 @@ class App {
 
     // Start transcription
     ipcMain.handle('start-transcription', async (event, filePath: string, modelSize: string = 'base') => {
+      console.log('Starting transcription:', { filePath, modelSize });
       // Validate file exists
       if (!fs.existsSync(filePath)) {
         return { success: false, error: 'Audio file does not exist' };
@@ -256,29 +272,56 @@ class App {
         };
       }
 
-      // Validate model size
-      const validModelSizes = ['tiny', 'base', 'small', 'medium', 'large'];
-      if (!validModelSizes.includes(modelSize)) {
+      // Validate model size (including cloud models)
+      const validLocalModels = ['tiny', 'base', 'small', 'medium', 'large'];
+      const validCloudModels = ['cloud-openai', 'cloud-assemblyai', 'cloud-revai'];
+      const allValidModels = [...validLocalModels, ...validCloudModels];
+      
+      if (!allValidModels.includes(modelSize)) {
         return { success: false, error: `Invalid model size: ${modelSize}` };
       }
 
       const jobId = Date.now().toString();
       const fileName = path.basename(filePath);
       
-      const job: TranscriptionJob = {
-        id: jobId,
-        filePath,
-        fileName,
-        status: 'pending',
-        progress: 0
-      };
+      // Check if it's a cloud model
+      if (modelSize.startsWith('cloud-')) {
+        console.log('Processing cloud transcription...');
+        const provider = modelSize.split('-')[1];
+        console.log('Provider:', provider);
+        
+        const job: TranscriptionJob = {
+          id: jobId,
+          filePath,
+          fileName,
+          status: 'pending',
+          progress: 0
+        };
 
-      this.transcriptionJobs.set(jobId, job);
+        this.transcriptionJobs.set(jobId, job);
 
-      // Start transcription process
-      this.runTranscription(jobId, filePath, modelSize);
+        // Start cloud transcription process
+        this.runCloudTranscription(jobId, filePath, modelSize);
 
-      return { success: true, jobId };
+        return { success: true, jobId };
+      } else {
+        console.log('Processing local transcription...');
+        
+        const job: TranscriptionJob = {
+          id: jobId,
+          filePath,
+          fileName,
+          status: 'pending',
+          progress: 0
+        };
+
+        this.transcriptionJobs.set(jobId, job);
+
+        // Start local transcription process
+        this.runTranscription(jobId, filePath, modelSize);
+
+        return { success: true, jobId };
+      }
     });
 
     // Get transcription status
@@ -306,6 +349,319 @@ class App {
         throw error;
       }
     });
+
+    // API key management
+    ipcMain.handle('save-api-keys', async (event, apiKeys: { [service: string]: string }) => {
+      try {
+        const encryptedKeys = this.encryptApiKeys(apiKeys);
+        await fs.promises.writeFile(this.apiKeysPath, encryptedKeys);
+        return { success: true };
+      } catch (error) {
+        console.error('Error saving API keys:', error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to save API keys' 
+        };
+      }
+    });
+
+    ipcMain.handle('get-api-keys', async (event) => {
+      try {
+        if (!fs.existsSync(this.apiKeysPath)) {
+          return {}; // Return empty object if no keys file exists
+        }
+        
+        const encryptedData = await fs.promises.readFile(this.apiKeysPath, 'utf8');
+        const decryptedKeys = this.decryptApiKeys(encryptedData);
+        return decryptedKeys;
+      } catch (error) {
+        console.error('Error getting API keys:', error);
+        return {}; // Return empty object on error
+      }
+    });
+
+    // Project file management
+    ipcMain.handle('save-project', async (event, projectData, savePath, options) => {
+      try {
+        console.log('Saving project:', { savePath, hasAudioFile: !!projectData.audioFile });
+        return await this.projectManager.saveProject(projectData, savePath, options);
+      } catch (error) {
+        console.error('Save project failed:', error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to save project' 
+        };
+      }
+    });
+
+    ipcMain.handle('load-project', async (event, projectPath) => {
+      try {
+        console.log('Loading project:', projectPath);
+        return await this.projectManager.loadProject(projectPath);
+      } catch (error) {
+        console.error('Load project failed:', error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to load project' 
+        };
+      }
+    });
+
+    // Show save dialog for projects
+    ipcMain.handle('show-save-project-dialog', async (event, options = {}) => {
+      try {
+        if (!this.mainWindow) {
+          return { success: false, error: 'Main window not available' };
+        }
+        
+        const result = await dialog.showSaveDialog(this.mainWindow, {
+          title: 'Save Transcription Project',
+          defaultPath: options.defaultName || 'Untitled.transcription',
+          filters: [
+            { name: 'Transcription Projects', extensions: ['transcription'] },
+            { name: 'All Files', extensions: ['*'] }
+          ],
+          properties: ['createDirectory']
+        });
+
+        return { 
+          success: true, 
+          canceled: result.canceled, 
+          filePath: result.filePath 
+        };
+      } catch (error) {
+        console.error('Save dialog error:', error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Dialog error' 
+        };
+      }
+    });
+
+    // Show open dialog for projects
+    ipcMain.handle('show-open-project-dialog', async (event) => {
+      try {
+        if (!this.mainWindow) {
+          return { success: false, error: 'Main window not available' };
+        }
+        
+        const result = await dialog.showOpenDialog(this.mainWindow, {
+          title: 'Open Transcription Project',
+          filters: [
+            { name: 'Transcription Projects', extensions: ['transcription'] },
+            { name: 'All Files', extensions: ['*'] }
+          ],
+          properties: ['openFile']
+        });
+
+        return { 
+          success: true, 
+          canceled: result.canceled, 
+          filePaths: result.filePaths 
+        };
+      } catch (error) {
+        console.error('Open dialog error:', error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Dialog error' 
+        };
+      }
+    });
+
+    // Test cloud API connections
+    ipcMain.handle('test-cloud-connection', async (event, provider) => {
+      try {
+        console.log('Testing cloud connection for provider:', provider);
+        
+        // Get API keys
+        const encryptedKeys = fs.existsSync(this.apiKeysPath) 
+          ? await fs.promises.readFile(this.apiKeysPath, 'utf8')
+          : '{}';
+        const apiKeys = encryptedKeys === '{}' ? {} : this.decryptApiKeys(encryptedKeys);
+
+        if (!apiKeys[provider]) {
+          return { success: false, error: `API key for ${provider} not configured` };
+        }
+
+        const cloudService = new SimpleCloudTranscriptionService(apiKeys);
+        
+        let result = false;
+        switch (provider) {
+          case 'openai':
+            result = await cloudService.testOpenAIConnection();
+            break;
+          case 'assemblyai':
+            result = await cloudService.testAssemblyAIConnection();
+            break;
+          default:
+            return { success: false, error: `Unknown provider: ${provider}` };
+        }
+        
+        return { success: result, connected: result };
+      } catch (error) {
+        console.error('Cloud connection test failed:', error);
+        return { 
+          success: false, 
+          connected: false,
+          error: error instanceof Error ? error.message : 'Connection test failed' 
+        };
+      }
+    });
+  }
+
+  private generateEncryptionKey(): string {
+    // Generate a machine-specific key (this is a simple approach)
+    // In production, you might want to use more sophisticated key derivation
+    const machineId = process.platform + app.getVersion() + app.getPath('exe');
+    return crypto.createHash('sha256').update(machineId).digest('hex'); // Full 64 character hex = 32 bytes
+  }
+
+  private encryptApiKeys(apiKeys: { [service: string]: string }): string {
+    try {
+      const text = JSON.stringify(apiKeys);
+      const algorithm = 'aes-256-cbc';
+      const iv = crypto.randomBytes(16);
+      const key = Buffer.from(this.encryptionKey, 'hex').subarray(0, 32); // Ensure exactly 32 bytes
+      const cipher = crypto.createCipheriv(algorithm, key, iv);
+      
+      let encrypted = cipher.update(text, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      
+      return iv.toString('hex') + ':' + encrypted;
+    } catch (error) {
+      throw new Error('Failed to encrypt API keys');
+    }
+  }
+
+  private decryptApiKeys(encryptedData: string): { [service: string]: string } {
+    try {
+      const algorithm = 'aes-256-cbc';
+      const parts = encryptedData.split(':');
+      
+      if (parts.length !== 2) {
+        throw new Error('Invalid encrypted data format');
+      }
+      
+      const iv = Buffer.from(parts[0], 'hex');
+      const encryptedText = parts[1];
+      const key = Buffer.from(this.encryptionKey, 'hex').subarray(0, 32); // Ensure exactly 32 bytes
+      const decipher = crypto.createDecipheriv(algorithm, key, iv);
+      
+      let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      
+      return JSON.parse(decrypted);
+    } catch (error) {
+      console.error('Decryption error:', error);
+      return {}; // Return empty object if decryption fails
+    }
+  }
+
+  private async runCloudTranscription(jobId: string, filePath: string, modelSize: string): Promise<void> {
+    const job = this.transcriptionJobs.get(jobId);
+    if (!job) return;
+
+    try {
+      console.log('Cloud transcription starting for job:', jobId);
+      
+      // Get API keys
+      const encryptedKeys = fs.existsSync(this.apiKeysPath) 
+        ? await fs.promises.readFile(this.apiKeysPath, 'utf8')
+        : '{}';
+      const apiKeys = encryptedKeys === '{}' ? {} : this.decryptApiKeys(encryptedKeys);
+
+      const provider = modelSize.split('-')[1]; // Extract provider from 'cloud-openai'
+      console.log('Provider:', provider);
+      console.log('API keys available:', Object.keys(apiKeys));
+      
+      if (!apiKeys[provider]) {
+        throw new Error(`API key for ${provider} not configured`);
+      }
+
+      job.progress = 20;
+      this.mainWindow?.webContents.send('transcription-progress', job);
+
+      // Create cloud transcription service instance
+      const cloudService = new SimpleCloudTranscriptionService(apiKeys);
+      
+      const progressCallback = (progress: { progress: number; status: string }) => {
+        console.log('Progress update:', progress);
+        job.progress = progress.progress;
+        this.mainWindow?.webContents.send('transcription-progress', {
+          ...job,
+          progress: progress.progress,
+          status: progress.status
+        });
+      };
+
+      let result;
+      switch (provider) {
+        case 'openai':
+          console.log('Using OpenAI transcription');
+          result = await cloudService.transcribeWithOpenAI(filePath, progressCallback);
+          break;
+        case 'assemblyai':
+          console.log('Using AssemblyAI transcription');
+          result = await cloudService.transcribeWithAssemblyAI(filePath, progressCallback);
+          break;
+        case 'revai':
+          console.log('Using Rev.ai transcription (simulated)');
+          // For now, use simulation for Rev.ai since we don't have the full implementation
+          result = await this.simulateCloudTranscription(filePath, provider, apiKeys[provider]);
+          break;
+        default:
+          throw new Error(`Unknown cloud provider: ${provider}`);
+      }
+
+      console.log('Cloud transcription completed:', {
+        hasResult: !!result,
+        segmentCount: result?.segments?.length || 0,
+        firstSegmentText: result?.segments?.[0]?.text || 'No text'
+      });
+
+      job.status = 'completed';
+      job.progress = 100;
+      job.result = result;
+      this.mainWindow?.webContents.send('transcription-complete', job);
+
+    } catch (error) {
+      console.error('Cloud transcription failed:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      
+      job.status = 'error';
+      job.error = error instanceof Error ? error.message : 'Cloud transcription failed';
+      this.mainWindow?.webContents.send('transcription-error', job);
+    }
+  }
+
+  private async simulateCloudTranscription(filePath: string, provider: string, apiKey: string): Promise<any> {
+    // This is a placeholder for cloud transcription
+    // In a real implementation, this would call the actual cloud APIs
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          status: 'success',
+          segments: [
+            {
+              id: 0,
+              start: 0.0,
+              end: 5.0,
+              text: `This is a simulated transcription from ${provider} using cloud API.`,
+              words: [
+                { start: 0.0, end: 0.5, word: "This", score: 0.99 },
+                { start: 0.5, end: 0.7, word: "is", score: 0.98 },
+                { start: 0.7, end: 0.9, word: "a", score: 0.97 },
+                { start: 0.9, end: 1.5, word: "simulated", score: 0.96 },
+                { start: 1.5, end: 2.2, word: "transcription", score: 0.95 }
+              ],
+              speaker: 'SPEAKER_00'
+            }
+          ],
+          language: 'en',
+          word_segments: []
+        });
+      }, 3000); // Simulate 3 second cloud processing time
+    });
   }
 
   private async runTranscription(jobId: string, filePath: string, modelSize: string): Promise<void> {
@@ -317,13 +673,20 @@ class App {
       job.progress = 10;
       this.mainWindow?.webContents.send('transcription-progress', job);
 
+      // Check if this is a cloud transcription
+      if (modelSize.startsWith('cloud-')) {
+        await this.runCloudTranscription(jobId, filePath, modelSize);
+        return;
+      }
+
+      // Handle local transcription
       const whisperServicePath = path.join(__dirname, '../../../whisper_service.py');
       
       console.log('Main process __dirname:', __dirname);
       console.log('Whisper service path:', whisperServicePath);
       console.log('File exists:', fs.existsSync(whisperServicePath));
       
-      const pythonProcess = spawn('python3', [whisperServicePath, 'transcribe', filePath, modelSize], {
+      const pythonProcess = spawn('python3', [whisperServicePath, 'transcribe', filePath, modelSize, 'en'], {
         env: process.env,
       });
       

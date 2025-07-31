@@ -1,15 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TranscriptPanel from './TranscriptPanel';
-import Sidebar from './Sidebar';
+// import Sidebar from './Sidebar'; // Replaced with SpeakersPanel for consistency
 import SpeakersPanel from '../shared/SpeakersPanel';
-import AudioControlsPanel from '../shared/AudioControlsPanel';
 import { useClips } from './useClips';
 import './TranscriptEdit.css';
 
+interface SharedAudioState {
+  currentTime: number;
+  isPlaying: boolean;
+  volume: number;
+  playbackSpeed: number;
+}
+
 interface TranscriptEditProps {
   transcriptionJob: any;
+  speakers?: { [key: string]: string };
+  onSpeakersUpdate?: (speakers: { [key: string]: string }) => void;
   onBack: () => void;
   onSwitchToPlayback: () => void;
+  sharedAudioState: SharedAudioState;
+  onAudioStateUpdate: (updates: Partial<SharedAudioState>) => void;
 }
 
 interface EditAction {
@@ -18,22 +28,31 @@ interface EditAction {
   timestamp: number;
 }
 
-const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJob, onBack, onSwitchToPlayback }) => {
-  const [currentTime, setCurrentTime] = useState(0);
+const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ 
+  transcriptionJob, 
+  speakers = {},
+  onSpeakersUpdate,
+  onBack, 
+  onSwitchToPlayback,
+  sharedAudioState,
+  onAudioStateUpdate
+}) => {
+  // Use shared audio state instead of local state
+  const { currentTime, isPlaying, volume, playbackSpeed } = sharedAudioState;
+  
+  // Local UI state
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [selectedSegments, setSelectedSegments] = useState<number[]>([]);
   const [activeTab, setActiveTab] = useState<'speakers' | 'segments'>('speakers');
-  const [speakerNames, setSpeakerNames] = useState<{ [key: string]: string }>(transcriptionJob.speakerNames || {});
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
   const [tempSpeakerName, setTempSpeakerName] = useState('');
-  const [volume, setVolume] = useState(0.7);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  const [isCreatingClip, setIsCreatingClip] = useState(false); // Prevent duplicate clip creation
   
   // Undo/Redo system
   const [editHistory, setEditHistory] = useState<EditAction[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1);
   const [segments, setSegments] = useState(transcriptionJob.result?.segments || []);
+  
   
   // Clips management
   const {
@@ -46,12 +65,12 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
     selectClip,
     createNewClip,
     addNewSpeakerLabel
-  } = useClips({ segments, speakerNames: speakerNames, setSpeakerNames });
+  } = useClips({ segments, speakerNames: speakers, setSpeakerNames: onSpeakersUpdate });
   
   // Extract speakers from segments
-  const speakers = React.useMemo(() => {
+  const speakerIds = React.useMemo(() => {
     console.log('Processing segments for speakers:', segments.length);
-    console.log('Speaker names from state:', speakerNames);
+    console.log('Speaker names from shared state:', speakers);
     
     const speakerMap = new Map();
     segments.forEach((segment: any, index: number) => {
@@ -65,7 +84,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
       const speakerId = segment.speaker || 'SPEAKER_00'; // Fallback for missing speaker
       if (!speakerMap.has(speakerId)) {
         // Use custom name if available, otherwise fallback to generic name
-        const customName = speakerNames[speakerId];
+        const customName = speakers[speakerId];
         const fallbackName = speakerId === 'SPEAKER_00' ? 'Speaker 1' : `Speaker ${speakerId.replace('SPEAKER_', '')}`;
         
         speakerMap.set(speakerId, {
@@ -90,11 +109,11 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
     console.log('Extracted speakers:', speakerList);
     
     return speakerList;
-  }, [segments, speakerNames]);
+  }, [segments, speakers]);
 
   const handleWordClick = (timestamp: number) => {
-    setCurrentTime(timestamp);
-    // TODO: Seek audio to timestamp
+    console.log('TranscriptEdit - Seeking to time:', timestamp);
+    onAudioStateUpdate({ currentTime: timestamp });
   };
 
   // Speaker editing functions
@@ -103,33 +122,19 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
     setTempSpeakerName(currentName);
   };
 
+  const handleSpeakerNameEdit = (speakerId: string, newName: string) => {
+    console.log('Updating speaker name:', speakerId, '->', newName);
+    const updatedSpeakers = {
+      ...speakers,
+      [speakerId]: newName
+    };
+    onSpeakersUpdate?.(updatedSpeakers);
+  };
+
   const handleSpeakerSave = (speakerId: string) => {
-    const trimmedName = tempSpeakerName.trim();
-    
-    if (trimmedName.length === 0) {
-      // If the user tries to save an empty name, do nothing and exit edit mode.
-      // The name remains unchanged.
-      setEditingSpeakerId(null);
-      setTempSpeakerName('');
-      return;
+    if (tempSpeakerName.trim()) {
+      handleSpeakerNameEdit(speakerId, tempSpeakerName.trim());
     }
-    
-    if (trimmedName.length > 50) {
-      // Validation: too long
-      return;
-    }
-    
-    // Check for duplicates
-    const existingNames = Object.entries(speakerNames)
-      .filter(([id, name]) => id !== speakerId && name && name.toLowerCase() === trimmedName.toLowerCase());
-    
-    if (existingNames.length > 0) {
-      // Validation: duplicate name
-      return;
-    }
-    
-    setSpeakerNames(prev => ({ ...prev, [speakerId]: trimmedName }));
-    
     setEditingSpeakerId(null);
     setTempSpeakerName('');
   };
@@ -174,10 +179,10 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
           break;
         case 'speaker-change':
           const { speakerId, originalName } = action.data;
-          setSpeakerNames(prev => ({
-            ...prev,
+          onSpeakersUpdate?.({
+            ...speakers,
             [speakerId]: originalName
-          }));
+          });
           break;
         case 'word-insert':
           const { insertSegmentIndex, insertWordIndex } = action.data;
@@ -214,10 +219,10 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
           break;
         case 'speaker-change':
           const { speakerId, newName } = action.data;
-          setSpeakerNames(prev => ({
-            ...prev,
+          onSpeakersUpdate?.({
+            ...speakers,
             [speakerId]: newName
-          }));
+          });
           break;
         case 'word-insert':
           const { insertSegmentIndex, insertWordIndex, insertedWord } = action.data;
@@ -282,31 +287,28 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
 
   // Audio control handlers
   const handleVolumeChange = (newVolume: number) => {
-    setVolume(newVolume);
-    // TODO: Connect to audio player
-    console.log('Volume changed to:', newVolume);
+    console.log('TranscriptEdit - Volume changed to:', newVolume);
+    onAudioStateUpdate({ volume: newVolume });
   };
 
   const handleSpeedChange = (newSpeed: number) => {
-    setPlaybackSpeed(newSpeed);
-    // TODO: Connect to audio player
-    console.log('Speed changed to:', newSpeed);
+    console.log('TranscriptEdit - Speed changed to:', newSpeed);
+    onAudioStateUpdate({ playbackSpeed: newSpeed });
   };
 
   const handleSkipBack = () => {
-    const newTime = Math.max(0, currentTime - 10);
-    handleWordClick(newTime);
+    const newTime = Math.max(0, currentTime - 15);
+    onAudioStateUpdate({ currentTime: newTime });
   };
 
   const handleSkipForward = () => {
     const duration = segments.length > 0 ? segments[segments.length - 1].end : 0;
-    const newTime = Math.min(duration, currentTime + 10);
-    handleWordClick(newTime);
+    const newTime = Math.min(duration, currentTime + 15);
+    onAudioStateUpdate({ currentTime: newTime });
   };
 
-  const handleTimeUpdate = (time: number) => {
-    setCurrentTime(time);
-    
+  // Update current word based on shared audio currentTime
+  useEffect(() => {
     // Find current word based on timestamp
     let currentWord = null;
     let globalWordIndex = -1;
@@ -317,7 +319,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
       if (segment.words && segment.words.length > 0) {
         for (let wordIdx = 0; wordIdx < segment.words.length; wordIdx++) {
           const word = segment.words[wordIdx];
-          if (time >= word.start && time <= word.end) {
+          if (currentTime >= word.start && currentTime <= word.end) {
             currentWord = word;
             globalWordIndex = runningIndex;
             break;
@@ -326,7 +328,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
         }
       } else {
         // If no word-level data, check if we're in this segment
-        if (time >= segment.start && time <= segment.end) {
+        if (currentTime >= segment.start && currentTime <= segment.end) {
           globalWordIndex = runningIndex;
         }
         runningIndex++;
@@ -336,6 +338,12 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
     }
     
     setCurrentWordIndex(globalWordIndex);
+  }, [currentTime, segments]);
+
+  const handleTimeUpdate = (time: number) => {
+    console.log('TranscriptEdit - Time update from audio:', time);
+    onAudioStateUpdate({ currentTime: time });
+    // Note: currentWordIndex will be updated by the useEffect above
   };
 
   // Global keyboard shortcuts
@@ -366,7 +374,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
       // Handle spacebar only if not typing in an input or textarea
       if (event.code === 'Space' && !isInInput) {
         event.preventDefault();
-        setIsPlaying(prev => !prev);
+        onAudioStateUpdate({ isPlaying: !isPlaying });
       }
     };
 
@@ -409,16 +417,29 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
             onWordClick={handleWordClick}
             selectedSegments={selectedSegments}
             onSegmentSelect={setSelectedSegments}
-            speakerNames={speakerNames}
+            speakerNames={speakers}
             selectedClipId={selectedClipId}
             onSelectClip={selectClip}
             onCreateNewClip={(wordIndex) => {
-              const success = createNewClip(wordIndex);
-              if (success) {
-                // Force re-render to show updated segments
-                setCurrentTime(currentTime); // Trigger re-render
+              // Prevent duplicate clip creation
+              if (isCreatingClip) {
+                console.log('Clip creation already in progress, ignoring duplicate request');
+                return false;
               }
-              return success;
+              
+              setIsCreatingClip(true);
+              
+              try {
+                const success = createNewClip(wordIndex);
+                if (success) {
+                  // Force re-render to show updated segments
+                  setCurrentTime(currentTime); // Trigger re-render
+                }
+                return success;
+              } finally {
+                // Reset creation flag after a short delay to prevent rapid duplicates
+                setTimeout(() => setIsCreatingClip(false), 500);
+              }
             }}
             onAddNewSpeaker={(wordIndex, speakerName) => {
               const success = addNewSpeakerLabel(wordIndex, speakerName);
@@ -440,28 +461,18 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ transcriptionJ
         </div>
         
         <div className="right-sidebar">
-          <Sidebar
-            speakers={speakers}
-            segments={segments}
-            clips={clips}
-            selectedClipId={selectedClipId}
-            onClipSelect={selectClip}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            currentTime={currentTime}
-            onTimeSeek={handleWordClick}
+          <SpeakersPanel
+            mode="transcript-edit"
+            speakers={speakerIds}
+            speakerNames={speakers}
             editingSpeakerId={editingSpeakerId}
             tempSpeakerName={tempSpeakerName}
             onSpeakerEdit={handleSpeakerEdit}
             onSpeakerSave={handleSpeakerSave}
             onSpeakerCancel={handleSpeakerCancel}
             onTempNameChange={setTempSpeakerName}
-            audioPath={transcriptionJob.filePath}
-            isPlaying={isPlaying}
-            onTimeUpdate={handleTimeUpdate}
-            onPlayPause={setIsPlaying}
-            duration={segments.length > 0 ? segments[segments.length - 1].end : 0}
           />
+          
         </div>
       </div>
     </div>
