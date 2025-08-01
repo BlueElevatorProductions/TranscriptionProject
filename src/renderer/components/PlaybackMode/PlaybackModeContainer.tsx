@@ -12,6 +12,7 @@ interface SharedAudioState {
 
 interface PlaybackModeProps {
   transcriptionJob: any;
+  editedSegments: any[];
   speakers?: { [key: string]: string };
   onSpeakersUpdate?: (speakers: { [key: string]: string }) => void;
   onBack: () => void;
@@ -31,6 +32,7 @@ interface Paragraph {
 
 const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({ 
   transcriptionJob, 
+  editedSegments,
   speakers = {},
   onSpeakersUpdate,
   onBack, 
@@ -50,7 +52,7 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const segments = transcriptionJob.result?.segments || [];
+  const segments = editedSegments;
   
   // Debug log the transcription job to see audio path
   useEffect(() => {

@@ -53,6 +53,9 @@ const App: React.FC = () => {
     playbackSpeed: 1.0
   });
   
+  // Shared edited segments state management
+  const [editedSegments, setEditedSegments] = useState<any[]>([]);
+  
   // Audio source management
   const currentAudioPath = selectedJob ? selectedJob.filePath : null;
     
@@ -203,8 +206,12 @@ const App: React.FC = () => {
           // Set selected job
           setSelectedJob(currentJob);
           
-          // Determine next screen
+          // Initialize edited segments with the transcription result
           const segments = currentJob.result?.segments || [];
+          console.log('Initializing editedSegments with', segments.length, 'segments');
+          setEditedSegments([...segments]); // Create a copy to avoid mutating original data
+          
+          // Determine next screen
           const speakers = new Set(segments.map((s: any) => s.speaker).filter(Boolean));
           
           if (speakers.size > 1 && !currentJob.speakerNames) {
@@ -365,8 +372,11 @@ const App: React.FC = () => {
   const handleOpenPlaybackMode = (job: TranscriptionJob) => {
     setSelectedJob(job);
     
-    // Check if we need speaker identification
+    // Initialize edited segments with the original segments
     const segments = job.result?.segments || [];
+    setEditedSegments([...segments]); // Create a copy to avoid mutating original data
+    
+    // Check if we need speaker identification
     const speakers = new Set(segments.map((s: any) => s.speaker).filter(Boolean));
     
     if (speakers.size > 1 && !job.speakerNames) {
@@ -387,6 +397,12 @@ const App: React.FC = () => {
     console.log('Switching to Playback mode - preserving audio state:', sharedAudioState);
     setPlaybackMode('playback');
   };
+
+  // Handle edited segments updates
+  const handleEditedSegmentsUpdate = useCallback((updatedSegments: any[]) => {
+    console.log('App - Updating edited segments:', updatedSegments.length, 'segments');
+    setEditedSegments([...updatedSegments]); // Create a copy to trigger re-render
+  }, []);
   
   // Shared audio control handlers
   const handleSharedAudioUpdate = (updates: Partial<typeof sharedAudioState>) => {
@@ -422,6 +438,13 @@ const App: React.FC = () => {
       };
       setSelectedJob(updatedJob);
       
+      // Initialize edited segments if not already done
+      const segments = updatedJob.result?.segments || [];
+      if (editedSegments.length === 0 && segments.length > 0) {
+        console.log('Initializing editedSegments from speaker identification with', segments.length, 'segments');
+        setEditedSegments([...segments]);
+      }
+      
       setTranscriptionJobs(prev => 
         prev.map(job => job.id === selectedJob.id ? updatedJob : job)
       );
@@ -431,6 +454,13 @@ const App: React.FC = () => {
   };
 
   const handleSpeakerIdentificationSkip = () => {
+    // Initialize edited segments if not already done
+    if (selectedJob && editedSegments.length === 0) {
+      const segments = selectedJob.result?.segments || [];
+      console.log('Initializing editedSegments from speaker identification skip with', segments.length, 'segments');
+      setEditedSegments([...segments]);
+    }
+    
     setCurrentView('playback');
   };
 
@@ -622,6 +652,7 @@ const App: React.FC = () => {
     const playbackContent = playbackMode === 'playback' ? (
       <PlaybackModeContainer
         transcriptionJob={selectedJob}
+        editedSegments={editedSegments}
         speakers={globalSpeakers}
         onSpeakersUpdate={handleSpeakersUpdate}
         onBack={handleBackToHome}
@@ -632,6 +663,8 @@ const App: React.FC = () => {
     ) : (
       <TranscriptEditContainer
         transcriptionJob={selectedJob}
+        editedSegments={editedSegments}
+        onEditedSegmentsUpdate={handleEditedSegmentsUpdate}
         speakers={globalSpeakers}
         onSpeakersUpdate={handleSpeakersUpdate}
         onBack={handleBackToHome}

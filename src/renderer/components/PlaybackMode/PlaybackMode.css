@@ -454,6 +454,14 @@
   box-shadow: 0 1px 3px rgba(74, 158, 255, 0.3);
 }
 
+/* Paragraph break styles for Playback Mode */
+.paragraph-break {
+  height: 1em;
+  border-top: 1px solid var(--border-color);
+  margin: 0.5em 0;
+  opacity: 0.3;
+}
+
 /* Dark Mode Support */
 @media (prefers-color-scheme: dark) {
   :root {

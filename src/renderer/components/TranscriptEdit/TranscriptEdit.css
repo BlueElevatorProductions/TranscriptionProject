@@ -968,6 +968,71 @@
   box-shadow: 0 0 0 2px rgba(51, 51, 51, 0.1);
 }
 
+/* Text Cursor Styles */
+.transcript-panel {
+  outline: none; /* Remove focus outline */
+  cursor: text;
+}
+
+.text-cursor {
+  color: var(--accent-color);
+  font-weight: bold;
+  margin: 0 1px;
+  animation: cursor-blink 1s infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.text-cursor.visible {
+  opacity: 1;
+}
+
+.text-cursor.hidden {
+  opacity: 0;
+}
+
+.word.cursor-active {
+  position: relative;
+}
+
+.word {
+  cursor: text;
+  padding: 1px 2px;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.word:hover {
+  background: rgba(74, 158, 255, 0.1);
+}
+
+.paragraph-break {
+  height: 1em;
+  border-top: 1px solid var(--border-color);
+  margin: 0.5em 0;
+  opacity: 0.3;
+}
+
+/* Disable text selection while allowing cursor positioning */
+.transcript-panel {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Show text selection cursor when hovering over words */
+.word {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
 /* High contrast mode support */
 @media (prefers-contrast: high) {
   :root {

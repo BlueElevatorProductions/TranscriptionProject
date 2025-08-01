@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ContextMenu from './ContextMenu';
 
+interface CursorPosition {
+  segmentIndex: number;
+  wordIndex: number;
+  position: 'before' | 'after';
+}
+
 interface TranscriptPanelProps {
   segments: any[];
   currentTime: number;
@@ -21,6 +27,12 @@ interface TranscriptPanelProps {
   onSpeakerNameChange?: (name: string) => void;
   onWordEdit?: (segmentIndex: number, wordIndex: number, originalWord: string, newWord: string) => void;
   onWordInsert?: (segmentIndex: number, wordIndex: number, newWordText: string) => void;
+  onParagraphBreak?: (breakData: {
+    segmentIndex: number;
+    wordIndex: number;
+    position: 'before' | 'after';
+    timestamp: number;
+  }) => void;
 }
 
 const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
@@ -43,6 +55,7 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   onSpeakerNameChange,
   onWordEdit,
   onWordInsert,
+  onParagraphBreak,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeLineRef = useRef<HTMLDivElement>(null);
@@ -61,6 +74,10 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   const [insertingWord, setInsertingWord] = useState<{segmentIndex: number, afterWordIndex: number} | null>(null);
   const [newWordText, setNewWordText] = useState('');
 
+  // Text cursor state
+  const [cursorPosition, setCursorPosition] = useState<CursorPosition | null>(null);
+  const [showCursor, setShowCursor] = useState(false);
+
   // Auto-scroll to active line
   useEffect(() => {
     if (activeLineRef.current && containerRef.current) {
@@ -75,10 +92,175 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
     }
   }, [currentTime]);
 
+  // Cursor blinking effect
+  useEffect(() => {
+    if (cursorPosition) {
+      setShowCursor(true);
+      const interval = setInterval(() => {
+        setShowCursor(prev => !prev);
+      }, 500);
+      return () => clearInterval(interval);
+    } else {
+      setShowCursor(false);
+    }
+  }, [cursorPosition]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!cursorPosition) return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          moveCursorLeft();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          moveCursorRight();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          moveCursorUp();
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          moveCursorDown();
+          break;
+        case 'Enter':
+          e.preventDefault();
+          handleParagraphBreak();
+          break;
+        case 'Backspace':
+        case 'Delete':
+          e.preventDefault();
+          console.log('Use double-click to edit words');
+          break;
+        default:
+          // Disable typing - only allow word editing via double-click
+          if (e.key.length === 1) {
+            e.preventDefault();
+            console.log('Use double-click to edit words');
+          }
+          break;
+      }
+    };
+
+    if (cursorPosition) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [cursorPosition, segments]);
+
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Cursor movement functions
+  const moveCursorLeft = () => {
+    if (!cursorPosition) return;
+    
+    const { segmentIndex, wordIndex, position } = cursorPosition;
+    
+    if (position === 'after') {
+      // Move to before current word
+      setCursorPosition({ segmentIndex, wordIndex, position: 'before' });
+    } else if (wordIndex > 0) {
+      // Move to after previous word
+      setCursorPosition({ segmentIndex, wordIndex: wordIndex - 1, position: 'after' });
+    } else if (segmentIndex > 0) {
+      // Move to end of previous segment
+      const prevSegment = segments[segmentIndex - 1];
+      const lastWordIndex = Math.max(0, (prevSegment.words?.length || 1) - 1);
+      setCursorPosition({ 
+        segmentIndex: segmentIndex - 1, 
+        wordIndex: lastWordIndex, 
+        position: 'after' 
+      });
+    }
+  };
+
+  const moveCursorRight = () => {
+    if (!cursorPosition) return;
+    
+    const { segmentIndex, wordIndex, position } = cursorPosition;
+    const currentSegment = segments[segmentIndex];
+    
+    if (position === 'before') {
+      // Move to after current word
+      setCursorPosition({ segmentIndex, wordIndex, position: 'after' });
+    } else if (wordIndex < (currentSegment.words?.length || 0) - 1) {
+      // Move to before next word
+      setCursorPosition({ segmentIndex, wordIndex: wordIndex + 1, position: 'before' });
+    } else if (segmentIndex < segments.length - 1) {
+      // Move to beginning of next segment
+      setCursorPosition({ segmentIndex: segmentIndex + 1, wordIndex: 0, position: 'before' });
+    }
+  };
+
+  const moveCursorUp = () => {
+    // Move cursor to approximately same position in previous segment
+    if (!cursorPosition || cursorPosition.segmentIndex === 0) return;
+    
+    const prevSegmentIndex = cursorPosition.segmentIndex - 1;
+    const prevSegment = segments[prevSegmentIndex];
+    const maxWordIndex = Math.max(0, (prevSegment.words?.length || 1) - 1);
+    
+    setCursorPosition({
+      segmentIndex: prevSegmentIndex,
+      wordIndex: Math.min(cursorPosition.wordIndex, maxWordIndex),
+      position: cursorPosition.position
+    });
+  };
+
+  const moveCursorDown = () => {
+    // Move cursor to approximately same position in next segment
+    if (!cursorPosition || cursorPosition.segmentIndex === segments.length - 1) return;
+    
+    const nextSegmentIndex = cursorPosition.segmentIndex + 1;
+    const nextSegment = segments[nextSegmentIndex];
+    const maxWordIndex = Math.max(0, (nextSegment.words?.length || 1) - 1);
+    
+    setCursorPosition({
+      segmentIndex: nextSegmentIndex,
+      wordIndex: Math.min(cursorPosition.wordIndex, maxWordIndex),
+      position: cursorPosition.position
+    });
+  };
+
+  const handleParagraphBreak = () => {
+    if (!cursorPosition || !onParagraphBreak) return;
+    
+    const { segmentIndex, wordIndex, position } = cursorPosition;
+    
+    // Create paragraph break at cursor position
+    onParagraphBreak({
+      segmentIndex,
+      wordIndex,
+      position,
+      timestamp: Date.now()
+    });
+  };
+
+  const handleWordClick = (segmentIndex: number, wordIndex: number, word: any) => {
+    // Set cursor position when clicking on a word
+    setCursorPosition({ segmentIndex, wordIndex, position: 'before' });
+    
+    // Also handle audio seeking
+    onWordClick(word.start);
+  };
+
+  const handleTextClick = (e: React.MouseEvent, segmentIndex: number, wordIndex: number) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const elementWidth = rect.width;
+    
+    // Determine if click was closer to start or end of word
+    const position = clickX < elementWidth / 2 ? 'before' : 'after';
+    
+    setCursorPosition({ segmentIndex, wordIndex, position });
   };
 
   const isLineActive = (segment: any): boolean => {
@@ -273,7 +455,7 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   }, 0);
 
   return (
-    <div className="transcript-panel">
+    <div className="transcript-panel" tabIndex={0}>
       <div className="transcript-header">
         <div className="transcript-stats">
           <span>
@@ -308,6 +490,11 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
               className={`transcript-line ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
               onClick={(e) => handleSegmentSelect(segmentIndex, e)}
             >
+              {/* Paragraph break indicator */}
+              {segment.paragraphBreak && (
+                <div className="paragraph-break"></div>
+              )}
+              
               <div className="speaker-header">
                 <div className="transcript-timestamp">
                   {formatTime(segment.start)}
@@ -359,6 +546,9 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                       const isEditing = editingWord?.segmentIndex === segmentIndex && 
                                        editingWord?.wordIndex === wordIndex;
                       
+                      const isCurrentWord = cursorPosition?.segmentIndex === segmentIndex && 
+                                           cursorPosition?.wordIndex === wordIndex;
+                      
                       return (
                         <React.Fragment key={wordIndex}>
                           {/* Insert new word field if needed */}
@@ -401,10 +591,11 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                             />
                           ) : (
                             <span
-                              className={`word ${isCurrent ? 'current' : ''}`}
+                              className={`word ${isCurrent ? 'current' : ''} ${isCurrentWord ? 'cursor-active' : ''}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onWordClick(word.start);
+                                handleTextClick(e, segmentIndex, wordIndex);
+                                handleWordClick(segmentIndex, wordIndex, word);
                               }}
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
@@ -413,7 +604,17 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                               onContextMenu={(e) => handleWordRightClick(e, word, globalWordIndex, segmentIndex)}
                               title={`${word.start.toFixed(1)}s - ${word.end.toFixed(1)}s | Double-click to edit, right-click for options`}
                             >
+                              {/* Cursor before word */}
+                              {isCurrentWord && cursorPosition?.position === 'before' && (
+                                <span className={`text-cursor ${showCursor ? 'visible' : 'hidden'}`}>|</span>
+                              )}
+                              
                               {word.word}
+                              
+                              {/* Cursor after word */}
+                              {isCurrentWord && cursorPosition?.position === 'after' && (
+                                <span className={`text-cursor ${showCursor ? 'visible' : 'hidden'}`}>|</span>
+                              )}
                             </span>
                           )}
                           

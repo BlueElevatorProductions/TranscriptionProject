@@ -96,6 +96,11 @@ const CleanTranscriptDisplay: React.FC<CleanTranscriptDisplayProps> = ({
               className={`transcript-paragraph ${isActive ? 'active' : ''}`}
               onClick={() => onTimeSeek(paragraph.startTime)}
             >
+              {/* Paragraph break indicator - check if any segment has paragraphBreak */}
+              {paragraph.segments?.some((segment: any) => segment.paragraphBreak) && (
+                <div className="paragraph-break"></div>
+              )}
+              
               <div className="paragraph-header">
                 {editingSpeaker === paragraph.speakerId ? (
                   <input

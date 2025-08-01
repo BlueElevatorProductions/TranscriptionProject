@@ -14,6 +14,8 @@ interface SharedAudioState {
 
 interface TranscriptEditProps {
   transcriptionJob: any;
+  editedSegments: any[];
+  onEditedSegmentsUpdate: (segments: any[]) => void;
   speakers?: { [key: string]: string };
   onSpeakersUpdate?: (speakers: { [key: string]: string }) => void;
   onBack: () => void;
@@ -23,13 +25,15 @@ interface TranscriptEditProps {
 }
 
 interface EditAction {
-  type: 'word-edit' | 'speaker-change' | 'clip-create' | 'word-insert';
+  type: 'word-edit' | 'speaker-change' | 'clip-create' | 'word-insert' | 'paragraph-break';
   data: any;
   timestamp: number;
 }
 
 const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({ 
   transcriptionJob, 
+  editedSegments,
+  onEditedSegmentsUpdate,
   speakers = {},
   onSpeakersUpdate,
   onBack, 
@@ -51,8 +55,19 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
   // Undo/Redo system
   const [editHistory, setEditHistory] = useState<EditAction[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1);
-  const [segments, setSegments] = useState(transcriptionJob.result?.segments || []);
+  const [segments, setSegments] = useState(editedSegments);
   
+  // Sync local segments with editedSegments prop
+  useEffect(() => {
+    console.log('TranscriptEdit - Syncing with editedSegments:', editedSegments.length, 'segments');
+    setSegments(editedSegments);
+  }, [editedSegments]);
+  
+  // Update parent when segments change
+  useEffect(() => {
+    console.log('TranscriptEdit - Local segments changed, updating parent:', segments.length, 'segments');
+    onEditedSegmentsUpdate(segments);
+  }, [segments, onEditedSegmentsUpdate]);
   
   // Clips management
   const {
@@ -194,6 +209,11 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             return newSegments;
           });
           break;
+        case 'paragraph-break':
+          // For undo, we need to reverse the paragraph break operation
+          // This is complex, so for now we'll just log it
+          console.log('Undoing paragraph break - feature coming soon');
+          break;
       }
       
       setCurrentHistoryIndex(prev => prev - 1);
@@ -233,6 +253,11 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             }
             return newSegments;
           });
+          break;
+        case 'paragraph-break':
+          // For redo, we replay the paragraph break operation
+          const breakData = action.data;
+          handleParagraphBreak(breakData);
           break;
       }
       
@@ -284,6 +309,63 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
       return newSegments;
     });
   }, [addToHistory, segments]);
+
+  // Handle paragraph break with history
+  const handleParagraphBreak = useCallback((breakData: {
+    segmentIndex: number;
+    wordIndex: number;
+    position: 'before' | 'after';
+    timestamp: number;
+  }) => {
+    const { segmentIndex, wordIndex, position } = breakData;
+    
+    // Add to undo history
+    const action: EditAction = {
+      type: 'paragraph-break',
+      data: breakData,
+      timestamp: Date.now()
+    };
+    
+    addToHistory(action);
+
+    // Add paragraph break to segment
+    setSegments(prev => {
+      const newSegments = [...prev];
+      
+      if (position === 'before' && wordIndex === 0) {
+        // Add paragraph break before this segment
+        newSegments[segmentIndex] = {
+          ...newSegments[segmentIndex],
+          paragraphBreak: true
+        };
+      } else {
+        // Split segment at word boundary and add paragraph break
+        const currentSegment = newSegments[segmentIndex];
+        const splitIndex = position === 'before' ? wordIndex : wordIndex + 1;
+        
+        const firstPart = {
+          ...currentSegment,
+          words: currentSegment.words?.slice(0, splitIndex) || [],
+          text: currentSegment.words?.slice(0, splitIndex).map((w: any) => w.word).join(' ') || '',
+          end: currentSegment.words?.[splitIndex - 1]?.end || currentSegment.end
+        };
+        
+        const secondPart = {
+          ...currentSegment,
+          id: currentSegment.id + '_split_' + Date.now(),
+          words: currentSegment.words?.slice(splitIndex) || [],
+          text: currentSegment.words?.slice(splitIndex).map((w: any) => w.word).join(' ') || '',
+          start: currentSegment.words?.[splitIndex]?.start || currentSegment.start,
+          paragraphBreak: true
+        };
+        
+        // Replace current segment with split segments
+        newSegments.splice(segmentIndex, 1, firstPart, secondPart);
+      }
+      
+      return newSegments;
+    });
+  }, [addToHistory]);
 
   // Audio control handlers
   const handleVolumeChange = (newVolume: number) => {
@@ -457,6 +539,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             onSpeakerNameChange={setTempSpeakerName}
             onWordEdit={handleWordEdit}
             onWordInsert={handleWordInsert}
+            onParagraphBreak={handleParagraphBreak}
           />
         </div>
         
