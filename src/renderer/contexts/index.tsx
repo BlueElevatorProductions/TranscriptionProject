@@ -4,9 +4,9 @@
  */
 
 import React, { ReactNode } from 'react';
-import { AudioProvider } from './AudioContext';
-import { ProjectProvider } from './ProjectContext';
-import { TranscriptionProvider } from './TranscriptionContext';
+import { AudioProvider, useAudio } from './AudioContext';
+import { ProjectProvider, useProject } from './ProjectContext';
+import { TranscriptionProvider, useTranscription } from './TranscriptionContext';
 
 // Re-export all hooks for easy importing
 export { useAudio, useLegacyAudioState, useAudioDebug } from './AudioContext';

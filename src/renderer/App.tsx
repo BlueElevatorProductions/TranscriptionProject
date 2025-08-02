@@ -94,7 +94,8 @@ const AppCore: React.FC = () => {
       
       if (error?.id || error?.transcriptionId) {
         const errorId = error.id || error.transcriptionId;
-        transcriptionActions.errorJob(errorId, error.message || 'Unknown error');
+        // Update job with error status
+        transcriptionActions.updateJobProgress(errorId, 0, 'error');
       }
     };
 
