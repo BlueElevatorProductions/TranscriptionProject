@@ -10,19 +10,22 @@
   "scripts": {
     "dev": "echo '🚀 Use: npm run start-dev for concurrent development' && echo '⚡ Or run dev:vite and dev:electron in separate terminals'",
     "start-dev": "echo '🚀 Starting development servers...' && npm run dev:vite & sleep 3 && npm run dev:electron",
-    "dev:vite": "vite",
+    "dev:vite": "vite --port 5174",
     "dev:electron": "npm run build:main && electron .",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc --project tsconfig.main.json",
     "start": "electron build/main/main.js",
     "clean": "rm -rf build dist node_modules",
-    "postinstall": "echo 'Setup complete! Run npm run start-dev for development'"
+    "clean:dev": "pkill -f vite || true",
+    "postinstall": "echo 'Setup complete! Run npm run start-dev for development'",
+    "dev:clean": "npm run clean:dev && npm run dev:vite"
   },
   "dependencies": {
     "dotenv": "^17.2.1",
     "electron-store": "^10.1.0",
     "form-data": "^4.0.4",
+    "jszip": "^3.10.1",
     "mime-types": "^3.0.1",
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
@@ -30,6 +33,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@types/jszip": "^3.4.0",
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",

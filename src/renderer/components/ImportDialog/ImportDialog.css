@@ -1,4 +1,170 @@
 /* Import Dialog Styles */
+
+/* PROJECT IMPORT DIALOG */
+.project-import .dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #4A9EFF 0%, #0066CC 100%);
+  color: white;
+  padding: 16px 20px;
+  margin: -24px -24px 24px -24px;
+  border-radius: 12px 12px 0 0;
+}
+
+.project-import .dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.project-import .close-button {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.project-import .close-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.project-import .file-drop-zone {
+  border: 2px dashed #555;
+  border-radius: 8px;
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 16px 0;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.project-import .file-drop-zone:hover,
+.project-import .file-drop-zone.drag-over {
+  border-color: #4A9EFF;
+  background: rgba(74, 158, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.project-import .drop-zone-content .file-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.project-import .drop-zone-content h3 {
+  margin: 0 0 8px 0;
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.project-import .drop-zone-content p {
+  margin: 0 0 8px 0;
+  color: #cccccc;
+  font-size: 14px;
+}
+
+.project-import .drag-hint {
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+}
+
+.project-import .browse-button {
+  margin-top: 16px;
+  padding: 8px 20px;
+  background: #4A9EFF;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.project-import .browse-button:hover:not(:disabled) {
+  background: #3A8EEF;
+  transform: translateY(-1px);
+}
+
+.project-import .browse-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.project-import .import-info {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 16px;
+  border-radius: 6px;
+  margin-top: 20px;
+  border: 1px solid #404040;
+}
+
+.project-import .import-info h4 {
+  margin: 0 0 8px 0;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.project-import .import-info ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #cccccc;
+  font-size: 13px;
+}
+
+.project-import .import-info li {
+  margin-bottom: 4px;
+}
+
+.project-import .error-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: 4px;
+  color: #ff6b6b;
+  font-size: 14px;
+  margin-top: 16px;
+}
+
+.project-import .error-icon {
+  font-size: 16px;
+}
+
+.project-import .dialog-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.project-import .secondary-button {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #555;
+  color: #cccccc;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.project-import .secondary-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #777;
+}
 .import-dialog-overlay {
   position: fixed;
   top: 0;

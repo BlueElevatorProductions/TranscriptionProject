@@ -6,6 +6,7 @@ import * as dotenv from 'dotenv';
 import * as crypto from 'crypto';
 import { SimpleCloudTranscriptionService } from './services/SimpleCloudTranscriptionService';
 import { ProjectFileManager } from './services/ProjectFileManager';
+import { ProjectFileService } from './services/ProjectFileService';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -22,6 +23,8 @@ interface TranscriptionJob {
   progress: number;
   result?: any;
   error?: string;
+  speakerNames?: { [key: string]: string };
+  speakerMerges?: { [key: string]: string };
 }
 
 class App {
@@ -96,7 +99,7 @@ class App {
 
     // Load the app
     if (isDev()) {
-      this.mainWindow.loadURL('http://localhost:5173');
+      this.mainWindow.loadURL('http://localhost:5174');
       // Open DevTools in development
       this.mainWindow.webContents.openDevTools();
     } else {
@@ -247,6 +250,9 @@ class App {
     // Start transcription
     ipcMain.handle('start-transcription', async (event, filePath: string, modelSize: string = 'base') => {
       console.log('Starting transcription:', { filePath, modelSize });
+      
+      // Send debug info to renderer
+      this.mainWindow?.webContents.send('debug-log', `Main: Starting transcription with model ${modelSize}`);
       // Validate file exists
       if (!fs.existsSync(filePath)) {
         return { success: false, error: 'Audio file does not exist' };
@@ -287,8 +293,10 @@ class App {
       // Check if it's a cloud model
       if (modelSize.startsWith('cloud-')) {
         console.log('Processing cloud transcription...');
+        this.mainWindow?.webContents.send('debug-log', `Main: Processing cloud transcription`);
         const provider = modelSize.split('-')[1];
         console.log('Provider:', provider);
+        this.mainWindow?.webContents.send('debug-log', `Main: Provider is ${provider}`);
         
         const job: TranscriptionJob = {
           id: jobId,
@@ -299,9 +307,15 @@ class App {
         };
 
         this.transcriptionJobs.set(jobId, job);
+        this.mainWindow?.webContents.send('debug-log', `Main: Created cloud job with ID ${jobId}`);
 
         // Start cloud transcription process
-        this.runCloudTranscription(jobId, filePath, modelSize);
+        try {
+          this.runCloudTranscription(jobId, filePath, modelSize);
+          this.mainWindow?.webContents.send('debug-log', `Main: Called runCloudTranscription`);
+        } catch (error) {
+          this.mainWindow?.webContents.send('debug-log', `Main: Error calling runCloudTranscription: ${error}`);
+        }
 
         return { success: true, jobId };
       } else {
@@ -332,6 +346,11 @@ class App {
 
     // Get all transcription jobs
     ipcMain.handle('get-all-transcriptions', () => {
+      return Array.from(this.transcriptionJobs.values());
+    });
+
+    // Get transcription updates for polling
+    ipcMain.handle('getTranscriptionUpdates', () => {
       return Array.from(this.transcriptionJobs.values());
     });
 
@@ -367,12 +386,20 @@ class App {
 
     ipcMain.handle('get-api-keys', async (event) => {
       try {
+        console.log('DEBUG: get-api-keys called');
+        console.log('DEBUG: API keys path:', this.apiKeysPath);
+        
         if (!fs.existsSync(this.apiKeysPath)) {
+          console.log('DEBUG: API keys file does not exist');
           return {}; // Return empty object if no keys file exists
         }
         
+        console.log('DEBUG: Reading encrypted API keys file...');
         const encryptedData = await fs.promises.readFile(this.apiKeysPath, 'utf8');
+        console.log('DEBUG: Encrypted data length:', encryptedData.length);
+        
         const decryptedKeys = this.decryptApiKeys(encryptedData);
+        console.log('DEBUG: Decrypted keys count:', Object.keys(decryptedKeys).length);
         return decryptedKeys;
       } catch (error) {
         console.error('Error getting API keys:', error);
@@ -507,6 +534,103 @@ class App {
         };
       }
     });
+
+    // Project file system handlers
+    ipcMain.handle('dialog:openFile', async (event, options) => {
+      const result = await dialog.showOpenDialog(this.mainWindow!, options);
+      return result;
+    });
+
+    ipcMain.handle('dialog:saveFile', async (event, options) => {
+      const result = await dialog.showSaveDialog(this.mainWindow!, options);
+      return result;
+    });
+
+    ipcMain.handle('project:save', async (event, projectData, filePath) => {
+      try {
+        await ProjectFileService.saveProject(projectData, filePath);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to save project:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('project:load', async (event, filePath) => {
+      try {
+        const projectData = await ProjectFileService.loadProject(filePath);
+        return projectData;
+      } catch (error) {
+        console.error('Failed to load project:', error);
+        throw error;
+      }
+    });
+
+    // Convenience handlers for project file dialogs
+    ipcMain.handle('openProjectDialog', async () => {
+      const result = await dialog.showOpenDialog(this.mainWindow!, {
+        title: 'Import Transcription Project',
+        filters: [
+          { name: 'Transcription Projects', extensions: ['transcript'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+        properties: ['openFile']
+      });
+      return result;
+    });
+
+    ipcMain.handle('saveProjectDialog', async (event, defaultName) => {
+      const result = await dialog.showSaveDialog(this.mainWindow!, {
+        title: 'Save Transcription Project',
+        defaultPath: defaultName || 'Untitled.transcript',
+        filters: [
+          { name: 'Transcription Projects', extensions: ['transcript'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      return result;
+    });
+
+    ipcMain.handle('loadProject', async (event, filePath) => {
+      try {
+        const projectData = await ProjectFileService.loadProject(filePath);
+        return projectData;
+      } catch (error) {
+        console.error('Failed to load project:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('saveProject', async (event, projectData, filePath) => {
+      try {
+        await ProjectFileService.saveProject(projectData, filePath);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to save project:', error);
+        throw error;
+      }
+    });
+  }
+
+  private serializeJob(job: TranscriptionJob): any {
+    // Create a clean serializable version of the job
+    const serialized = {
+      id: job.id,
+      filePath: job.filePath,
+      fileName: job.fileName,
+      status: job.status,
+      progress: job.progress,
+      result: job.result,
+      error: job.error,
+      speakerNames: job.speakerNames,
+      speakerMerges: job.speakerMerges
+    };
+    
+    console.log('DEBUG: Serializing job:', job);
+    console.log('DEBUG: Serialized result:', serialized);
+    console.log('DEBUG: Serialized JSON:', JSON.stringify(serialized));
+    
+    return serialized;
   }
 
   private generateEncryptionKey(): string {
@@ -547,19 +671,44 @@ class App {
       const key = Buffer.from(this.encryptionKey, 'hex').subarray(0, 32); // Ensure exactly 32 bytes
       const decipher = crypto.createDecipheriv(algorithm, key, iv);
       
+      console.log('DEBUG: Decrypting API keys...');
+      console.log('DEBUG: Encryption key:', this.encryptionKey.substring(0, 10) + '...');
+      console.log('DEBUG: Machine ID components:', {
+        platform: process.platform,
+        version: app.getVersion(),
+        exePath: app.getPath('exe')
+      });
+      
       let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
       
-      return JSON.parse(decrypted);
+      const result = JSON.parse(decrypted);
+      console.log('DEBUG: Successfully decrypted keys:', Object.keys(result));
+      return result;
     } catch (error) {
       console.error('Decryption error:', error);
+      console.error('DEBUG: Failed to decrypt. Machine ID components:', {
+        platform: process.platform,
+        version: app.getVersion(),
+        exePath: app.getPath('exe')
+      });
       return {}; // Return empty object if decryption fails
     }
   }
 
   private async runCloudTranscription(jobId: string, filePath: string, modelSize: string): Promise<void> {
+    console.log('DEBUG: runCloudTranscription called with jobId:', jobId);
+    this.mainWindow?.webContents.send('debug-log', `Main: runCloudTranscription called with jobId ${jobId}`);
+    console.log('DEBUG: Available job IDs:', Array.from(this.transcriptionJobs.keys()));
+    this.mainWindow?.webContents.send('debug-log', `Main: Available job IDs: ${Array.from(this.transcriptionJobs.keys()).join(', ')}`);
     const job = this.transcriptionJobs.get(jobId);
-    if (!job) return;
+    console.log('DEBUG: Found job:', job);
+    this.mainWindow?.webContents.send('debug-log', `Main: Found job: ${job ? 'YES' : 'NO'}`);
+    if (!job) {
+      console.error('ERROR: Job not found for ID:', jobId);
+      this.mainWindow?.webContents.send('debug-log', `Main: ERROR - Job not found for ID ${jobId}`);
+      return;
+    }
 
     try {
       console.log('Cloud transcription starting for job:', jobId);
@@ -573,13 +722,39 @@ class App {
       const provider = modelSize.split('-')[1]; // Extract provider from 'cloud-openai'
       console.log('Provider:', provider);
       console.log('API keys available:', Object.keys(apiKeys));
+      console.log('OpenAI key exists:', !!apiKeys.openai);
+      console.log('OpenAI key length:', apiKeys.openai?.length || 0);
+      this.mainWindow?.webContents.send('debug-log', `Main: API keys loaded: ${Object.keys(apiKeys).join(', ')}`);
       
       if (!apiKeys[provider]) {
         throw new Error(`API key for ${provider} not configured`);
       }
 
       job.progress = 20;
-      this.mainWindow?.webContents.send('transcription-progress', job);
+      console.log('DEBUG: Sending progress event (cloud 20%):', job);
+      
+      // Create a clean serializable object
+      const progressData = {
+        id: job.id,
+        filePath: job.filePath,
+        fileName: job.fileName,
+        status: job.status,
+        progress: job.progress,
+        error: job.error
+      };
+      
+      console.log('DEBUG: Serializable progress data:', JSON.stringify(progressData));
+      this.mainWindow?.webContents.send('debug-log', `Main: Sending progress event with job id ${job.id}`);
+      
+      // Test with a simple object first
+      const testData = { test: 'hello', id: job.id };
+      console.log('DEBUG: Sending test data:', testData);
+      this.mainWindow?.webContents.send('debug-log', `Main: Test data: ${JSON.stringify(testData)}`);
+      
+      // Try sending the serialized job
+      const serializedJob = this.serializeJob(job);
+      this.mainWindow?.webContents.send('debug-log', `Main: Serialized job: ${JSON.stringify(serializedJob)}`);
+      this.mainWindow?.webContents.send('transcription-progress', serializedJob);
 
       // Create cloud transcription service instance
       const cloudService = new SimpleCloudTranscriptionService(apiKeys);
@@ -587,11 +762,13 @@ class App {
       const progressCallback = (progress: { progress: number; status: string }) => {
         console.log('Progress update:', progress);
         job.progress = progress.progress;
-        this.mainWindow?.webContents.send('transcription-progress', {
+        const progressEvent = {
           ...job,
           progress: progress.progress,
           status: progress.status
-        });
+        };
+        console.log('DEBUG: Sending progress event (cloud callback):', progressEvent);
+        this.mainWindow?.webContents.send('transcription-progress', this.serializeJob(job));
       };
 
       let result;
@@ -622,7 +799,8 @@ class App {
       job.status = 'completed';
       job.progress = 100;
       job.result = result;
-      this.mainWindow?.webContents.send('transcription-complete', job);
+      console.log('DEBUG: Sending completion event (cloud):', job);
+      this.mainWindow?.webContents.send('transcription-complete', this.serializeJob(job));
 
     } catch (error) {
       console.error('Cloud transcription failed:', error);
@@ -630,7 +808,7 @@ class App {
       
       job.status = 'error';
       job.error = error instanceof Error ? error.message : 'Cloud transcription failed';
-      this.mainWindow?.webContents.send('transcription-error', job);
+      this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
     }
   }
 
@@ -665,13 +843,18 @@ class App {
   }
 
   private async runTranscription(jobId: string, filePath: string, modelSize: string): Promise<void> {
+    console.log('DEBUG: runTranscription called with:', { jobId, filePath, modelSize });
     const job = this.transcriptionJobs.get(jobId);
-    if (!job) return;
+    if (!job) {
+      console.log('ERROR: Job not found for ID:', jobId);
+      return;
+    }
 
     try {
+      console.log('DEBUG: Starting transcription process for job:', job);
       job.status = 'processing';
       job.progress = 10;
-      this.mainWindow?.webContents.send('transcription-progress', job);
+      this.mainWindow?.webContents.send('transcription-progress', this.serializeJob(job));
 
       // Check if this is a cloud transcription
       if (modelSize.startsWith('cloud-')) {
@@ -686,9 +869,11 @@ class App {
       console.log('Whisper service path:', whisperServicePath);
       console.log('File exists:', fs.existsSync(whisperServicePath));
       
+      console.log('DEBUG: Spawning Python process with args:', [whisperServicePath, 'transcribe', filePath, modelSize, 'en']);
       const pythonProcess = spawn('python3', [whisperServicePath, 'transcribe', filePath, modelSize, 'en'], {
         env: process.env,
       });
+      console.log('DEBUG: Python process spawned with PID:', pythonProcess.pid);
       
       let output = '';
       let errorOutput = '';
@@ -696,11 +881,21 @@ class App {
       pythonProcess.stdout.on('data', (data) => {
         output += data.toString();
         job.progress = Math.min(job.progress + 10, 90);
-        this.mainWindow?.webContents.send('transcription-progress', job);
+        this.mainWindow?.webContents.send('transcription-progress', this.serializeJob(job));
       });
 
       pythonProcess.stderr.on('data', (data) => {
-        errorOutput += data.toString();
+        const stderrData = data.toString();
+        errorOutput += stderrData;
+        
+        // Parse progress updates from stderr (format: PROGRESS:XX)
+        const progressMatch = stderrData.match(/PROGRESS:(\d+)/);
+        if (progressMatch) {
+          const progress = parseInt(progressMatch[1]);
+          job.progress = progress;
+          this.mainWindow?.webContents.send('transcription-progress', this.serializeJob(job));
+          console.log(`Transcription progress: ${progress}%`);
+        }
       });
 
       pythonProcess.on('close', (code) => {
@@ -727,17 +922,17 @@ class App {
               job.status = 'completed';
               job.progress = 100;
               job.result = result;
-              this.mainWindow?.webContents.send('transcription-complete', job);
+              this.mainWindow?.webContents.send('transcription-complete', this.serializeJob(job));
             } else {
               job.status = 'error';
               job.error = result.message || 'Transcription failed with unknown error';
-              this.mainWindow?.webContents.send('transcription-error', job);
+              this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
             }
           } catch (parseError) {
             console.error('JSON parse error:', parseError);
             job.status = 'error';
             job.error = 'Failed to parse transcription result. Raw output: ' + output.substring(0, 300);
-            this.mainWindow?.webContents.send('transcription-error', job);
+            this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
           }
         } else {
           job.status = 'error';
@@ -758,14 +953,14 @@ class App {
           }
           
           job.error = errorMessage;
-          this.mainWindow?.webContents.send('transcription-error', job);
+          this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
         }
       });
 
     } catch (error) {
       job.status = 'error';
       job.error = error instanceof Error ? error.message : 'Unknown error';
-      this.mainWindow?.webContents.send('transcription-error', job);
+      this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
     }
   }
 }

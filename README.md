@@ -1,187 +1,242 @@
 # TranscriptionProject
 
-> A professional podcast transcript editor with advanced audio editing capabilities
+> A professional desktop transcription editor with advanced audio synchronization and cloud API integration
 
 ## Overview
 
-TranscriptionProject is an Electron-based desktop application designed for podcast producers and audio editors. It features a document-focused interface for professional transcript editing with integrated audio playback and sophisticated clip management system.
+TranscriptionProject is a sophisticated Electron-based desktop application designed for podcast producers, journalists, and audio editors. It features a dual-mode interface for professional transcript editing with real-time audio synchronization, cloud transcription services, and an advanced word-level editing system.
 
-## ✅ Implemented Features
+## ✅ Current Features
 
-### **Dual Mode Interface**
-- **Playbook Mode**: Clean paragraph-based reading interface for listening
-- **Transcript Edit Mode**: Detailed word-level editing with full functionality
-- **Mode Switching**: Seamless transitions between playback and editing workflows
-- **Resizable Panels**: User-customizable layout with draggable dividers
+### **Dual Mode Professional Interface**
+- **Playback Mode**: Clean paragraph-based reading interface optimized for listening and review
+- **Transcript Edit Mode**: Detailed word-level editing with professional tools and context menus
+- **Seamless Mode Switching**: Instant transitions between interfaces with shared state preservation
+- **Resizable Layout**: User-customizable panels with drag-to-resize functionality
 
-### **Advanced Transcript Editing**
-- **Word-Level Editing**: Double-click any word to edit, right-click for "New Word" insertion
-- **Undo/Redo System**: Full history tracking with Cmd+Z/Cmd+Shift+Z keyboard shortcuts
-- **Right-click Context Menu**: Select clips, create new clips, add speaker labels
-- **Clips Management**: Organize content into navigable clips with metadata
-- **Speaker Management**: Inline editing in both transcript and sidebar with real-time updates
+### **Advanced Transcript Editing System**
+- **Word-Level Editing**: Double-click any word to edit, right-click for insertion and context options
+- **Complete Undo/Redo System**: Full edit history with Cmd+Z/Cmd+Shift+Z keyboard shortcuts
+- **Text Cursor Navigation**: Click-to-position cursor with arrow key navigation between words
+- **Paragraph Management**: Enter key for paragraph breaks with visual indicators
+- **Context Menu System**: Right-click access to word operations, clip creation, and speaker assignment
+- **Speaker Management**: Inline editing throughout transcript with real-time updates
 
-### **Professional Audio Controls**
-- **Unified Bottom Audio Player**: Consistent controls across all modes with synchronized playback
-- **Word-Level Audio Synchronization**: Real-time word highlighting during playback in both modes
-- **Transport Controls**: Play/pause, skip back/forward 10 seconds, previous/next clip
-- **Advanced Playback**: Volume control, variable speed (0.5× to 2.0×)
-- **Timeline Scrubbing**: Visual progress indicator with click-to-seek
-- **Interactive Transcript**: Click any word to jump to that timestamp in audio
-- **Global Keyboard Shortcuts**: Spacebar for play/pause across all modes
+### **Professional Audio Integration**
+- **Unified Audio Player**: Consistent bottom player across all modes with shared state
+- **Real-time Word Highlighting**: Synchronized highlighting during playback in both interfaces
+- **Interactive Transcript**: Click any word to jump audio to that precise timestamp
+- **Advanced Transport Controls**: Play/pause, 15-second skip, volume, and variable speed (0.5× to 2.0×)
+- **Timeline Scrubbing**: Visual progress with click-to-seek functionality
+- **Global Keyboard Shortcuts**: Spacebar for play/pause across all application modes
 
-### **Modern UI/UX Architecture**
-- **Shared Component System**: Single source of truth for panels and controls
-- **Responsive Design**: Resizable layout adapts to user preferences
-- **Professional Typography**: Document-focused design optimized for long-form content
-- **Accessibility**: Keyboard navigation and screen reader friendly
+### **Cloud Transcription Services**
+- **OpenAI Whisper Integration**: High-quality cloud transcription with word-level timestamps
+- **AssemblyAI Support**: Fast transcription with built-in speaker detection capabilities
+- **Local WhisperX Option**: Offline processing for privacy-sensitive content
+- **Intelligent Punctuation**: Advanced redistribution algorithm for proper formatting
+- **Secure API Management**: Encrypted storage with machine-specific key derivation
 
-## Technology Stack
+### **Modern Project Management**
+- **Project File System**: ZIP-based `.transcript` format for portable project storage
+- **Audio Embedding**: Optional audio inclusion in project files for portability
+- **Speaker Identification**: Semi-automated speaker naming with audio sample playback
+- **Import/Export**: Multiple audio format support with metadata preservation
 
-### Current Implementation
-- **Frontend**: React 18 with TypeScript
-- **Desktop Framework**: Electron 32.2.1  
-- **Build System**: Vite for fast development
-- **Audio Processing**: Custom useAudioPlayer hook with Blob URL handling
-- **State Management**: React hooks (useState, useMemo, useEffect)
-- **Styling**: Custom CSS with CSS variables for theming
-- **Development**: Hot reload with concurrent dev servers
+## Technology Stack & Architecture
 
-## Current Architecture
+### **Core Technologies**
+- **Frontend**: React 18 with TypeScript for type-safe development
+- **Desktop Framework**: Electron 32.2.1 with secure IPC communication
+- **Build System**: Vite for fast development with hot reload
+- **Audio Processing**: HTML5 Audio API with Electron file system integration
+- **State Management**: React hooks with centralized shared audio state
+- **Styling**: Custom CSS with CSS variables for consistent theming
 
-### Dual Mode Structure
+### **Application Architecture**
+
 ```
-App Container
-├── PlaybackModeContainer (Clean Reading Interface)
-│   ├── CleanTranscriptDisplay (Paragraph-based view)
-│   └── Shared Panels
-│       ├── SpeakersPanel (Speaker management)
-│       └── AudioControlsPanel (Professional media player)
-└── TranscriptEditContainer (Detailed Editing Interface)
-    ├── TranscriptPanel (Word-level editing)
-    │   ├── Context Menu System
-    │   ├── Word Editing (double-click, insertion)
-    │   └── Undo/Redo System
-    └── Enhanced Sidebar
-        ├── Shared SpeakersPanel
-        ├── Clips Management Panel
-        └── Shared AudioControlsPanel
+Electron Application
+├── Main Process (src/main/)
+│   ├── main.ts                     # Application entry point & window management
+│   ├── preload.ts                  # Secure IPC bridge (88+ API methods)
+│   └── services/
+│       ├── SimpleCloudTranscriptionService.ts    # OpenAI/AssemblyAI integration
+│       ├── ProjectFileService.ts                 # Modern .transcript format
+│       └── ProjectFileManager.ts                 # Legacy .transcription format
+│
+└── Renderer Process (src/renderer/)
+    ├── App.tsx                     # Central state manager & view router
+    ├── components/
+    │   ├── PlaybackMode/
+    │   │   ├── PlaybackModeContainer.tsx          # Clean reading interface
+    │   │   └── CleanTranscriptDisplay.tsx         # Paragraph-grouped display
+    │   ├── TranscriptEdit/
+    │   │   ├── TranscriptEditContainer.tsx        # Professional editing interface
+    │   │   ├── TranscriptPanel.tsx                # Word-level editing canvas
+    │   │   ├── ContextMenu.tsx                    # Right-click operations
+    │   │   └── useClips.ts                        # Clip management hook
+    │   ├── shared/
+    │   │   ├── BottomAudioPlayer.tsx              # Unified audio controls
+    │   │   └── SpeakersPanel.tsx                  # Speaker management UI
+    │   ├── SpeakerIdentification/
+    │   │   └── SpeakerIdentification.tsx          # Speaker naming workflow
+    │   └── ImportDialog/
+    │       └── ImportDialog.tsx                   # File import & model selection
+    └── hooks/
+        └── useAudioPlayer.ts                      # Audio state management
 ```
 
-### Shared Component Architecture
-- **AudioControlsPanel**: Professional media player used across all modes
-- **SpeakersPanel**: Unified speaker management with inline editing
-- **Resizable Layout System**: User-customizable panel widths with constraints
-- **Undo/Redo System**: Complete edit history with 50-action memory
+### **Data Flow Architecture**
 
-### Key Modules
-- **useClips Hook**: Manages clip data structure and operations (create, split, speaker assignment)
-- **useAudioPlayer Hook**: Handles audio loading, playback state, and Blob URL management
-- **Context Menu System**: Provides right-click editing functionality with word insertion
-- **Edit History System**: Tracks all changes for undo/redo functionality
-- **IPC Communication**: Secure file access between main and renderer processes
+```
+Audio Import → Cloud/Local Transcription → Speaker Identification → Dual-Mode Editing → Project Export
 
-## Development Status
+1. File Import Dialog (ImportDialog.tsx)
+   ↓ IPC → main.ts → SimpleCloudTranscriptionService.ts
+2. Transcription Processing (OpenAI/AssemblyAI/WhisperX)
+   ↓ Progress Events → IPC → App.tsx
+3. Speaker Identification (SpeakerIdentification.tsx)
+   ↓ Speaker Mapping → Global State
+4. Editing Interfaces (PlaybackMode + TranscriptEdit)
+   ↓ Shared State → Real-time Synchronization
+5. Project Persistence (ProjectFileService.ts)
+   ↓ ZIP Archive → .transcript files
+```
 
-### ✅ **Phase 1: Foundation & Core Interface (COMPLETED)**
-- [x] Electron/React scaffold with TypeScript
-- [x] Document-focused layout design implementation
-- [x] Light theme with professional typography
-- [x] Audio playback restoration and optimization
-- [x] Text spacing and readability optimization
+## Developer Documentation
 
-### ✅ **Phase 2: Advanced Editing Features (COMPLETED)**
-- [x] Right-click context menu system
-- [x] Clip management and navigation
-- [x] Speaker editing with inline controls
-- [x] Word-level audio synchronization
-- [x] Keyboard shortcuts (spacebar play/pause)
-- [x] Enhanced transport controls with clip navigation
+### **Core Components Deep Dive**
 
-### ✅ **Phase 3: Professional UI/UX & Architecture (COMPLETED)**
-- [x] Dual mode system (Playback vs Transcript Edit)
-- [x] Word-level editing with double-click and insertion
-- [x] Complete undo/redo system with keyboard shortcuts
-- [x] Shared component architecture for consistency
-- [x] Professional media player controls
-- [x] Resizable layout system with user customization
-- [x] Global keyboard shortcuts across all modes
+#### **App.tsx - Central State Manager**
+- **Responsibilities**: View routing, shared audio state, project lifecycle, API coordination
+- **Key Features**: 
+  - Multi-view state machine (`home`, `transcription-progress`, `speaker-identification`, `playback`)
+  - Centralized `handleAudioStateUpdate` with state validation and type safety
+  - Project file management with auto-save and unsaved changes tracking
+  - IPC event coordination with polling fallbacks
 
-### ✅ **Phase 4: Audio Synchronization & Transcription Core (COMPLETED)**
-- [x] Unified bottom audio player with shared state management
-- [x] Real-time word highlighting during playback across both modes
-- [x] Interactive transcript with click-to-seek functionality
-- [x] Cloud transcription integration (OpenAI Whisper API, AssemblyAI)
-- [x] Local transcription support (WhisperX with offline processing)
-- [x] Advanced punctuation redistribution algorithm for proper formatting
-- [x] File import dialog with model selection and API key management
-- [x] Comprehensive error handling and progress tracking
+#### **TranscriptEditContainer.tsx - Professional Editing**
+- **Architecture**: Word-level editing with comprehensive undo/redo system
+- **Core Systems**:
+  - **Edit History**: Linear undo/redo with action types (`word-edit`, `speaker-change`, `paragraph-break`)
+  - **Clip Management**: `useClips` hook for sophisticated clip operations and speaker assignment
+  - **Keyboard Shortcuts**: Cmd+Z/Shift+Z for undo/redo, spacebar for play/pause
+  - **Context Menu Integration**: Right-click operations with word insertion and clip creation
 
-### ✅ **Phase 5: Text Cursor & Paragraph Management (COMPLETED)**
-- [x] Custom text cursor system with blinking animation and precise positioning
-- [x] Keyboard navigation (arrow keys for word/segment navigation, Enter for paragraph breaks)
-- [x] Paragraph break functionality while preserving audio synchronization
-- [x] Visual paragraph break indicators in both Playback and Transcript Edit modes
-- [x] Undo/redo support for paragraph operations with full history tracking
-- [x] Shared state management ensuring paragraph breaks persist between mode switches
-- [x] Robust data flow architecture preventing blank transcript display issues
+#### **PlaybackModeContainer.tsx - Document Interface**
+- **Design Philosophy**: Clean, document-focused reading experience
+- **Key Features**:
+  - **Paragraph Grouping**: Intelligent segment grouping by speaker and timing gaps
+  - **Resizable Layout**: Drag-to-resize sidebar with constraints and persistence
+  - **Global Shortcuts**: Document-wide spacebar handling with input field detection
 
-### 📋 **Next Phase: Enhanced Features & Polish**
-- [ ] Speaker diarization and automatic labeling improvements
-- [ ] Export functionality for audio and text formats
-- [ ] Project save/load system enhancements
-- [ ] Performance optimization for large files
-- [ ] Advanced editing features (find/replace, bulk operations)
+#### **BottomAudioPlayer.tsx - Unified Audio System**
+- **Technical Implementation**: HTML5 Audio with Electron file system bridge
+- **Core Features**:
+  - **Secure File Loading**: IPC → ArrayBuffer → Blob URL conversion
+  - **State Synchronization**: Shared audio state with defensive validation
+  - **Time Updates**: Animation frame-based updates with 50ms precision
+  - **Format Support**: Wide audio format compatibility with MIME type detection
 
-## Current Workflow
+### **Key TypeScript Interfaces**
 
-### **Dual Mode Professional Experience**
+```typescript
+interface TranscriptionJob {
+  id: string;
+  filePath: string;
+  fileName: string;
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  progress: number;
+  result?: WhisperTranscriptionResult;
+  speakerNames?: { [key: string]: string };
+}
 
-**Playback Mode (Clean Reading Interface)**
-- Paragraph-based transcript display optimized for listening
-- Real-time word highlighting synchronized with audio playback
-- Click any word to jump to that timestamp in the audio
-- Click speaker names to edit across all instances
-- Unified bottom audio player with volume and speed controls
-- Spacebar for global play/pause, resizable panels
+interface SharedAudioState {
+  currentTime: number;
+  isPlaying: boolean;
+  volume: number;
+  playbackSpeed: number;
+}
 
-**Transcript Edit Mode (Detailed Editing Interface)**
-- Word-level editing: double-click any word to edit in-place
-- Text cursor system: click anywhere to position cursor, navigate with arrow keys
-- Paragraph breaks: press Enter at cursor position to create paragraph breaks
-- Real-time word highlighting during audio playback
-- Interactive transcript: click words to seek audio to that timestamp
-- Right-click context menu: "New Word" insertion, clip management, speaker assignment
-- Complete undo/redo system with Cmd+Z/Cmd+Shift+Z shortcuts (including paragraph operations)
-- Advanced clip organization and navigation tools
+interface Segment {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
+  speaker: string;
+  words: Word[];
+  paragraphBreak?: boolean;
+}
 
-**Transcription Features**
-- Import audio files through professional dialog interface
-- Choose between local (WhisperX) or cloud (OpenAI, AssemblyAI) transcription
-- Secure API key management with encrypted storage
-- Intelligent punctuation redistribution for properly formatted transcripts
-- Real-time progress tracking with detailed status updates
+interface Word {
+  start: number;
+  end: number;
+  word: string;
+  score: number;
+}
+```
 
-**Key User Interactions:**
-- **Mode Switching**: Header badges for seamless transition between modes
-- **Audio Synchronization**: Click any word to jump audio to that timestamp
-- **Real-time Highlighting**: Words highlight automatically during audio playback
-- **Word Editing**: Double-click to edit, right-click to insert new words
-- **Text Cursor Navigation**: Click to position cursor, arrow keys to navigate, Enter for paragraph breaks
-- **Speaker Management**: Click speaker names in transcript or sidebar to edit
-- **Transcription Import**: Import audio and choose local/cloud transcription models
-- **Layout Customization**: Drag panel dividers to resize transcript and sidebar areas
-- **Professional Audio**: Volume control, variable playback speed, timeline scrubbing
-- **Keyboard Shortcuts**: Spacebar (play/pause), Cmd+Z (undo), Cmd+Shift+Z (redo), arrow keys (cursor navigation)
+### **Service Layer Architecture**
+
+#### **SimpleCloudTranscriptionService.ts**
+- **OpenAI Integration**: Whisper-1 model with optimized prompts for punctuation
+- **AssemblyAI Support**: Fast transcription with speaker diarization
+- **Features**: Audio format conversion (FFmpeg), progress callbacks, connection testing
+- **Error Handling**: Comprehensive error capture with user-friendly messages
+
+#### **ProjectFileService.ts - Modern Project Format**
+- **File Structure**: ZIP-based `.transcript` files with organized JSON structure
+- **Contents**:
+  - `project.json` - Project metadata and settings
+  - `transcription.json` - Complete transcript data with word timestamps
+  - `metadata/speakers.json` - Speaker information and mappings
+  - `metadata/clips.json` - Clip definitions and metadata
+  - `audio/original.*` - Optional embedded audio files
+- **Compression**: DEFLATE level 6 for optimal size/speed balance
+
+### **Security & Encryption**
+
+#### **API Key Management**
+- **Storage**: `~/.config/TranscriptionProject/api-keys.enc`
+- **Encryption**: AES-256-CBC with machine-specific key derivation
+- **Key Generation**: SHA256(`platform + app.version + executable.path`)
+- **Security Model**: Process isolation with secure IPC bridge
+
+### **Audio Processing Pipeline**
+
+```
+Audio File → Electron File API → ArrayBuffer → Blob URL → HTML5 Audio
+                ↓
+          Format Validation → Size Checking → MIME Type Detection
+                ↓
+          Word-Level Synchronization → Real-time Highlighting → Interactive Seeking
+```
+
+### **State Management Patterns**
+
+#### **Shared Audio State**
+- **Architecture**: Centralized state with prop drilling and defensive validation
+- **Update Pattern**: `handleAudioStateUpdate` with type safety and NaN protection
+- **Synchronization**: Cross-component state sharing with immediate UI updates
+
+#### **Edit History System**
+```typescript
+interface EditAction {
+  type: 'word-edit' | 'speaker-change' | 'clip-create' | 'word-insert' | 'word-delete' | 'paragraph-break';
+  data: any;
+  timestamp: number;
+}
+```
 
 ## Getting Started
 
-### Prerequisites
-
-- Node.js 18+ and npm
+### **Prerequisites**
+- Node.js 18+ with npm
 - Git for version control
+- (Optional) Python 3.8+ for local WhisperX transcription
 
-### Installation
+### **Installation**
 
 ```bash
 # Clone the repository
@@ -190,87 +245,154 @@ cd TranscriptionProject
 
 # Install dependencies
 npm install
+
+# Set up environment variables (copy .env.example to .env)
+cp .env.example .env
 ```
 
-### Development
+### **Development Workflow**
 
 ```bash
-# Start Vite development server
+# Start concurrent development servers
+npm run start-dev
+
+# Or run separately:
+# Terminal 1: Frontend development server (port 5174)
 npm run dev:vite
 
-# In another terminal, start Electron
+# Terminal 2: Electron application
 npm run dev:electron
 
-# Or use the combined command (shows both commands)
-npm run dev
+# Build main process only
+npm run build:main
 ```
 
-### Current Build Status
+### **Configuration**
 
+#### **Environment Variables (.env)**
 ```bash
-# The app currently runs in development mode
-# Production builds are not yet configured
-# Focus is on core functionality development
+# OpenAI API Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Development Settings
+NODE_ENV=development
 ```
 
-## Recent Development History
+#### **API Key Setup**
+1. Launch the application
+2. Click the gear icon (⚙️) in the top-right header
+3. Enter your OpenAI API key (encrypted and stored locally)
+4. Keys are machine-specific and automatically encrypted
 
-### Major Implementation Phases Completed:
+## Suggested Improvements & Future Development
 
-**Document-Focused Layout Redesign** (Phase 1)
-- Transformed from dark three-panel to light document-focused interface
-- Implemented serif typography for transcript readability
-- Added two-column layout with professional styling
+### **Architecture Enhancements**
 
-**Advanced Editing System** (Phase 2)  
-- Built comprehensive clip management system
-- Added right-click context menus for professional editing workflow
-- Implemented speaker management with inline editing
+#### **State Management Evolution**
+- **Current**: React state with prop drilling
+- **Suggested**: Context providers or Redux Toolkit for complex state
+- **Benefits**: Reduced prop drilling, better debugging, predictable updates
 
-**Professional UI/UX & Architecture** (Phase 3)
-- Implemented dual mode system with seamless mode switching
-- Added word-level editing with double-click and insertion capabilities
-- Built complete undo/redo system with full edit history tracking
-- Created shared component architecture for consistency and maintainability
-- Implemented resizable layout system with user-customizable panels
-- Added professional media player controls with advanced audio features
+#### **Component Architecture Refinements**
+- **Extract Shared Logic**: Create custom hooks for common patterns (word navigation, time formatting)
+- **Component Composition**: Break down large components into smaller, focused units
+- **Error Boundaries**: Add granular error handling for each major component tree
 
-**Audio Synchronization & Transcription Core** (Phase 4)
-- Unified bottom audio player with shared state management across all modes
-- Real-time word highlighting synchronized with audio playback in both interfaces
-- Interactive transcript with click-to-seek functionality for precise navigation
-- Cloud transcription integration (OpenAI Whisper API, AssemblyAI) with full API support
-- Local transcription support (WhisperX) for offline processing and privacy
-- Advanced punctuation redistribution algorithm solving OpenAI API formatting issues
-- Professional file import dialog with model selection and encrypted API key management
-- Comprehensive error handling, progress tracking, and user feedback systems
+#### **Performance Optimizations**
+- **Word Highlighting**: Implement virtual scrolling for large transcripts
+- **Audio Loading**: Add progressive loading for large audio files
+- **Memory Management**: Implement cleanup for blob URLs and temporary files
 
-**Text Cursor & Paragraph Management** (Phase 5)
-- Custom text cursor system with visual blinking animation and precise word boundary positioning
-- Keyboard navigation with arrow keys for seamless word and segment traversal
-- Paragraph break functionality using Enter key while preserving audio synchronization integrity
-- Visual paragraph break indicators displayed consistently in both Playback and Transcript Edit modes
-- Complete undo/redo support for paragraph operations integrated with existing history system
-- Robust shared state management ensuring paragraph breaks persist across mode switches
-- Fixed critical data flow architecture issues preventing blank transcript display after transcription completion
+### **Feature Enhancements**
 
-### Code Quality & Architecture
-- **TypeScript Implementation**: Complete type safety throughout the application
-- **Shared Component System**: Single source of truth for UI panels and controls
-- **Custom React Hooks**: Advanced state management (useClips, useAudioPlayer, edit history)
-- **Modular Architecture**: Clear separation between modes, components, and functionality
-- **Professional Styling**: CSS variables for consistent theming and maintainability
-- **Accessibility**: Keyboard navigation, ARIA labels, and screen reader support
+#### **Advanced Editing Features**
+- **Find & Replace**: Global text search with regex support
+- **Bulk Operations**: Multi-selection editing and speaker reassignment
+- **Text Formatting**: Rich text support with markdown export
+- **Collaboration**: Real-time collaborative editing with conflict resolution
 
-## Next Steps
+#### **Export System Improvements**
+- **Format Support**: SRT, VTT, Word, PDF export options
+- **Audio Export**: Clip-based audio extraction with fade in/out
+- **Batch Processing**: Multiple project export with templates
 
-The application now has a solid foundation for professional transcript editing. The next major development phase will focus on:
+#### **Transcription Pipeline Enhancements**
+- **Model Selection**: User-configurable Whisper model sizes
+- **Custom Vocabulary**: Domain-specific word lists for improved accuracy
+- **Language Support**: Multi-language transcription with automatic detection
+- **Confidence Scoring**: Visual confidence indicators for transcript quality
 
-1. **Transcription Pipeline Integration**: WhisperX model integration for offline processing
-2. **File Import System**: Support for various audio formats with metadata handling  
-3. **Export Functionality**: Multiple format support (text, audio, professional formats)
-4. **Performance Optimization**: Memory usage and large file handling
+### **Technical Debt & Code Quality**
+
+#### **TypeScript Improvements**
+- **Strict Mode**: Enable strict TypeScript compilation
+- **Type Definitions**: Create comprehensive type definitions for all data structures
+- **Generic Utilities**: Develop reusable type utilities for common patterns
+
+#### **Testing Infrastructure**
+- **Unit Tests**: Comprehensive test coverage for core business logic
+- **Integration Tests**: End-to-end workflow testing with realistic data
+- **Performance Tests**: Automated performance regression testing
+
+#### **Build & Deployment**
+- **Production Builds**: Configure optimized production builds
+- **Code Splitting**: Implement lazy loading for improved startup performance
+- **Bundle Analysis**: Regular bundle size monitoring and optimization
+
+### **Security Enhancements**
+- **Content Security Policy**: Implement strict CSP for renderer processes
+- **Dependency Auditing**: Regular security audits for npm dependencies
+- **File Validation**: Enhanced file type and content validation
+
+### **User Experience Improvements**
+- **Onboarding**: Interactive tutorial for new users
+- **Keyboard Shortcuts**: Comprehensive shortcut system with customization
+- **Accessibility**: Full WCAG 2.1 compliance with screen reader support
+- **Themes**: Dark mode and customizable color schemes
+
+## Development Status
+
+### ✅ **Completed Implementation**
+- [x] **Core Architecture**: Electron/React/TypeScript foundation with secure IPC
+- [x] **Dual Interface System**: Playback and Transcript Edit modes with seamless switching
+- [x] **Audio Integration**: Real-time synchronization with word-level highlighting
+- [x] **Cloud Transcription**: OpenAI Whisper and AssemblyAI integration
+- [x] **Professional Editing**: Word-level editing with undo/redo and context menus
+- [x] **Project Management**: ZIP-based project files with audio embedding
+- [x] **Security**: Encrypted API key storage with machine-specific binding
+
+### 🚧 **Active Development Priorities**
+- [ ] **Local Transcription**: WhisperX integration for offline processing
+- [ ] **Export System**: Multiple format support (SRT, VTT, Word, PDF)
+- [ ] **Performance**: Optimization for large files and memory usage
+- [ ] **Testing**: Comprehensive test suite for core functionality
+
+### 📋 **Future Roadmap**
+- [ ] **Collaboration**: Real-time collaborative editing capabilities
+- [ ] **Mobile Companion**: React Native app for remote transcription management
+- [ ] **Plugin System**: Extensible architecture for third-party integrations
+- [ ] **Cloud Sync**: Optional cloud storage for cross-device project access
+
+## Contributing
+
+### **Code Style & Standards**
+- **TypeScript**: Strict typing with comprehensive interfaces
+- **React**: Functional components with hooks, no class components
+- **Naming**: Descriptive names with consistent camelCase/PascalCase
+- **Comments**: JSDoc for public APIs, inline comments for complex logic
+
+### **Development Guidelines**
+- **Commits**: Conventional commit messages with scope
+- **Branches**: Feature branches with descriptive names
+- **Testing**: Tests required for new features and bug fixes
+- **Documentation**: Update README and inline docs for significant changes
 
 ---
 
-*Built with ❤️ for professional podcast production workflows*
+*Built with ❤️ for professional audio transcription workflows*
+
+**Key Contributors**: Development team focused on creating professional-grade transcription tools for content creators, journalists, and audio professionals.
+
+**License**: [Add your license information here]
+
+**Support**: For questions or support, please [add contact information or issue tracker link]

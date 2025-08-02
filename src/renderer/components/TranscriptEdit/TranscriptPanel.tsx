@@ -27,6 +27,7 @@ interface TranscriptPanelProps {
   onSpeakerNameChange?: (name: string) => void;
   onWordEdit?: (segmentIndex: number, wordIndex: number, originalWord: string, newWord: string) => void;
   onWordInsert?: (segmentIndex: number, wordIndex: number, newWordText: string) => void;
+  onWordDelete?: (segmentIndex: number, wordIndex: number) => void;
   onParagraphBreak?: (breakData: {
     segmentIndex: number;
     wordIndex: number;
@@ -55,6 +56,7 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   onSpeakerNameChange,
   onWordEdit,
   onWordInsert,
+  onWordDelete,
   onParagraphBreak,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -108,6 +110,13 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle keyboard events if we're editing a word or inserting a new word
+      if (editingWord || insertingWord) return;
+      
+      // Don't handle keyboard events if the target is an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      
       if (!cursorPosition) return;
 
       switch (e.key) {
@@ -150,7 +159,7 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [cursorPosition, segments]);
+  }, [cursorPosition, segments, editingWord, insertingWord]);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -351,62 +360,11 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
     setNewWordText('');
   };
 
-  // Context menu actions
+  // Context menu actions - simplified to just New Word and Delete Word
   const contextMenuItems = [
     {
-      label: "Select Clip",
-      icon: "🎯",
-      action: () => {
-        if (contextMenu.wordData && onSelectClip) {
-          // Generate clip ID based on segment index for now
-          const clipId = `clip-${contextMenu.wordData.segmentIndex}`;
-          onSelectClip(clipId);
-          
-          // Visual highlight for the selected clip
-          const currentLine = document.querySelector(`.transcript-line:nth-child(${contextMenu.wordData.segmentIndex + 1})`);
-          if (currentLine) {
-            // Remove previous selections
-            document.querySelectorAll('.transcript-line.clip-selected').forEach(el => {
-              el.classList.remove('clip-selected');
-            });
-            
-            // Add selection styling
-            currentLine.classList.add('clip-selected');
-            
-            // Select all text in the clip for copying
-            const transcriptText = currentLine.querySelector('.transcript-text');
-            if (transcriptText) {
-              const range = document.createRange();
-              const selection = window.getSelection();
-              range.selectNodeContents(transcriptText);
-              selection?.removeAllRanges();
-              selection?.addRange(range);
-            }
-          }
-        }
-      }
-    },
-    {
-      label: "Create New Clip",
-      icon: "📄",
-      action: () => {
-        if (contextMenu.wordData && onCreateNewClip) {
-          const wordIndex = contextMenu.wordData.wordIndex;
-          const success = onCreateNewClip(wordIndex);
-          
-          if (success) {
-            console.log(`Created new clip at word index ${wordIndex}`);
-            // Force re-render by updating a state that causes segments to re-process
-            // The clips will automatically update due to the useMemo dependency on segments
-          } else {
-            console.log(`Failed to create clip at word index ${wordIndex}`);
-          }
-        }
-      }
-    },
-    {
       label: "New Word",
-      icon: "✏️",
+      icon: "➕",
       action: () => {
         if (contextMenu.wordData) {
           setInsertingWord({ 
@@ -416,34 +374,20 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
         }
       }
     },
+    { isSeparator: true },
     {
-      label: "Assign Speaker",
-      icon: "👤",
-      isSubmenu: true,
-      submenu: [
-        ...(Object.entries(speakerNames || {}).map(([id, name]) => ({
-          label: name,
-          action: () => {
-            if (contextMenu.wordData && onAddNewSpeaker) {
-              const wordIndex = contextMenu.wordData.wordIndex;
-              onAddNewSpeaker(wordIndex, name);
-            }
-          }
-        }))),
-        { isSeparator: true },
-        {
-          label: "Add New Speaker...",
-          action: () => {
-            if (contextMenu.wordData && onAddNewSpeaker) {
-              const speakerName = prompt("Enter new speaker name:");
-              if (speakerName && speakerName.trim()) {
-                const wordIndex = contextMenu.wordData.wordIndex;
-                onAddNewSpeaker(wordIndex, speakerName.trim());
-              }
-            }
+      label: "Delete Word",
+      icon: "🗑️",
+      className: "delete-item",
+      action: () => {
+        if (contextMenu.wordData && onWordDelete) {
+          const { segmentIndex, wordIndex } = contextMenu.wordData;
+          const word = segments[segmentIndex]?.words?.[wordIndex];
+          if (word) {
+            onWordDelete(segmentIndex, wordIndex);
           }
         }
-      ]
+      }
     }
   ];
 
@@ -509,8 +453,8 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                         if (e.key === 'Enter') onSpeakerEditSave(segment.speaker);
                         if (e.key === 'Escape') onSpeakerEditCancel?.();
                       }}
-                      onBlur={() => onSpeakerEditSave(segment.speaker)}
-                      autoFocus
+                      // onBlur={() => onSpeakerEditSave(segment.speaker)}
+                      // autoFocus
                     />
                   ) : (
                     <span
@@ -542,9 +486,13 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                     
                     return segment.words.map((word: any, wordIndex: number) => {
                       const globalWordIndex = runningWordIndex + wordIndex;
-                      const isCurrent = currentWordIndex === globalWordIndex;
                       const isEditing = editingWord?.segmentIndex === segmentIndex && 
                                        editingWord?.wordIndex === wordIndex;
+                      
+                      // Simple direct comparison like the Swift app, with zero-duration fix
+                      const wordDuration = word.end - word.start;
+                      const effectiveEnd = wordDuration <= 0 ? word.start + 0.1 : word.end; // Minimum 100ms duration
+                      const isCurrent = currentTime >= word.start && currentTime < effectiveEnd;
                       
                       const isCurrentWord = cursorPosition?.segmentIndex === segmentIndex && 
                                            cursorPosition?.wordIndex === wordIndex;
@@ -558,7 +506,9 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                               type="text"
                               value={newWordText}
                               onChange={(e) => setNewWordText(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => {
+                                e.stopPropagation(); // Prevent parent keyboard handlers
                                 if (e.key === 'Enter') {
                                   handleNewWordSave();
                                 } else if (e.key === 'Escape') {
@@ -578,7 +528,9 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                               type="text"
                               value={tempWordText}
                               onChange={(e) => setTempWordText(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => {
+                                e.stopPropagation(); // Prevent parent keyboard handlers
                                 if (e.key === 'Enter') {
                                   handleWordEditSave();
                                 } else if (e.key === 'Escape') {
@@ -602,7 +554,7 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                                 handleWordDoubleClick(segmentIndex, wordIndex, word);
                               }}
                               onContextMenu={(e) => handleWordRightClick(e, word, globalWordIndex, segmentIndex)}
-                              title={`${word.start.toFixed(1)}s - ${word.end.toFixed(1)}s | Double-click to edit, right-click for options`}
+                              title={`${word.start.toFixed(1)}s - ${word.end.toFixed(1)}s${wordDuration <= 0 ? ` (fixed: ${effectiveEnd.toFixed(1)}s)` : ''} | Double-click to edit, right-click for options`}
                             >
                               {/* Cursor before word */}
                               {isCurrentWord && cursorPosition?.position === 'before' && (

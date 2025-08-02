@@ -27,6 +27,29 @@ const SpeakerIdentification: React.FC<SpeakerIdentificationProps> = ({
   onComplete,
   onSkip
 }) => {
+  // Early return if job or result is missing
+  if (!transcriptionJob) {
+    return (
+      <div className="speaker-identification">
+        <div className="error-message">
+          <h2>Error: No transcription job provided</h2>
+          <button onClick={onSkip}>← Back to Home</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!transcriptionJob.result) {
+    return (
+      <div className="speaker-identification">
+        <div className="error-message">
+          <h2>Error: Transcription result not available</h2>
+          <p>The transcription may not be complete or there was an error processing the audio.</p>
+          <button onClick={onSkip}>← Back to Home</button>
+        </div>
+      </div>
+    );
+  }
   const [speakerData, setSpeakerData] = useState<{ [key: string]: SpeakerData }>({});
   const [speakerNames, setSpeakerNames] = useState<{ [key: string]: string }>({});
   const [playingStates, setPlayingStates] = useState<{ [key: string]: boolean }>({});
@@ -93,11 +116,22 @@ const SpeakerIdentification: React.FC<SpeakerIdentificationProps> = ({
 
         console.log('Grouped segments by speaker:', Object.keys(speakerSegments));
 
-        // Skip if only 1 or 0 speakers
+        // Auto-complete if only 1 speaker (no need for user input)
         if (Object.keys(speakerSegments).length <= 1) {
-          console.log('Only one speaker detected in SpeakerIdentification, skipping speaker identification');
+          console.log('Only one speaker detected in SpeakerIdentification, auto-completing');
           console.log('Speaker segments:', Object.keys(speakerSegments));
-          onSkip();
+          
+          // Create default speaker mapping for single speaker
+          const defaultSpeakerNames: { [key: string]: string } = {};
+          Object.keys(speakerSegments).forEach(speakerId => {
+            defaultSpeakerNames[speakerId] = `Speaker 1`;
+          });
+          
+          // Auto-complete with default speaker name
+          onComplete({ 
+            speakerNames: defaultSpeakerNames,
+            speakerMerges: {}
+          });
           return;
         }
 

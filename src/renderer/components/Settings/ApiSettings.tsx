@@ -9,9 +9,9 @@ interface ApiSettingsProps {
 
 const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys }) => {
   const [apiKeys, setApiKeys] = useState({
-    openai: currentKeys.openai || '',
-    assemblyai: currentKeys.assemblyai || '',
-    revai: currentKeys.revai || ''
+    openai: currentKeys?.openai || '',
+    assemblyai: currentKeys?.assemblyai || '',
+    revai: currentKeys?.revai || ''
   });
 
   const [showKeys, setShowKeys] = useState({

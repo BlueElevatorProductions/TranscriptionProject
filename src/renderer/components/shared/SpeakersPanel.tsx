@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import './SpeakersPanel.css';
 
 interface Speaker {
@@ -33,6 +33,30 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
   onSpeakerCancel,
   onTempNameChange
 }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  console.log('SpeakersPanel render - props:', { 
+    mode,
+    editingSpeakerId, 
+    tempSpeakerName,
+    speakersCount: speakers.length,
+    onSpeakerEdit: !!onSpeakerEdit
+  });
+
+  // Focus the input with a delay to prevent immediate blur
+  useEffect(() => {
+    if (editingSpeakerId && inputRef.current) {
+      console.log('SpeakersPanel useEffect: Attempting to focus input for', editingSpeakerId);
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          console.log('SpeakersPanel useEffect: Focusing input element');
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+      }, 100); // Increased delay
+      return () => clearTimeout(timer);
+    }
+  }, [editingSpeakerId]);
+
   const formatDuration = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);
@@ -66,6 +90,13 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
           const duration = getSpeakerDuration(speaker);
           const segmentCount = getSpeakerSegmentCount(speaker);
           const isEditing = editingSpeakerId === speaker.id;
+          
+          console.log('Speaker render check:', {
+            speakerId: speaker.id,
+            speakerName,
+            editingSpeakerId,
+            isEditing: isEditing
+          });
 
           return (
             <div key={speaker.id} className="speaker-item">
@@ -75,21 +106,38 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
                     type="text"
                     value={tempSpeakerName || ''}
                     onChange={(e) => onTempNameChange(e.target.value)}
-                    onBlur={() => onSpeakerSave(speaker.id)}
+                    // onBlur={() => {
+                    //   console.log('Speaker input onBlur triggered for:', speaker.id);
+                    //   onSpeakerSave(speaker.id);
+                    // }}
                     onKeyDown={(e) => {
+                      e.stopPropagation(); // Prevent parent keyboard handlers
                       if (e.key === 'Enter') {
                         onSpeakerSave(speaker.id);
                       } else if (e.key === 'Escape') {
                         onSpeakerCancel();
                       }
                     }}
+                    onClick={(e) => e.stopPropagation()}
+                    onFocus={() => {
+                      console.log('Speaker input focused for:', speaker.id);
+                    }}
                     className="speaker-name-input"
-                    autoFocus
+                    ref={inputRef}
                   />
                 ) : (
                   <span 
                     className="speaker-name clickable"
-                    onClick={() => onSpeakerEdit(speaker.id, speakerName)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('SpeakersPanel onClick triggered:', { speakerId: speaker.id, speakerName });
+                      onSpeakerEdit(speaker.id, speakerName);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      console.log('SpeakersPanel onDoubleClick triggered:', { speakerId: speaker.id, speakerName });
+                      onSpeakerEdit(speaker.id, speakerName);
+                    }}
                   >
                     {speakerName}
                   </span>

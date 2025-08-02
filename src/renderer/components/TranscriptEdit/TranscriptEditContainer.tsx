@@ -25,7 +25,7 @@ interface TranscriptEditProps {
 }
 
 interface EditAction {
-  type: 'word-edit' | 'speaker-change' | 'clip-create' | 'word-insert' | 'paragraph-break';
+  type: 'word-edit' | 'speaker-change' | 'clip-create' | 'word-insert' | 'word-delete' | 'paragraph-break';
   data: any;
   timestamp: number;
 }
@@ -57,17 +57,23 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1);
   const [segments, setSegments] = useState(editedSegments);
   
-  // Sync local segments with editedSegments prop
+  // Sync local segments with editedSegments prop only if they're different
   useEffect(() => {
-    console.log('TranscriptEdit - Syncing with editedSegments:', editedSegments.length, 'segments');
-    setSegments(editedSegments);
+    if (JSON.stringify(segments) !== JSON.stringify(editedSegments)) {
+      setSegments(editedSegments);
+    }
   }, [editedSegments]);
   
-  // Update parent when segments change
+  // Update parent when segments change, but avoid circular updates
+  const [isUpdatingParent, setIsUpdatingParent] = useState(false);
   useEffect(() => {
-    console.log('TranscriptEdit - Local segments changed, updating parent:', segments.length, 'segments');
-    onEditedSegmentsUpdate(segments);
-  }, [segments, onEditedSegmentsUpdate]);
+    if (!isUpdatingParent && JSON.stringify(segments) !== JSON.stringify(editedSegments)) {
+      setIsUpdatingParent(true);
+      onEditedSegmentsUpdate(segments);
+      // Reset flag after update
+      setTimeout(() => setIsUpdatingParent(false), 0);
+    }
+  }, [segments]);
   
   // Clips management
   const {
@@ -82,63 +88,45 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
     addNewSpeakerLabel
   } = useClips({ segments, speakerNames: speakers, setSpeakerNames: onSpeakersUpdate });
   
-  // Extract speakers from segments
+  // Extract speakers from segments - EXACT SAME STRUCTURE AS PLAYBACK MODE
   const speakerIds = React.useMemo(() => {
-    console.log('Processing segments for speakers:', segments.length);
-    console.log('Speaker names from shared state:', speakers);
-    
     const speakerMap = new Map();
-    segments.forEach((segment: any, index: number) => {
-      console.log(`Segment ${index}:`, { 
-        speaker: segment.speaker, 
-        text: segment.text?.substring(0, 50) + '...',
-        start: segment.start,
-        end: segment.end 
-      });
-      
-      const speakerId = segment.speaker || 'SPEAKER_00'; // Fallback for missing speaker
-      if (!speakerMap.has(speakerId)) {
-        // Use custom name if available, otherwise fallback to generic name
-        const customName = speakers[speakerId];
-        const fallbackName = speakerId === 'SPEAKER_00' ? 'Speaker 1' : `Speaker ${speakerId.replace('SPEAKER_', '')}`;
-        
-        speakerMap.set(speakerId, {
-          id: speakerId,
-          name: customName || fallbackName,
-          totalTime: 0,
-          color: getRandomColor()
-        });
-      }
-    });
     
-    // Calculate speaking time for each speaker
     segments.forEach((segment: any) => {
       const speakerId = segment.speaker || 'SPEAKER_00';
-      if (speakerMap.has(speakerId)) {
-        const speaker = speakerMap.get(speakerId);
-        speaker.totalTime += (segment.end - segment.start);
+      if (!speakerMap.has(speakerId)) {
+        // Use current speaker name from speakers prop, fallback to generated name
+        const speakerName = speakers[speakerId] || (speakerId === 'SPEAKER_00' ? 'Speaker 1' : `Speaker ${speakerId.replace('SPEAKER_', '')}`);
+        speakerMap.set(speakerId, {
+          id: speakerId,
+          name: speakerName,
+          segments: [],
+          totalDuration: 0
+        });
       }
+      
+      const speaker = speakerMap.get(speakerId);
+      speaker.segments.push(segment);
+      speaker.totalDuration += (segment.end - segment.start);
     });
     
-    const speakerList = Array.from(speakerMap.values());
-    console.log('Extracted speakers:', speakerList);
-    
-    return speakerList;
+    return Array.from(speakerMap.values());
   }, [segments, speakers]);
 
   const handleWordClick = (timestamp: number) => {
-    console.log('TranscriptEdit - Seeking to time:', timestamp);
     onAudioStateUpdate({ currentTime: timestamp });
   };
 
   // Speaker editing functions
   const handleSpeakerEdit = (speakerId: string, currentName: string) => {
+    console.log('TranscriptEdit handleSpeakerEdit called:', { speakerId, currentName });
+    console.log('Before state update - editingSpeakerId:', editingSpeakerId, 'tempSpeakerName:', tempSpeakerName);
     setEditingSpeakerId(speakerId);
     setTempSpeakerName(currentName);
+    console.log('State update calls made for speaker editing');
   };
 
   const handleSpeakerNameEdit = (speakerId: string, newName: string) => {
-    console.log('Updating speaker name:', speakerId, '->', newName);
     const updatedSpeakers = {
       ...speakers,
       [speakerId]: newName
@@ -147,6 +135,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
   };
 
   const handleSpeakerSave = (speakerId: string) => {
+    console.log('TranscriptEdit handleSpeakerSave called for:', speakerId, 'tempName:', tempSpeakerName);
     if (tempSpeakerName.trim()) {
       handleSpeakerNameEdit(speakerId, tempSpeakerName.trim());
     }
@@ -209,6 +198,18 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             return newSegments;
           });
           break;
+        case 'word-delete':
+          // For undo, we need to re-insert the deleted word
+          const { segmentIndex: delSegIdx, wordIndex: delWordIdx, deletedWord } = action.data;
+          setSegments(prev => {
+            const newSegments = [...prev];
+            if (newSegments[delSegIdx]?.words) {
+              newSegments[delSegIdx].words.splice(delWordIdx, 0, deletedWord);
+              newSegments[delSegIdx].text = newSegments[delSegIdx].words.map((w: any) => w.word).join(' ');
+            }
+            return newSegments;
+          });
+          break;
         case 'paragraph-break':
           // For undo, we need to reverse the paragraph break operation
           // This is complex, so for now we'll just log it
@@ -250,6 +251,18 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             const newSegments = [...prev];
             if (newSegments[insertSegmentIndex]?.words) {
               newSegments[insertSegmentIndex].words.splice(insertWordIndex, 0, insertedWord);
+            }
+            return newSegments;
+          });
+          break;
+        case 'word-delete':
+          // For redo, we remove the word again
+          const { segmentIndex: redoSegIdx, wordIndex: redoWordIdx } = action.data;
+          setSegments(prev => {
+            const newSegments = [...prev];
+            if (newSegments[redoSegIdx]?.words && newSegments[redoSegIdx].words.length > 1) {
+              newSegments[redoSegIdx].words.splice(redoWordIdx, 1);
+              newSegments[redoSegIdx].text = newSegments[redoSegIdx].words.map((w: any) => w.word).join(' ');
             }
             return newSegments;
           });
@@ -305,6 +318,38 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
       const newSegments = [...prev];
       if (newSegments[segmentIndex]?.words) {
         newSegments[segmentIndex].words.splice(wordIndex, 0, newWord);
+      }
+      return newSegments;
+    });
+  }, [addToHistory, segments]);
+
+  // Handle word deletion with history
+  const handleWordDelete = useCallback((segmentIndex: number, wordIndex: number) => {
+    const segment = segments[segmentIndex];
+    if (!segment?.words?.[wordIndex]) return;
+    
+    const deletedWord = segment.words[wordIndex];
+    
+    const action: EditAction = {
+      type: 'word-delete',
+      data: { 
+        segmentIndex, 
+        wordIndex, 
+        deletedWord,
+        originalText: segment.text 
+      },
+      timestamp: Date.now()
+    };
+    
+    addToHistory(action);
+    
+    setSegments(prev => {
+      const newSegments = [...prev];
+      if (newSegments[segmentIndex]?.words && newSegments[segmentIndex].words.length > 1) {
+        // Remove the word
+        newSegments[segmentIndex].words.splice(wordIndex, 1);
+        // Rebuild segment text
+        newSegments[segmentIndex].text = newSegments[segmentIndex].words.map((w: any) => w.word).join(' ');
       }
       return newSegments;
     });
@@ -369,12 +414,10 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
 
   // Audio control handlers
   const handleVolumeChange = (newVolume: number) => {
-    console.log('TranscriptEdit - Volume changed to:', newVolume);
     onAudioStateUpdate({ volume: newVolume });
   };
 
   const handleSpeedChange = (newSpeed: number) => {
-    console.log('TranscriptEdit - Speed changed to:', newSpeed);
     onAudioStateUpdate({ playbackSpeed: newSpeed });
   };
 
@@ -423,7 +466,6 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
   }, [currentTime, segments]);
 
   const handleTimeUpdate = (time: number) => {
-    console.log('TranscriptEdit - Time update from audio:', time);
     onAudioStateUpdate({ currentTime: time });
     // Note: currentWordIndex will be updated by the useEffect above
   };
@@ -456,7 +498,9 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
       // Handle spacebar only if not typing in an input or textarea
       if (event.code === 'Space' && !isInInput) {
         event.preventDefault();
-        onAudioStateUpdate({ isPlaying: !isPlaying });
+        // Ensure isPlaying is always a boolean
+        const currentIsPlaying = typeof isPlaying === 'boolean' ? isPlaying : false;
+        onAudioStateUpdate({ isPlaying: !currentIsPlaying });
       }
     };
 
@@ -505,7 +549,6 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             onCreateNewClip={(wordIndex) => {
               // Prevent duplicate clip creation
               if (isCreatingClip) {
-                console.log('Clip creation already in progress, ignoring duplicate request');
                 return false;
               }
               
@@ -513,10 +556,6 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
               
               try {
                 const success = createNewClip(wordIndex);
-                if (success) {
-                  // Force re-render to show updated segments
-                  setCurrentTime(currentTime); // Trigger re-render
-                }
                 return success;
               } finally {
                 // Reset creation flag after a short delay to prevent rapid duplicates
@@ -524,12 +563,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
               }
             }}
             onAddNewSpeaker={(wordIndex, speakerName) => {
-              const success = addNewSpeakerLabel(wordIndex, speakerName);
-              if (success) {
-                // Force re-render to show updated segments and speakers
-                setCurrentTime(currentTime); // Trigger re-render
-              }
-              return success;
+              return addNewSpeakerLabel(wordIndex, speakerName);
             }}
             editingSpeakerId={editingSpeakerId}
             tempSpeakerName={tempSpeakerName}
@@ -539,6 +573,7 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             onSpeakerNameChange={setTempSpeakerName}
             onWordEdit={handleWordEdit}
             onWordInsert={handleWordInsert}
+            onWordDelete={handleWordDelete}
             onParagraphBreak={handleParagraphBreak}
           />
         </div>

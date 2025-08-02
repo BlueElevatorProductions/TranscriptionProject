@@ -43,6 +43,9 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
   // Use shared audio state instead of local state
   const { currentTime, isPlaying, volume, playbackSpeed } = sharedAudioState;
   
+  // Track current word for efficient highlighting
+  const [currentWordInfo, setCurrentWordInfo] = useState<{paragraphId: string, segmentIndex: number, wordIndex: number} | null>(null);
+  
   // Local UI state
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
   const [tempSpeakerName, setTempSpeakerName] = useState('');
@@ -112,8 +115,11 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
   };
 
   const handlePlayPause = () => {
-    console.log('PlaybackMode - PlayPause clicked, current state:', isPlaying, '-> new state:', !isPlaying);
-    onAudioStateUpdate({ isPlaying: !isPlaying });
+    // Ensure isPlaying is always a boolean
+    const currentIsPlaying = typeof isPlaying === 'boolean' ? isPlaying : false;
+    const newIsPlaying = !currentIsPlaying;
+    console.log('PlaybackMode - PlayPause clicked, current state:', currentIsPlaying, '-> new state:', newIsPlaying);
+    onAudioStateUpdate({ isPlaying: newIsPlaying });
   };
 
   const getDuration = () => {
@@ -203,7 +209,9 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
       if (event.code === 'Space' && 
           !['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement)?.tagName)) {
         event.preventDefault();
-        onAudioStateUpdate({ isPlaying: !isPlaying });
+        // Ensure isPlaying is always a boolean
+        const currentIsPlaying = typeof isPlaying === 'boolean' ? isPlaying : false;
+        onAudioStateUpdate({ isPlaying: !currentIsPlaying });
       }
     };
 
@@ -271,16 +279,24 @@ const PlaybackModeContainer: React.FC<PlaybackModeProps> = ({
 
 // Helper function to group segments into paragraphs
 const groupSegmentsByParagraph = (segments: any[]): Paragraph[] => {
+  console.log('PlaybackMode groupSegmentsByParagraph - input segments:', segments.length, segments.map(s => ({
+    id: s.id,
+    text: s.text.substring(0, 30) + '...',
+    paragraphBreak: s.paragraphBreak,
+    speaker: s.speaker
+  })));
+  
   const paragraphs: Paragraph[] = [];
   let currentParagraph: Paragraph | null = null;
   
   segments.forEach((segment, index) => {
     const speakerId = segment.speaker || 'SPEAKER_00';
     
-    // Start new paragraph if speaker changes or significant time gap
+    // Start new paragraph if speaker changes, significant time gap, or explicit paragraph break
     if (!currentParagraph || 
         currentParagraph.speakerId !== speakerId ||
-        (segment.start - currentParagraph.endTime) > 5.0) {
+        (segment.start - currentParagraph.endTime) > 5.0 ||
+        segment.paragraphBreak === true) {
       
       if (currentParagraph) {
         paragraphs.push(currentParagraph);
@@ -305,6 +321,13 @@ const groupSegmentsByParagraph = (segments: any[]): Paragraph[] => {
   if (currentParagraph) {
     paragraphs.push(currentParagraph);
   }
+  
+  console.log('PlaybackMode groupSegmentsByParagraph - output paragraphs:', paragraphs.length, paragraphs.map(p => ({
+    id: p.id,
+    speakerId: p.speakerId,
+    segmentCount: p.segments.length,
+    text: p.text.substring(0, 50) + '...'
+  })));
   
   return paragraphs;
 };

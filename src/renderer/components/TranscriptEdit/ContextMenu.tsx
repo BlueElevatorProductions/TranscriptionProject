@@ -9,6 +9,7 @@ interface ContextMenuItem {
   isSubmenu?: boolean;
   submenu?: ContextMenuItem[];
   isSeparator?: boolean;
+  className?: string;
 }
 
 interface ContextMenuProps {
@@ -110,7 +111,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         return (
           <div
             key={index}
-            className={`context-menu-item ${item.disabled ? 'disabled' : ''} ${item.isSubmenu ? 'has-submenu' : ''}`}
+            className={`context-menu-item ${item.disabled ? 'disabled' : ''} ${item.isSubmenu ? 'has-submenu' : ''} ${item.className || ''}`}
             onClick={() => handleItemClick(item)}
             onMouseEnter={() => item.isSubmenu && setOpenSubmenu(index)}
           >

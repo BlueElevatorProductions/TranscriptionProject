@@ -81,3 +81,13 @@
   background: #e0e0e0;
   margin: 4px 0;
 }
+
+/* Delete item styling */
+.context-menu-item.delete-item:hover {
+  background: #fee !important;
+  color: #c53030;
+}
+
+.context-menu-item.delete-item .context-menu-icon {
+  color: #c53030;
+}

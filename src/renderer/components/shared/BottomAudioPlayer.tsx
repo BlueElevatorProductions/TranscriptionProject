@@ -27,6 +27,7 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
   const [duration, setDuration] = useState(0);
   const isSeekingRef = useRef(false);
   const lastUpdateTimeRef = useRef(0);
+  const animationFrameRef = useRef<number | null>(null);
 
   const { currentTime, isPlaying, volume, playbackSpeed } = sharedAudioState;
 
@@ -126,15 +127,42 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
         setDuration(audioRef.current?.duration || 0);
       };
       
-      const handleTimeUpdate = () => {
-        if (audioRef.current && !isSeekingRef.current) {
-          const audioTime = audioRef.current.currentTime;
-          const now = Date.now();
-          // Only update parent every 100ms to reduce re-renders
-          if (now - lastUpdateTimeRef.current > 100) {
+      // Use simple timer-based updates like the working Swift app (10fps - sufficient for smooth highlighting)
+      let updateInterval: NodeJS.Timeout | null = null;
+      
+      const startTimeUpdates = () => {
+        if (updateInterval) {
+          clearInterval(updateInterval);
+        }
+        updateInterval = setInterval(() => {
+          if (audioRef.current && !isSeekingRef.current && !audioRef.current.paused) {
+            // Add small offset to compensate for processing delays and make highlights feel more responsive
+            const audioTime = audioRef.current.currentTime + 0.05; // 50ms ahead
             onAudioStateUpdate({ currentTime: audioTime });
-            lastUpdateTimeRef.current = now;
+          } else {
+            // Stop updates when paused
+            if (updateInterval) {
+              clearInterval(updateInterval);
+              updateInterval = null;
+            }
           }
+        }, 50); // 50ms = 20 updates per second (faster than Swift app to reduce lag)
+      };
+      
+      const handleTimeUpdate = () => {
+        // Not needed with interval-based approach
+      };
+      
+      const handlePlay = () => {
+        console.log('BottomAudioPlayer - Play event');
+        startTimeUpdates();
+      };
+      
+      const handlePause = () => {
+        console.log('BottomAudioPlayer - Pause event');
+        if (updateInterval) {
+          clearInterval(updateInterval);
+          updateInterval = null;
         }
       };
       
@@ -142,6 +170,8 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
       audioRef.current.addEventListener('loadeddata', handleLoadedData);
       audioRef.current.addEventListener('canplay', handleCanPlay);
       audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
+      audioRef.current.addEventListener('play', handlePlay);
+      audioRef.current.addEventListener('pause', handlePause);
       
       // Cleanup listeners
       return () => {
@@ -150,6 +180,11 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
           audioRef.current.removeEventListener('loadeddata', handleLoadedData);
           audioRef.current.removeEventListener('canplay', handleCanPlay);
           audioRef.current.removeEventListener('timeupdate', handleTimeUpdate);
+          audioRef.current.removeEventListener('play', handlePlay);
+          audioRef.current.removeEventListener('pause', handlePause);
+        }
+        if (updateInterval) {
+          clearInterval(updateInterval);
         }
       };
     }
@@ -158,8 +193,13 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
   // Update audio element properties when props change
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = volume;
-      audioRef.current.playbackRate = playbackSpeed;
+      // Ensure volume is a valid number between 0 and 1
+      const validVolume = isNaN(volume) || volume === undefined || volume === null ? 0.7 : Math.max(0, Math.min(1, volume));
+      // Ensure playbackSpeed is a valid number
+      const validPlaybackSpeed = isNaN(playbackSpeed) || playbackSpeed === undefined || playbackSpeed === null ? 1.0 : Math.max(0.1, Math.min(4.0, playbackSpeed));
+      
+      audioRef.current.volume = validVolume;
+      audioRef.current.playbackRate = validPlaybackSpeed;
     }
   }, [volume, playbackSpeed]);
 
@@ -186,14 +226,17 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
   // Handle play/pause state
   useEffect(() => {
     if (audioRef.current && isAudioReady) {
-      console.log('BottomAudioPlayer - Play state changed:', isPlaying, 'Audio paused:', audioRef.current.paused);
+      // Ensure isPlaying is a boolean
+      const safeIsPlaying = typeof isPlaying === 'boolean' ? isPlaying : false;
       
-      if (isPlaying && audioRef.current.paused) {
+      console.log('BottomAudioPlayer - Play state changed:', safeIsPlaying, 'Audio paused:', audioRef.current.paused);
+      
+      if (safeIsPlaying && audioRef.current.paused) {
         console.log('BottomAudioPlayer - Playing audio...');
         audioRef.current.play().catch(error => {
           console.error('BottomAudioPlayer - Audio play failed:', error);
         });
-      } else if (!isPlaying && !audioRef.current.paused) {
+      } else if (!safeIsPlaying && !audioRef.current.paused) {
         console.log('BottomAudioPlayer - Pausing audio...');
         audioRef.current.pause();
       }
@@ -202,8 +245,12 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
 
   // Click handlers
   const handlePlayPauseClick = () => {
-    console.log('BottomAudioPlayer - Play/Pause clicked, current isPlaying:', isPlaying);
-    onAudioStateUpdate({ isPlaying: !isPlaying });
+    // Ensure isPlaying is always a boolean
+    const currentIsPlaying = typeof isPlaying === 'boolean' ? isPlaying : false;
+    const newIsPlaying = !currentIsPlaying;
+    
+    console.log('BottomAudioPlayer - Play/Pause clicked, current isPlaying:', currentIsPlaying, '-> new:', newIsPlaying);
+    onAudioStateUpdate({ isPlaying: newIsPlaying });
   };
   
   const handleRewindClick = () => {
@@ -247,8 +294,9 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
   const getVolumeIcon = () => {
-    if (volume === 0) return '🔇';
-    if (volume < 0.5) return '🔉';
+    const validVolume = isNaN(volume) || volume === undefined || volume === null ? 0.7 : volume;
+    if (validVolume === 0) return '🔇';
+    if (validVolume < 0.5) return '🔉';
     return '🔊';
   };
 
@@ -265,11 +313,9 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
 
   // Don't render if no audio source
   if (!audioSrc) {
-    console.log('BottomAudioPlayer - Not rendering: no audioSrc');
     return null;
   }
   
-  console.log('BottomAudioPlayer - RENDERING with audioSrc:', audioSrc);
 
   return (
     <div className="audio-player-container">
@@ -290,9 +336,9 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
             title="Rewind 15s"
           ></button>
           <button 
-            className={`control-btn large ${isPlaying ? 'pause' : 'play'}`}
+            className={`control-btn large ${(typeof isPlaying === 'boolean' ? isPlaying : false) ? 'pause' : 'play'}`}
             onClick={handlePlayPauseClick}
-            title={isPlaying ? 'Pause' : 'Play'}
+            title={(typeof isPlaying === 'boolean' ? isPlaying : false) ? 'Pause' : 'Play'}
           ></button>
           <button 
             className="control-btn small forward" 
@@ -321,7 +367,7 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
           <div className="volume-slider" onClick={handleVolumeClick}>
             <div 
               className="volume-fill" 
-              style={{ width: `${volume * 100}%` }}
+              style={{ width: `${(isNaN(volume) || volume === undefined || volume === null ? 0.7 : volume) * 100}%` }}
             ></div>
           </div>
         </div>

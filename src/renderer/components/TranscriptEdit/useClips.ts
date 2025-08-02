@@ -82,7 +82,6 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
 
     // Combine generated clips with user clips
     const allClips = [...generatedClips, ...userClips];
-    console.log(`Generated ${generatedClips.length} clips from ${segments.length} segments + ${userClips.length} user clips = ${allClips.length} total`);
     return allClips;
   }, [segments, speakerNames, userClips]);
 
