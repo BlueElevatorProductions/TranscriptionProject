@@ -19,11 +19,15 @@ export interface PanelsRegionProps {
 }
 
 // Placeholder panel components for demo
-const SpeakersPanel: React.FC = () => (
+interface PanelProps {
+  onClose?: () => void;
+}
+
+const SpeakersPanel: React.FC<PanelProps> = ({ onClose }) => (
   <div className="panel">
     <div className="panel-header">
       <h3 className="panel-title">speakers</h3>
-      <button className="panel-close" aria-label="Close speakers panel">
+      <button className="panel-close" onClick={onClose} aria-label="Close speakers panel">
         ✕
       </button>
     </div>
@@ -40,11 +44,11 @@ const SpeakersPanel: React.FC = () => (
   </div>
 );
 
-const ClipsPanel: React.FC = () => (
+const ClipsPanel: React.FC<PanelProps> = ({ onClose }) => (
   <div className="panel">
     <div className="panel-header">
       <h3 className="panel-title">clips</h3>
-      <button className="panel-close" aria-label="Close clips panel">
+      <button className="panel-close" onClick={onClose} aria-label="Close clips panel">
         ✕
       </button>
     </div>
@@ -70,6 +74,19 @@ const PanelsRegion: React.FC<PanelsRegionProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartWidth, setDragStartWidth] = useState(0);
+  
+  // Individual panel visibility state
+  const [panelVisibility, setPanelVisibility] = useState({
+    speakers: true,
+    clips: true
+  });
+
+  const handlePanelClose = useCallback((panelId: string) => {
+    setPanelVisibility(prev => ({
+      ...prev,
+      [panelId]: false
+    }));
+  }, []);
 
   // Mouse event handlers for resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -149,8 +166,12 @@ const PanelsRegion: React.FC<PanelsRegionProps> = ({
       <div className="panels-container">
         <div className="panels-scroll">
           {/* Demo panels - these will be replaced with dynamic panel system in Phase 5 */}
-          <SpeakersPanel />
-          <ClipsPanel />
+          {panelVisibility.speakers && (
+            <SpeakersPanel onClose={() => handlePanelClose('speakers')} />
+          )}
+          {panelVisibility.clips && (
+            <ClipsPanel onClose={() => handlePanelClose('clips')} />
+          )}
         </div>
       </div>
     </div>

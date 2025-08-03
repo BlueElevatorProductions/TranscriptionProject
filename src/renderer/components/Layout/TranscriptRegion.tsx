@@ -16,6 +16,9 @@ export interface TranscriptRegionProps {
   currentMode?: 'listen' | 'edit';
   onWordClick?: (wordId: string) => void;
   onTextSelect?: (selection: string) => void;
+  // Panel controls
+  panelsVisible?: boolean;
+  onTogglePanels?: () => void;
 }
 
 const TranscriptRegion: React.FC<TranscriptRegionProps> = ({
@@ -23,14 +26,32 @@ const TranscriptRegion: React.FC<TranscriptRegionProps> = ({
   transcriptData,
   currentMode = 'listen',
   onWordClick,
-  onTextSelect
+  onTextSelect,
+  panelsVisible = true,
+  onTogglePanels
 }) => {
+  // Formatting toolbar
+  const renderToolbar = () => {
+    if (currentMode !== 'edit') return null;
+    
+    return (
+      <div className="floating-toolbar">
+        <button className="toolbar-btn" title="Highlight">🖍️</button>
+        <button className="toolbar-btn" title="Bold">𝐁</button>
+        <button className="toolbar-btn" title="Italic">𝐼</button>
+        <button className="toolbar-btn" title="Underline">U̲</button>
+        <button className="toolbar-btn" title="Strikethrough">S̶</button>
+      </div>
+    );
+  };
+
   // Placeholder content for development
   const renderPlaceholderContent = () => (
     <div className="transcript-placeholder">
       <div className="transcript-header">
         <h1 className="transcript-title">Guest Name Interview</h1>
         <div className="transcript-divider" />
+        {renderToolbar()}
       </div>
       
       <div className="transcript-content">
@@ -101,6 +122,18 @@ const TranscriptRegion: React.FC<TranscriptRegionProps> = ({
           {children || renderPlaceholderContent()}
         </div>
       </div>
+
+      {/* Panels Toggle Button - Right Side */}
+      {onTogglePanels && (
+        <button
+          className={`panels-toggle-btn ${panelsVisible ? 'active' : ''}`}
+          onClick={onTogglePanels}
+          title={panelsVisible ? 'Hide Panels' : 'Show Panels'}
+          aria-label={panelsVisible ? 'Hide panels' : 'Show panels'}
+        >
+          {panelsVisible ? '‹' : '›'}
+        </button>
+      )}
 
       {/* Scroll indicators for better UX */}
       <div className="scroll-indicator top" aria-hidden="true" />

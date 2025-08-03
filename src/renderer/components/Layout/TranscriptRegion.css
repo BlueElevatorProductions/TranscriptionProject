@@ -129,6 +129,90 @@
   letter-spacing: 0.5px;
 }
 
+/* Floating Toolbar */
+.floating-toolbar {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin: 16px 0;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 8px 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.toolbar-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  color: #5f6368;
+}
+
+.toolbar-btn:hover {
+  background: #f1f3f4;
+  border-color: #e0e0e0;
+}
+
+.toolbar-btn:active {
+  background: #e3f2fd;
+  border-color: #1976d2;
+  color: #1976d2;
+}
+
+.toolbar-btn:focus {
+  outline: 2px solid #1976d2;
+  outline-offset: 2px;
+}
+
+/* Panels Toggle Button */
+.panels-toggle-btn {
+  position: absolute;
+  top: 50%;
+  right: -12px;
+  transform: translateY(-50%);
+  background: #1976d2;
+  color: white;
+  border: none;
+  width: 24px;
+  height: 60px;
+  border-radius: 0 12px 12px 0;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 10;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.panels-toggle-btn:hover {
+  background: #1565c0;
+  width: 28px;
+}
+
+.panels-toggle-btn:focus {
+  outline: 2px solid #1976d2;
+  outline-offset: 2px;
+}
+
+.panels-toggle-btn.active {
+  right: 0px;
+}
+
 /* Mode-specific styling */
 .transcript-region[data-mode="edit"] {
   cursor: text;

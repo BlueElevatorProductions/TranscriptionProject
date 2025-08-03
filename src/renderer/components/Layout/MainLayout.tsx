@@ -125,7 +125,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({
       />
 
       {/* Transcript Region - Central content area */}
-      <TranscriptRegion />
+      <TranscriptRegion 
+        panelsVisible={layoutState.panelsVisible}
+        onTogglePanels={togglePanels}
+      />
 
       {/* Panels Region - Right sliding panels */}
       <PanelsRegion

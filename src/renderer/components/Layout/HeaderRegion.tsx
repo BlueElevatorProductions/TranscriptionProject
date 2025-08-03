@@ -113,8 +113,8 @@ const HeaderRegion: React.FC<HeaderRegionProps> = ({
   return (
     <header className="header-region">
       <div className="header-content">
-        {/* Left Section: Mode Tabs */}
-        <div className="mode-tabs">
+        {/* Mode Tabs - Full Width */}
+        <div className="mode-tabs-container">
           <button
             className={`mode-tab ${currentMode === 'listen' ? 'active' : ''}`}
             onClick={() => handleModeChange('listen')}
@@ -129,57 +129,6 @@ const HeaderRegion: React.FC<HeaderRegionProps> = ({
           >
             edit
           </button>
-        </div>
-
-        {/* Center Section: Context-Sensitive Toolbar */}
-        <div className="toolbar" role="toolbar" aria-label="Formatting toolbar">
-          {availableTools.map(tool => (
-            <ToolbarButton
-              key={tool.id}
-              icon={tool.icon}
-              label={tool.label}
-              shortcut={tool.shortcut}
-              active={selectedTools.has(tool.id)}
-              onClick={() => handleToolClick(tool.id)}
-            />
-          ))}
-        </div>
-
-        {/* Right Section: Layout Controls */}
-        <div className="layout-controls">
-          {/* Panels Toggle */}
-          <button
-            className={`control-button ${panelsVisible ? 'active' : ''}`}
-            onClick={onTogglePanels}
-            title="Toggle Panels (P)"
-            aria-label="Toggle panels"
-            aria-pressed={panelsVisible}
-          >
-            📋
-          </button>
-
-          {/* Audio Slider Controls */}
-          <div className="audio-controls">
-            <button
-              className={`control-button ${activeAudioSlider === 'player' ? 'active' : ''}`}
-              onClick={() => onToggleAudioSlider('player')}
-              title="Toggle Player (Shift+P)"
-              aria-label="Toggle audio player"
-              aria-pressed={activeAudioSlider === 'player'}
-            >
-              ▶️
-            </button>
-            <button
-              className={`control-button ${activeAudioSlider === 'editor' ? 'active' : ''}`}
-              onClick={() => onToggleAudioSlider('editor')}
-              title="Toggle Editor (Shift+E)"
-              aria-label="Toggle audio editor"
-              aria-pressed={activeAudioSlider === 'editor'}
-              disabled={true} // Disabled for now - Coming Soon
-            >
-              🎛️
-            </button>
-          </div>
         </div>
       </div>
     </header>

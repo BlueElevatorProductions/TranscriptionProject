@@ -56,7 +56,7 @@ import { AppProviders, useTranscription, useProject, useSelectedJob, useAudio, u
 import { useTranscriptionErrorHandler } from './hooks/useTranscriptionErrorHandler';
 
 // View components
-import { HomeView, TranscriptionProgressView, SpeakerIdentificationView, PlaybackView } from './views';
+import { HomeView, TranscriptionProgressView, SpeakerIdentificationView, PlaybackView, NewLayoutView } from './views';
 
 // Dialogs and shared components
 import ImportDialog from './components/ImportDialog/ImportDialog';
@@ -80,6 +80,7 @@ const AppCore: React.FC = () => {
   const [version, setVersion] = useState<string>('1.0.0');
   const [platform, setPlatform] = useState<string>('unknown');
   const [currentView, setCurrentView] = useState<ViewType>('home');
+  const [showNewLayout, setShowNewLayout] = useState<boolean>(false);
   
   // Dialog state
   const [showImportDialog, setShowImportDialog] = useState<boolean>(false);
@@ -458,6 +459,16 @@ const AppCore: React.FC = () => {
     }
   }, [projectActions, handleTranscriptionError]);
 
+  // ==================== New Layout Handler ====================
+
+  const handleShowNewLayout = useCallback(() => {
+    setShowNewLayout(true);
+  }, []);
+
+  const handleHideNewLayout = useCallback(() => {
+    setShowNewLayout(false);
+  }, []);
+
   // ==================== Audio Source Management ====================
 
   const currentAudioPath = selectedJob?.filePath || null;
@@ -493,6 +504,15 @@ const AppCore: React.FC = () => {
   }
 
   // ==================== Main App Render ====================
+
+  // If showing new layout, render it instead of main app
+  if (showNewLayout) {
+    return (
+      <TranscriptionErrorBoundary>
+        <NewLayoutView onBack={handleHideNewLayout} />
+      </TranscriptionErrorBoundary>
+    );
+  }
 
   return (
     <TranscriptionErrorBoundary>
@@ -542,6 +562,7 @@ const AppCore: React.FC = () => {
             onNewProject={handleNewProject}
             onOpenProject={handleOpenExistingProject}
             onJobSelect={handleJobSelect}
+            onShowNewLayout={handleShowNewLayout}
           />
         )}
 
