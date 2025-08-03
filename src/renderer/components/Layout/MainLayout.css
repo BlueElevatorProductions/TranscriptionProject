@@ -25,8 +25,8 @@
     1fr  /* transcript - fill remaining space */
     var(--audio-height); /* audio - dynamic height */
   
-  /* Visual styling - Blue background as per mockup */
-  background: #4a90e2; /* Primary blue background */
+  /* Visual styling - Light blue background as per mockup */
+  background: #a8d5e5; /* Light cyan background matching mockup */
   color: var(--text-color, #333);
   font-family: var(--font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif);
   
@@ -92,14 +92,14 @@
 /* Region-specific styling */
 .header-region {
   grid-area: header;
-  background: rgba(0, 0, 0, 0.1); /* Light black overlay on blue */
+  background: rgba(255, 255, 255, 0.3); /* Light white overlay on cyan */
   z-index: 100;
 }
 
 .transcript-region {
   grid-area: transcript;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.05); /* Very light black overlay */
+  background: #ffffff; /* Pure white as in mockup */
   position: relative;
 }
 
@@ -109,7 +109,7 @@
   right: 0;
   bottom: 0; /* Above audio when present */
   width: var(--panels-width);
-  background: rgba(0, 0, 0, 0.8); /* Black overlay as per mockup */
+  background: #8fb3c7; /* Medium blue-gray matching mockup */
   overflow: hidden;
   z-index: 20;
   transform: translateX(0); /* Start visible for testing */
@@ -122,7 +122,7 @@
 
 .audio-region {
   grid-area: audio;
-  background: rgba(0, 0, 0, 0.2); /* Medium black overlay */
+  background: #8fb3c7; /* Medium blue-gray matching panels */
   overflow: hidden;
   position: relative;
   z-index: 10;

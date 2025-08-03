@@ -3,7 +3,7 @@
  */
 
 .transcript-region {
-  background: rgba(0, 0, 0, 0.05); /* Very light black overlay */
+  background: #ffffff; /* Pure white as in mockup */
   position: relative;
   overflow: hidden;
   display: flex;

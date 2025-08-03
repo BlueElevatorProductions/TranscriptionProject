@@ -28,13 +28,13 @@
 }
 
 .mode-tab {
-  background: rgba(0, 0, 0, 0.3); /* Darker black overlay for inactive tabs */
+  background: #9e9e9e; /* Gray for inactive tabs matching mockup */
   border: none;
   border-radius: 20px 20px 0 0;
   padding: 8px 32px;
   font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.8); /* Light text */
+  color: #333; /* Dark text on gray */
   cursor: pointer;
   transition: all 0.2s ease;
   min-width: 120px;
@@ -46,12 +46,12 @@
 }
 
 .mode-tab:hover:not(.active) {
-  background: rgba(0, 0, 0, 0.2);
-  color: #fff;
+  background: #8e8e8e;
+  color: #333;
 }
 
 .mode-tab.active {
-  background: rgba(0, 0, 0, 0.05); /* Very light overlay for active tab */
+  background: #7e7e7e; /* Darker gray for active tab */
   color: #333;
   box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.1);
   z-index: 1;
