@@ -3,8 +3,7 @@
  */
 
 .panels-region {
-  background: #f9f9f9;
-  border-left: 1px solid #e0e0e0;
+  background: rgba(0, 0, 0, 0.8); /* Dark black overlay as per mockup */
   display: flex;
   overflow: hidden;
   /* Position and transition handled by MainLayout.css */
@@ -92,17 +91,15 @@
 
 /* Panel styling */
 .panel {
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: rgba(0, 0, 0, 0.6); /* Black overlay for panels */
   border-radius: 8px;
   margin-bottom: 16px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  transition: box-shadow 0.2s ease;
+  transition: background 0.2s ease;
 }
 
 .panel:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .panel:last-child {
@@ -114,14 +111,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: #fafafa;
-  border-bottom: 1px solid #e0e0e0;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .panel-title {
   font-size: 14px;
   font-weight: 600;
-  color: #5f6368;
+  color: rgba(255, 255, 255, 0.9); /* Light text on dark background */
   margin: 0;
   text-transform: lowercase;
   letter-spacing: 0.25px;
@@ -131,7 +127,7 @@
   background: transparent;
   border: none;
   font-size: 14px;
-  color: #5f6368;
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -140,8 +136,8 @@
 }
 
 .panel-close:hover {
-  background: #e0e0e0;
-  color: #202124;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 .panel-close:focus {
@@ -161,12 +157,12 @@
   padding: 8px 12px;
   border-radius: 6px;
   margin-bottom: 8px;
-  background: #f8f9fa;
+  background: rgba(0, 0, 0, 0.2);
   transition: background-color 0.2s ease;
 }
 
 .speaker-item:hover {
-  background: #e8f0fe;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .speaker-item:last-child {
@@ -176,7 +172,7 @@
 .speaker-name {
   font-size: 14px;
   font-weight: 500;
-  color: #202124;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .speaker-color {
@@ -191,13 +187,13 @@
 .clip-item {
   padding: 12px;
   border-radius: 6px;
-  background: #f8f9fa;
+  background: rgba(0, 0, 0, 0.2);
   margin-bottom: 12px;
   transition: background-color 0.2s ease;
 }
 
 .clip-item:hover {
-  background: #e8f0fe;
+  background: rgba(0, 0, 0, 0.3);
   cursor: pointer;
 }
 
@@ -207,7 +203,7 @@
 
 .clip-time {
   font-size: 12px;
-  color: #1976d2;
+  color: #64b5f6; /* Light blue text */
   font-weight: 600;
   margin-bottom: 4px;
   font-family: 'Monaco', 'Menlo', monospace;
@@ -217,13 +213,13 @@
 .clip-name {
   font-size: 14px;
   font-weight: 500;
-  color: #202124;
+  color: rgba(255, 255, 255, 0.9);
   margin-bottom: 6px;
 }
 
 .clip-preview {
   font-size: 12px;
-  color: #5f6368;
+  color: rgba(255, 255, 255, 0.6);
   line-height: 1.4;
   overflow: hidden;
   display: -webkit-box;
