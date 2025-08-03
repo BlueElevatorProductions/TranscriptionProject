@@ -46,9 +46,9 @@ const NewLayoutView: React.FC<NewLayoutViewProps> = ({ onBack }) => {
     console.log(`Switched to ${mode} mode`);
   }, []);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts - pass the actual toggle functions from the state
   useLayoutKeyboard({
-    onTogglePanels: togglePanels,
+    onTogglePanels: () => setPanelsVisible(prev => !prev),
     onTogglePlayer: () => toggleAudioSlider('player'),
     onToggleEditor: () => toggleAudioSlider('editor'),
     onSwitchToListen: () => handleModeChange('listen'),
@@ -63,12 +63,13 @@ const NewLayoutView: React.FC<NewLayoutViewProps> = ({ onBack }) => {
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif'
     }}>
-      {/* Optional back button for testing */}
+      {/* Optional back button for testing - positioned to not overlap tabs */}
       {onBack && (
         <div style={{
           position: 'absolute',
           top: '10px',
-          left: '10px',
+          left: '50%',
+          transform: 'translateX(-50%)',
           zIndex: 1000,
         }}>
           <button
@@ -78,10 +79,10 @@ const NewLayoutView: React.FC<NewLayoutViewProps> = ({ onBack }) => {
               color: 'white',
               border: 'none',
               borderRadius: '6px',
-              padding: '8px 16px',
+              padding: '6px 12px',
               cursor: 'pointer',
               fontWeight: '500',
-              fontSize: '14px',
+              fontSize: '12px',
             }}
           >
             ← Back to Current UI
@@ -131,6 +132,8 @@ const NewLayoutView: React.FC<NewLayoutViewProps> = ({ onBack }) => {
       {/* Main Layout */}
       <MainLayout
         legacyMode={false}
+        currentMode={currentMode}
+        onModeChange={handleModeChange}
       />
     </div>
   );

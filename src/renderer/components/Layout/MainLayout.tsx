@@ -34,11 +34,16 @@ export interface MainLayoutProps {
   children?: React.ReactNode;
   // Optional props for gradual migration
   legacyMode?: boolean;
+  // Mode state
+  currentMode?: 'listen' | 'edit';
+  onModeChange?: (mode: 'listen' | 'edit') => void;
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ 
   children, 
-  legacyMode = false 
+  legacyMode = false,
+  currentMode = 'listen',
+  onModeChange
 }) => {
   // Layout state
   const [layoutState, setLayoutState] = useState<LayoutState>({
@@ -122,12 +127,15 @@ const MainLayout: React.FC<MainLayoutProps> = ({
         panelsVisible={layoutState.panelsVisible}
         audioSliderVisible={layoutState.audioSliderVisible}
         activeAudioSlider={layoutState.activeAudioSlider}
+        currentMode={currentMode}
+        onModeChange={onModeChange}
       />
 
       {/* Transcript Region - Central content area */}
       <TranscriptRegion 
         panelsVisible={layoutState.panelsVisible}
         onTogglePanels={togglePanels}
+        currentMode={currentMode}
       />
 
       {/* Panels Region - Right sliding panels */}

@@ -12,17 +12,17 @@
   height: 100vh;
   min-width: 800px;
   
-  /* Grid template with dynamic areas */
+  /* Grid template - panels are overlaid, not in grid */
   grid-template-areas:
-    "header header"
-    "transcript panels"
-    "audio audio";
+    "header"
+    "transcript"
+    "audio";
   
-  /* Grid sizing */
-  grid-template-columns: 1fr var(--panels-width);
+  /* Grid sizing - transcript always full width */
+  grid-template-columns: 1fr;
   grid-template-rows: 
     auto /* header - size to content */
-    1fr  /* transcript/panels - fill remaining space */
+    1fr  /* transcript - fill remaining space */
     var(--audio-height); /* audio - dynamic height */
   
   /* Visual styling */
@@ -35,35 +35,15 @@
               grid-template-rows 0.3s ease-out;
 }
 
-/* Layout when panels are hidden */
-.main-layout[data-panels-visible="false"] {
-  grid-template-areas:
-    "header header"
-    "transcript transcript"
-    "audio audio";
-  
-  grid-template-columns: 1fr 0px;
-}
-
 /* Layout when audio is hidden */
 .main-layout[data-audio-visible="false"] {
-  grid-template-areas:
-    "header header"
-    "transcript panels";
-  
-  grid-template-rows: 
-    auto /* header */
-    1fr; /* transcript/panels fill remaining */
-}
-
-/* Layout when both panels and audio are hidden */
-.main-layout[data-panels-visible="false"][data-audio-visible="false"] {
   grid-template-areas:
     "header"
     "transcript";
   
-  grid-template-columns: 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 
+    auto /* header */
+    1fr; /* transcript fills remaining */
 }
 
 /* Legacy layout fallback */
@@ -125,11 +105,21 @@
 }
 
 .panels-region {
-  grid-area: panels;
+  position: fixed;
+  top: 60px; /* Below header */
+  right: 0;
+  bottom: 0; /* Above audio when present */
+  width: var(--panels-width);
   border-left: 1px solid var(--border-color, #ddd);
   background: var(--panels-background, #f9f9f9);
   overflow: hidden;
-  position: relative;
+  z-index: 20;
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out;
+}
+
+.panels-region:not(.hidden) {
+  transform: translateX(0);
 }
 
 .audio-region {
@@ -138,6 +128,12 @@
   background: var(--audio-background, #f0f0f0);
   overflow: hidden;
   position: relative;
+  z-index: 10;
+}
+
+/* When panels are visible, adjust audio region bottom position */
+.main-layout[data-panels-visible="true"] .panels-region {
+  bottom: var(--audio-height);
 }
 
 /* Animation classes for smooth transitions */

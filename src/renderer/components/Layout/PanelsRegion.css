@@ -5,16 +5,13 @@
 .panels-region {
   background: #f9f9f9;
   border-left: 1px solid #e0e0e0;
-  position: relative;
   display: flex;
   overflow: hidden;
-  transition: width 0.3s ease-out;
+  /* Position and transition handled by MainLayout.css */
 }
 
 .panels-region.hidden {
-  width: 0 !important;
-  min-width: 0;
-  border: none;
+  /* Hidden state handled by transform in MainLayout.css */
 }
 
 /* Resize handle */
