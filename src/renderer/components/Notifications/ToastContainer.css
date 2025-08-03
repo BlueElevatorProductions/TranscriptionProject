@@ -1,0 +1,86 @@
+/* Toast container positioning and layout */
+.toast-container {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: 500px;
+}
+
+.toast-container > * {
+  pointer-events: auto;
+}
+
+/* Position variants */
+.toast-container--top-right {
+  top: 20px;
+  right: 20px;
+}
+
+.toast-container--top-left {
+  top: 20px;
+  left: 20px;
+}
+
+.toast-container--bottom-right {
+  bottom: 20px;
+  right: 20px;
+}
+
+.toast-container--bottom-left {
+  bottom: 20px;
+  left: 20px;
+}
+
+.toast-container--top-center {
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.toast-container--bottom-center {
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .toast-container {
+    left: 16px;
+    right: 16px;
+    max-width: none;
+  }
+
+  .toast-container--top-right,
+  .toast-container--top-left {
+    top: 16px;
+  }
+
+  .toast-container--bottom-right,
+  .toast-container--bottom-left {
+    bottom: 16px;
+  }
+
+  .toast-container--top-center {
+    top: 16px;
+    left: 16px;
+    right: 16px;
+    transform: none;
+  }
+
+  .toast-container--bottom-center {
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    transform: none;
+  }
+}
+
+/* Ensure container doesn't interfere with app header */
+@media (min-width: 769px) {
+  .toast-container--top-right,
+  .toast-container--top-left,
+  .toast-container--top-center {
+    top: 80px; /* Account for app header height */
+  }
+}

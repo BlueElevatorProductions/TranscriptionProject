@@ -5,6 +5,8 @@
 
 import React, { createContext, useContext, useReducer, ReactNode, useCallback } from 'react';
 import { TranscriptionState, TranscriptionAction, TranscriptionJob, TranscriptionResult, ProgressData, UseTranscriptionReturn } from '../types';
+import { useNotifications } from './NotificationContext';
+import { ErrorHandler } from '../services/errorHandling';
 
 // ==================== Initial State ====================
 

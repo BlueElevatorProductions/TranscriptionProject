@@ -115,11 +115,11 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
             ...updatedProjectData.transcription,
             segments: newSegments,
             globalMetadata: {
-              ...updatedProjectData.transcription.globalMetadata,
+              ...updatedProjectData.transcription?.globalMetadata,
               totalSegments: newSegments.length,
               totalWords,
               averageConfidence,
-              editCount: updatedProjectData.transcription.globalMetadata.editCount + 1,
+              editCount: (updatedProjectData.transcription?.globalMetadata?.editCount || 0) + 1,
             },
           },
           project: {

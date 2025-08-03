@@ -57,12 +57,13 @@ export interface SharedAudioState {
 }
 
 export interface AudioMetadata {
-  originalFile: string;
+  originalFile: string;  // For compatibility and reference
   originalName: string;
+  embeddedPath?: string; // Path to audio file within package (e.g., "audio/original.wav")
   duration: number;
   format: string;
   size: number;
-  embedded?: boolean;
+  embedded: boolean;     // Always true for package format
 }
 
 // ==================== Project Data Structure ====================
@@ -339,6 +340,7 @@ export interface UseProjectReturn {
     updateSpeakers: (speakers: { [key: string]: string }) => void;
     updateSegments: (segments: Segment[]) => void;
     setUnsavedChanges: (hasChanges: boolean) => void;
+    setProjectPath: (path: string | null) => void;
     saveProject: () => Promise<void>;
     resetProject: () => void;
   };

@@ -170,69 +170,14 @@ const SpeakerIdentification: React.FC<SpeakerIdentificationProps> = ({
     prepareSpeakerSamples();
   }, [segments, onSkip]);
 
-  // Audio playback for samples
+  // Audio playback for samples - DISABLED to prevent memory issues
   const handlePlaySample = async (speakerId: string) => {
-    const speakerInfo = speakerData[speakerId];
-    if (!speakerInfo || !transcriptionJob.filePath) return;
-
-    // Stop any currently playing audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-
-    // Reset all playing states
-    setPlayingStates(prev => {
-      const newStates = { ...prev };
-      Object.keys(newStates).forEach(id => newStates[id] = false);
-      return newStates;
-    });
-
-    try {
-      setPlayingStates(prev => ({ ...prev, [speakerId]: true }));
-
-      // Load audio with blob URL approach
-      const audioBuffer = await window.electronAPI.readAudioFile(transcriptionJob.filePath);
-      const mimeType = getAudioMimeType(transcriptionJob.filePath);
-      const blob = new Blob([audioBuffer], { type: mimeType });
-      const blobUrl = URL.createObjectURL(blob);
-
-      const audio = new Audio(blobUrl);
-      audioRef.current = audio;
-      
-      // Set start time
-      audio.currentTime = speakerInfo.sampleSegment.start;
-      
-      // Set up time update to stop at end time
-      const stopTime = speakerInfo.sampleSegment.end;
-      const handleTimeUpdate = () => {
-        if (audio.currentTime >= stopTime) {
-          audio.pause();
-          setPlayingStates(prev => ({ ...prev, [speakerId]: false }));
-          URL.revokeObjectURL(blobUrl);
-        }
-      };
-
-      audio.addEventListener('timeupdate', handleTimeUpdate);
-      audio.addEventListener('ended', () => {
-        setPlayingStates(prev => ({ ...prev, [speakerId]: false }));
-        URL.revokeObjectURL(blobUrl);
-      });
-
-      await audio.play();
-
-      // Safety timeout
-      setTimeout(() => {
-        if (!audio.paused) {
-          audio.pause();
-          setPlayingStates(prev => ({ ...prev, [speakerId]: false }));
-          URL.revokeObjectURL(blobUrl);
-        }
-      }, (stopTime - speakerInfo.sampleSegment.start) * 1000 + 1000);
-
-    } catch (error) {
-      console.error('Failed to play sample:', error);
-      setPlayingStates(prev => ({ ...prev, [speakerId]: false }));
-    }
+    console.log('Audio playback temporarily disabled to prevent memory issues');
+    console.log('Speaker sample requested for:', speakerId);
+    
+    // TODO: Implement streaming audio playback for large files
+    // For now, just show a message that playback is disabled
+    alert('Audio playback is temporarily disabled to prevent app crashes with large files. Speaker identification still works - just enter names manually.');
   };
 
   // Get audio MIME type helper

@@ -8,25 +8,34 @@ import { useTranscriptionJobs } from '../contexts';
 import { TranscriptionJob } from '../types';
 
 interface HomeViewProps {
-  onImportClick: () => void;
+  onNewProject: () => void;
+  onOpenProject: () => void;
   onJobSelect: (job: TranscriptionJob) => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ onImportClick, onJobSelect }) => {
+const HomeView: React.FC<HomeViewProps> = ({ onNewProject, onOpenProject, onJobSelect }) => {
   const { jobs } = useTranscriptionJobs();
 
   return (
     <div className="home-screen">
       <div className="home-content">
-        <div className="import-section">
-          <h2>Import Audio File</h2>
-          <p>Get started by importing an audio file for transcription</p>
-          <button 
-            className="import-btn primary"
-            onClick={onImportClick}
-          >
-            📁 Import Audio File
-          </button>
+        <div className="project-section">
+          <h2>Get Started</h2>
+          <p>Create a new project or open an existing one</p>
+          <div className="project-buttons">
+            <button 
+              className="new-project-btn primary"
+              onClick={onNewProject}
+            >
+              ✨ New Project
+            </button>
+            <button 
+              className="open-project-btn secondary"
+              onClick={onOpenProject}
+            >
+              📁 Open Project
+            </button>
+          </div>
         </div>
 
         {jobs.length > 0 && (

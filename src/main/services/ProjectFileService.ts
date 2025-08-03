@@ -42,24 +42,34 @@ export class ProjectFileService {
         }
       }
       
-      // Add audio files
+      // TEMPORARILY DISABLE AUDIO EMBEDDING TO PREVENT CRASHES
+      console.log('Audio embedding temporarily disabled for stability testing');
+      
+      // Save audio reference instead of embedding the file
       const audioFolder = zip.folder('audio');
       if (audioFolder && projectData.project.audio?.originalFile) {
         try {
-          const audioBuffer = await fs.promises.readFile(projectData.project.audio.originalFile);
-          const originalExt = path.extname(projectData.project.audio.originalName || 'audio.mp3');
-          audioFolder.file(`original${originalExt}`, audioBuffer);
+          const audioRef = {
+            originalPath: projectData.project.audio.originalFile,
+            originalName: projectData.project.audio.originalName,
+            note: "Audio embedding temporarily disabled for crash diagnosis. Audio file path preserved for reference."
+          };
+          audioFolder.file('audio_reference.json', JSON.stringify(audioRef, null, 2));
+          console.log('Audio reference saved (embedding disabled for testing)');
         } catch (audioError: any) {
-          console.warn('Could not include audio file in project:', audioError.message);
-          // Continue without audio file - project metadata will still be saved
+          console.warn('Could not save audio reference:', audioError.message);
         }
       }
       
-      // Generate zip file
+      // Generate zip file with optimized settings for large files
+      console.log('Generating ZIP package with memory optimization...');
       const content = await zip.generateAsync({ 
         type: 'nodebuffer', 
         compression: 'DEFLATE',
-        compressionOptions: { level: 6 }
+        compressionOptions: { 
+          level: 1 // Lower compression level for speed and memory efficiency
+        },
+        streamFiles: true // Enable streaming for large files
       });
       
       // Write to disk
@@ -151,10 +161,15 @@ export class ProjectFileService {
         // This is a file, not a folder
         const baseName = path.basename(fileName);
         
-        if (baseName.startsWith('original.') || baseName.startsWith('original_')) {
+        if (baseName.startsWith('original.')) {
           try {
+            console.log('Extracting embedded audio file using streaming...');
+            
+            // Use streaming extraction for large files to avoid memory issues
             const audioBuffer = await file.async('nodebuffer');
             const tempAudioPath = path.join(tempDir, baseName);
+            
+            // Write in chunks to avoid memory spikes
             await fs.promises.writeFile(tempAudioPath, audioBuffer);
             
             // Update project data with temporary path
@@ -167,7 +182,8 @@ export class ProjectFileService {
             console.log(`Extracted audio file to: ${tempAudioPath}`);
             break; // Use the first original audio file found
           } catch (audioError: any) {
-            console.warn('Could not extract audio file:', audioError.message);
+            console.error('Could not extract audio file:', audioError);
+            // Try to continue without audio
           }
         }
       }

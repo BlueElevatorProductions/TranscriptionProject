@@ -82,9 +82,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProjectDialog: (defaultName?: string) => 
     ipcRenderer.invoke('saveProjectDialog', defaultName),
   loadProject: (filePath: string) => 
-    ipcRenderer.invoke('loadProject', filePath),
+    ipcRenderer.invoke('project:load', filePath),
   saveProject: (projectData: any, filePath: string) => 
-    ipcRenderer.invoke('saveProject', projectData, filePath),
+    ipcRenderer.invoke('project:save', projectData, filePath),
+  
+  // Directory selection for new projects
+  selectDirectory: () => ipcRenderer.invoke('select-directory'),
 });
 
 console.log('Preload script loaded successfully, electronAPI exposed');

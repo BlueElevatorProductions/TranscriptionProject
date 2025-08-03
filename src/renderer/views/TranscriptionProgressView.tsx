@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { useTranscriptionProgress } from '../contexts';
+import { LoadingState } from '../components/Loading';
 
 interface TranscriptionProgressViewProps {
   onBack: () => void;
@@ -16,32 +17,13 @@ const TranscriptionProgressView: React.FC<TranscriptionProgressViewProps> = ({ o
   return (
     <div className="transcription-progress">
       <div className="progress-content">
-        <h2>Transcribing Audio</h2>
-        
-        <div className="progress-info">
-          <h3>{progressData.fileName || 'Processing...'}</h3>
-          <p className="status-text">{progressData.status}</p>
-          
-          <div className="progress-bar-large">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${progressData.progress}%` }}
-            ></div>
-          </div>
-          
-          <div className="progress-details">
-            <span className="progress-percentage">
-              {Math.round(progressData.progress)}% complete
-            </span>
-            
-            {isProcessing && (
-              <div className="processing-indicator">
-                <div className="spinner"></div>
-                <span>Processing...</span>
-              </div>
-            )}
-          </div>
-        </div>
+        <LoadingState
+          title="Transcribing Audio"
+          message={progressData.fileName ? `Processing: ${progressData.fileName}` : 'Preparing transcription...'}
+          progress={progressData.progress}
+          status={progressData.status}
+          size="large"
+        />
 
         <div className="progress-actions">
           <button 

@@ -7,11 +7,13 @@ import React, { ReactNode } from 'react';
 import { AudioProvider, useAudio } from './AudioContext';
 import { ProjectProvider, useProject } from './ProjectContext';
 import { TranscriptionProvider, useTranscription } from './TranscriptionContext';
+import { NotificationProvider } from './NotificationContext';
 
 // Re-export all hooks for easy importing
 export { useAudio, useLegacyAudioState, useAudioDebug } from './AudioContext';
 export { useProject, useSpeakers, useSegments, useProjectMetadata, useLegacyProjectState } from './ProjectContext';
 export { useTranscription, useTranscriptionJobs, useSelectedJob, useTranscriptionProgress, useLegacyTranscriptionState } from './TranscriptionContext';
+export { useNotifications, useSuccessToast, useErrorToast, useWarningToast, useInfoToast, useApiErrorToast } from './NotificationContext';
 
 // Re-export types
 export type { UseAudioReturn, UseProjectReturn, UseTranscriptionReturn } from '../types';
@@ -28,13 +30,15 @@ interface AppProvidersProps {
  */
 export const AppProviders: React.FC<AppProvidersProps> = ({ children }) => {
   return (
-    <AudioProvider>
-      <ProjectProvider>
-        <TranscriptionProvider>
-          {children}
-        </TranscriptionProvider>
-      </ProjectProvider>
-    </AudioProvider>
+    <NotificationProvider>
+      <AudioProvider>
+        <ProjectProvider>
+          <TranscriptionProvider>
+            {children}
+          </TranscriptionProvider>
+        </ProjectProvider>
+      </AudioProvider>
+    </NotificationProvider>
   );
 };
 

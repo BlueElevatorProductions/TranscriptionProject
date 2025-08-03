@@ -7,6 +7,7 @@ import * as crypto from 'crypto';
 import { SimpleCloudTranscriptionService } from './services/SimpleCloudTranscriptionService';
 import { ProjectFileManager } from './services/ProjectFileManager';
 import { ProjectFileService } from './services/ProjectFileService';
+import { ProjectPackageService } from './services/ProjectPackageService';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -407,93 +408,7 @@ class App {
       }
     });
 
-    // Project file management
-    ipcMain.handle('save-project', async (event, projectData, savePath, options) => {
-      try {
-        console.log('Saving project:', { savePath, hasAudioFile: !!projectData.audioFile });
-        return await this.projectManager.saveProject(projectData, savePath, options);
-      } catch (error) {
-        console.error('Save project failed:', error);
-        return { 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Failed to save project' 
-        };
-      }
-    });
-
-    ipcMain.handle('load-project', async (event, projectPath) => {
-      try {
-        console.log('Loading project:', projectPath);
-        return await this.projectManager.loadProject(projectPath);
-      } catch (error) {
-        console.error('Load project failed:', error);
-        return { 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Failed to load project' 
-        };
-      }
-    });
-
-    // Show save dialog for projects
-    ipcMain.handle('show-save-project-dialog', async (event, options = {}) => {
-      try {
-        if (!this.mainWindow) {
-          return { success: false, error: 'Main window not available' };
-        }
-        
-        const result = await dialog.showSaveDialog(this.mainWindow, {
-          title: 'Save Transcription Project',
-          defaultPath: options.defaultName || 'Untitled.transcription',
-          filters: [
-            { name: 'Transcription Projects', extensions: ['transcription'] },
-            { name: 'All Files', extensions: ['*'] }
-          ],
-          properties: ['createDirectory']
-        });
-
-        return { 
-          success: true, 
-          canceled: result.canceled, 
-          filePath: result.filePath 
-        };
-      } catch (error) {
-        console.error('Save dialog error:', error);
-        return { 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Dialog error' 
-        };
-      }
-    });
-
-    // Show open dialog for projects
-    ipcMain.handle('show-open-project-dialog', async (event) => {
-      try {
-        if (!this.mainWindow) {
-          return { success: false, error: 'Main window not available' };
-        }
-        
-        const result = await dialog.showOpenDialog(this.mainWindow, {
-          title: 'Open Transcription Project',
-          filters: [
-            { name: 'Transcription Projects', extensions: ['transcription'] },
-            { name: 'All Files', extensions: ['*'] }
-          ],
-          properties: ['openFile']
-        });
-
-        return { 
-          success: true, 
-          canceled: result.canceled, 
-          filePaths: result.filePaths 
-        };
-      } catch (error) {
-        console.error('Open dialog error:', error);
-        return { 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Dialog error' 
-        };
-      }
-    });
+    // REMOVED - Legacy project handlers causing conflicts
 
     // Test cloud API connections
     ipcMain.handle('test-cloud-connection', async (event, provider) => {
@@ -546,6 +461,39 @@ class App {
       return result;
     });
 
+    ipcMain.handle('select-directory', async (event) => {
+      try {
+        if (!this.mainWindow) {
+          return { success: false, error: 'Main window not available' };
+        }
+
+        const result = await dialog.showOpenDialog(this.mainWindow, {
+          properties: ['openDirectory', 'createDirectory'],
+          title: 'Select Project Location'
+        });
+
+        if (result.canceled) {
+          return { success: false, cancelled: true };
+        }
+
+        if (result.filePaths && result.filePaths.length > 0) {
+          return { 
+            success: true, 
+            filePath: result.filePaths[0],
+            cancelled: false 
+          };
+        }
+
+        return { success: false, error: 'No directory selected' };
+      } catch (error) {
+        console.error('Error in select-directory:', error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to select directory' 
+        };
+      }
+    });
+
     ipcMain.handle('project:save', async (event, projectData, filePath) => {
       try {
         await ProjectFileService.saveProject(projectData, filePath);
@@ -569,7 +517,7 @@ class App {
     // Convenience handlers for project file dialogs
     ipcMain.handle('openProjectDialog', async () => {
       const result = await dialog.showOpenDialog(this.mainWindow!, {
-        title: 'Import Transcription Project',
+        title: 'Open Transcription Project',
         filters: [
           { name: 'Transcription Projects', extensions: ['transcript'] },
           { name: 'All Files', extensions: ['*'] }
@@ -591,25 +539,7 @@ class App {
       return result;
     });
 
-    ipcMain.handle('loadProject', async (event, filePath) => {
-      try {
-        const projectData = await ProjectFileService.loadProject(filePath);
-        return projectData;
-      } catch (error) {
-        console.error('Failed to load project:', error);
-        throw error;
-      }
-    });
-
-    ipcMain.handle('saveProject', async (event, projectData, filePath) => {
-      try {
-        await ProjectFileService.saveProject(projectData, filePath);
-        return { success: true };
-      } catch (error) {
-        console.error('Failed to save project:', error);
-        throw error;
-      }
-    });
+    // REMOVED - Duplicate handlers, using clean project:save and project:load instead
   }
 
   private serializeJob(job: TranscriptionJob): any {
@@ -710,6 +640,9 @@ class App {
       return;
     }
 
+    // Extract provider before try block so it's available in catch
+    const provider = modelSize.split('-')[1]; // Extract provider from 'cloud-openai'
+
     try {
       console.log('Cloud transcription starting for job:', jobId);
       
@@ -718,8 +651,6 @@ class App {
         ? await fs.promises.readFile(this.apiKeysPath, 'utf8')
         : '{}';
       const apiKeys = encryptedKeys === '{}' ? {} : this.decryptApiKeys(encryptedKeys);
-
-      const provider = modelSize.split('-')[1]; // Extract provider from 'cloud-openai'
       console.log('Provider:', provider);
       console.log('API keys available:', Object.keys(apiKeys));
       console.log('OpenAI key exists:', !!apiKeys.openai);
@@ -727,7 +658,9 @@ class App {
       this.mainWindow?.webContents.send('debug-log', `Main: API keys loaded: ${Object.keys(apiKeys).join(', ')}`);
       
       if (!apiKeys[provider]) {
-        throw new Error(`API key for ${provider} not configured`);
+        const error = new Error(`API key for ${provider} not configured`);
+        (error as any).code = 'INVALID_API_KEY';
+        throw error;
       }
 
       job.progress = 20;
@@ -802,13 +735,33 @@ class App {
       console.log('DEBUG: Sending completion event (cloud):', job);
       this.mainWindow?.webContents.send('transcription-complete', this.serializeJob(job));
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Cloud transcription failed:', error);
       console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       
       job.status = 'error';
-      job.error = error instanceof Error ? error.message : 'Cloud transcription failed';
-      this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
+      job.progress = 0;
+      
+      // Structure the error for frontend processing
+      const errorData = {
+        message: error instanceof Error ? error.message : 'Cloud transcription failed',
+        code: error.code || 'TRANSCRIPTION_FAILED',
+        operation: 'transcription',
+        provider: provider,
+        originalError: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        }
+      };
+      
+      job.error = errorData.message;
+      
+      // Send structured error to frontend for proper handling
+      this.mainWindow?.webContents.send('transcription-error', {
+        ...this.serializeJob(job),
+        errorData
+      });
     }
   }
 
