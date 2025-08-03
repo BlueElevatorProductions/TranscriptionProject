@@ -195,7 +195,7 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  z-index: 10;
+  z-index: 25;
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
 }
 

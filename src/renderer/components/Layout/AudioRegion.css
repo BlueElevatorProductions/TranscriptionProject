@@ -10,6 +10,8 @@
   flex-direction: column;
   overflow: hidden;
   transition: height 0.3s ease-out;
+  width: 100%; /* Ensure full width */
+  grid-area: audio; /* Explicitly set grid area */
 }
 
 .audio-region.hidden {
@@ -108,8 +110,18 @@
   height: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start; /* Align to left instead of center */
   background: #e8e8e8;
+  width: 100%;
+  padding: 0 16px; /* Add padding for better spacing */
+}
+
+.audio-collapsed .slider-tabs {
+  margin: 0;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  justify-content: flex-start;
 }
 
 /* Slider content */
@@ -266,12 +278,7 @@
   min-width: 45px;
 }
 
-.speed-buttons {
-  display: flex;
-  gap: 4px;
-}
-
-.speed-button {
+.speed-dropdown {
   background: #fff;
   border: 1px solid #d0d0d0;
   border-radius: 4px;
@@ -279,23 +286,19 @@
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-width: 32px;
+  min-width: 60px;
+  color: #333;
 }
 
-.speed-button:hover {
+.speed-dropdown:hover {
   background: #f5f5f5;
   border-color: #b0b0b0;
 }
 
-.speed-button.active {
-  background: #1976d2;
-  color: white;
-  border-color: #1976d2;
-}
-
-.speed-button:focus {
+.speed-dropdown:focus {
   outline: 2px solid #1976d2;
   outline-offset: 2px;
+  border-color: #1976d2;
 }
 
 .volume-slider {
@@ -429,7 +432,7 @@
 /* High contrast mode */
 @media (prefers-contrast: high) {
   .transport-button,
-  .speed-button {
+  .speed-dropdown {
     border-width: 2px;
     border-color: #000;
   }
@@ -450,7 +453,7 @@
 @media (prefers-reduced-motion: reduce) {
   .audio-region,
   .transport-button,
-  .speed-button,
+  .speed-dropdown,
   .slider-tab,
   .resize-handle,
   .resize-handle-visual,

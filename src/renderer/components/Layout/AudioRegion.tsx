@@ -10,6 +10,7 @@
 
 import React, { useRef, useCallback, useState } from 'react';
 import './AudioRegion.css';
+import BottomAudioPlayer from '../shared/BottomAudioPlayer';
 
 export interface AudioRegionProps {
   visible: boolean;
@@ -19,122 +20,27 @@ export interface AudioRegionProps {
   onSliderChange: (type: 'player' | 'editor') => void;
 }
 
-// Player slider component
+// Player slider component using existing BottomAudioPlayer
 const PlayerSlider: React.FC = () => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration] = useState(180); // 3 minutes demo
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [volume, setVolume] = useState(0.8);
+  const [audioState, setAudioState] = useState({
+    currentTime: 0,
+    isPlaying: false,
+    volume: 0.8,
+    playbackSpeed: 1
+  });
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
-  };
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCurrentTime(Number(e.target.value));
-  };
-
-  const handleSpeedChange = (speed: number) => {
-    setPlaybackSpeed(speed);
-  };
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setVolume(Number(e.target.value));
+  const handleAudioStateUpdate = (updates: Partial<typeof audioState>) => {
+    setAudioState(prev => ({ ...prev, ...updates }));
   };
 
   return (
     <div className="audio-slider player-slider">
-      <div className="audio-controls">
-        {/* Transport controls */}
-        <div className="transport-controls">
-          <button 
-            className="transport-button skip-back"
-            title="Skip back 15s"
-            aria-label="Skip back 15 seconds"
-          >
-            ⏪
-          </button>
-          
-          <button 
-            className="transport-button play-pause"
-            onClick={handlePlayPause}
-            title={isPlaying ? 'Pause' : 'Play'}
-            aria-label={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? '⏸️' : '▶️'}
-          </button>
-          
-          <button 
-            className="transport-button skip-forward"
-            title="Skip forward 30s"
-            aria-label="Skip forward 30 seconds"
-          >
-            ⏩
-          </button>
-        </div>
-
-        {/* Timeline */}
-        <div className="timeline-container">
-          <span className="time-display current-time">
-            {formatTime(currentTime)}
-          </span>
-          
-          <input
-            type="range"
-            className="timeline-slider"
-            min="0"
-            max={duration}
-            value={currentTime}
-            onChange={handleSeek}
-            aria-label="Audio timeline"
-          />
-          
-          <span className="time-display total-time">
-            {formatTime(duration)}
-          </span>
-        </div>
-
-        {/* Additional controls */}
-        <div className="additional-controls">
-          {/* Speed control */}
-          <div className="speed-control">
-            <label className="control-label">Speed:</label>
-            <div className="speed-buttons">
-              {[0.5, 1, 1.5, 2].map(speed => (
-                <button
-                  key={speed}
-                  className={`speed-button ${playbackSpeed === speed ? 'active' : ''}`}
-                  onClick={() => handleSpeedChange(speed)}
-                >
-                  {speed}x
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Volume control */}
-          <div className="volume-control">
-            <label className="control-label">🔊</label>
-            <input
-              type="range"
-              className="volume-slider"
-              min="0"
-              max="1"
-              step="0.1"
-              value={volume}
-              onChange={handleVolumeChange}
-              aria-label="Volume"
-            />
-          </div>
-        </div>
-      </div>
+      <BottomAudioPlayer
+        audioSrc="dummy.mp3" // Dummy source to show the player UI
+        fileName="Demo Audio"
+        sharedAudioState={audioState}
+        onAudioStateUpdate={handleAudioStateUpdate}
+      />
     </div>
   );
 };

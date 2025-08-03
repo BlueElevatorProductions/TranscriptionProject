@@ -5,7 +5,7 @@
  * alongside the existing interface for comparison during development.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { MainLayout } from '../components/Layout';
 import { useLayoutKeyboard } from '../hooks/useLayoutKeyboard';
 import type { AppMode, AudioSliderType } from '../components/Layout/HeaderRegion';
@@ -15,54 +15,49 @@ export interface NewLayoutViewProps {
 }
 
 const NewLayoutView: React.FC<NewLayoutViewProps> = ({ onBack }) => {
-  // Layout state
+  // Only manage mode state here - let MainLayout handle panel state
   const [currentMode, setCurrentMode] = useState<AppMode>('listen');
-  const [panelsVisible, setPanelsVisible] = useState(true);
-  const [audioSliderVisible, setAudioSliderVisible] = useState(true);
-  const [activeAudioSlider, setActiveAudioSlider] = useState<AudioSliderType>('player');
-
-  // Layout control handlers
-  const togglePanels = useCallback(() => {
-    setPanelsVisible(prev => !prev);
-  }, []);
-
-  const toggleAudioSlider = useCallback((type?: AudioSliderType) => {
-    if (type && activeAudioSlider === type) {
-      // If clicking the same slider, close it
-      setAudioSliderVisible(false);
-      setActiveAudioSlider(null);
-    } else if (type) {
-      // Switch to new slider type
-      setAudioSliderVisible(true);
-      setActiveAudioSlider(type);
-    } else {
-      // Toggle current slider
-      setAudioSliderVisible(prev => !prev);
-    }
-  }, [activeAudioSlider]);
+  
+  // Reference to MainLayout's control functions
+  const layoutControlsRef = useRef<{
+    togglePanels: () => void;
+    toggleAudioSlider: (type?: AudioSliderType) => void;
+  } | null>(null);
 
   const handleModeChange = useCallback((mode: AppMode) => {
     setCurrentMode(mode);
     console.log(`Switched to ${mode} mode`);
   }, []);
 
-  // Keyboard shortcuts - pass the actual toggle functions from the state
+  const handleLayoutReady = useCallback((controls: {
+    togglePanels: () => void;
+    toggleAudioSlider: (type?: AudioSliderType) => void;
+  }) => {
+    layoutControlsRef.current = controls;
+  }, []);
+
+  // Keyboard shortcuts - use refs to access MainLayout's functions
   useLayoutKeyboard({
-    onTogglePanels: () => setPanelsVisible(prev => !prev),
-    onTogglePlayer: () => toggleAudioSlider('player'),
-    onToggleEditor: () => toggleAudioSlider('editor'),
+    onTogglePanels: () => layoutControlsRef.current?.togglePanels(),
+    onTogglePlayer: () => layoutControlsRef.current?.toggleAudioSlider('player'),
+    onToggleEditor: () => layoutControlsRef.current?.toggleAudioSlider('editor'),
     onSwitchToListen: () => handleModeChange('listen'),
     onSwitchToEdit: () => handleModeChange('edit'),
   });
 
   return (
-    <div style={{ 
-      width: '100vw', 
-      height: '100vh', 
-      display: 'flex', 
-      flexDirection: 'column',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif'
-    }}>
+    <div 
+      className="new-layout-wrapper"
+      style={{ 
+        width: '100vw', 
+        height: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+        background: '#a8d5e5', /* Light cyan background for border area */
+        overflowX: 'auto', /* Allow horizontal scroll when content exceeds viewport */
+        overflowY: 'hidden'
+      }}>
       {/* Optional back button for testing - positioned to not overlap tabs */}
       {onBack && (
         <div style={{
@@ -103,37 +98,16 @@ const NewLayoutView: React.FC<NewLayoutViewProps> = ({ onBack }) => {
         zIndex: 1000,
         fontFamily: 'monospace',
       }}>
-        Mode: {currentMode} | Panels: {panelsVisible ? 'ON' : 'OFF'} | Audio: {activeAudioSlider || 'OFF'}
+        Mode: {currentMode} | Layout: Managed by MainLayout
       </div>
 
-      {/* Instructions */}
-      <div style={{
-        position: 'absolute',
-        bottom: '10px',
-        left: '10px',
-        background: 'rgba(0, 0, 0, 0.8)',
-        color: 'white',
-        padding: '12px',
-        borderRadius: '6px',
-        fontSize: '11px',
-        maxWidth: '300px',
-        zIndex: 1000,
-        fontFamily: 'monospace',
-        lineHeight: '1.4',
-      }}>
-        <strong>Keyboard Shortcuts:</strong><br />
-        P - Toggle panels<br />
-        Shift+P - Toggle player<br />
-        Shift+E - Toggle editor<br />
-        1 - Listen mode<br />
-        2 - Edit mode
-      </div>
 
       {/* Main Layout */}
       <MainLayout
         legacyMode={false}
         currentMode={currentMode}
         onModeChange={handleModeChange}
+        onLayoutReady={handleLayoutReady}
       />
     </div>
   );

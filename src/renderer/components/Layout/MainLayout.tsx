@@ -37,13 +37,19 @@ export interface MainLayoutProps {
   // Mode state
   currentMode?: 'listen' | 'edit';
   onModeChange?: (mode: 'listen' | 'edit') => void;
+  // Expose control functions for external keyboard shortcuts
+  onLayoutReady?: (controls: {
+    togglePanels: () => void;
+    toggleAudioSlider: (type?: 'player' | 'editor') => void;
+  }) => void;
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ 
   children, 
   legacyMode = false,
   currentMode = 'listen',
-  onModeChange
+  onModeChange,
+  onLayoutReady
 }) => {
   // Layout state
   const [layoutState, setLayoutState] = useState<LayoutState>({
@@ -102,6 +108,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({
     }));
   }, []);
 
+  // Expose control functions to parent component
+  React.useEffect(() => {
+    if (onLayoutReady) {
+      onLayoutReady({
+        togglePanels,
+        toggleAudioSlider,
+      });
+    }
+  }, [onLayoutReady, togglePanels, toggleAudioSlider]);
+
   // If in legacy mode, render children as-is for backwards compatibility
   if (legacyMode) {
     return <div className="legacy-layout">{children}</div>;
@@ -112,6 +128,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({
     '--panels-width': layoutState.panelsVisible ? `${layoutState.panelsWidth}px` : '0px',
     '--audio-height': layoutState.audioSliderVisible ? `${layoutState.audioHeight}px` : '0px',
   } as React.CSSProperties;
+
 
   return (
     <div 
