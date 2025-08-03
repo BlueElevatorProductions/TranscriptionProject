@@ -11,9 +11,10 @@ interface HomeViewProps {
   onNewProject: () => void;
   onOpenProject: () => void;
   onJobSelect: (job: TranscriptionJob) => void;
+  onShowNewLayout?: () => void; // Optional for testing new layout
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ onNewProject, onOpenProject, onJobSelect }) => {
+const HomeView: React.FC<HomeViewProps> = ({ onNewProject, onOpenProject, onJobSelect, onShowNewLayout }) => {
   const { jobs } = useTranscriptionJobs();
 
   return (
@@ -37,6 +38,23 @@ const HomeView: React.FC<HomeViewProps> = ({ onNewProject, onOpenProject, onJobS
             </button>
           </div>
         </div>
+
+        {/* Development: New Layout Preview */}
+        {onShowNewLayout && (
+          <div className="project-section" style={{ borderTop: '1px solid #e0e0e0', paddingTop: '20px', marginTop: '20px' }}>
+            <h2>🚧 Development Preview</h2>
+            <p>Test the new Google Docs-inspired layout (Phase 1)</p>
+            <div className="project-buttons">
+              <button 
+                className="new-project-btn primary"
+                onClick={onShowNewLayout}
+                style={{ background: '#ff6b35' }}
+              >
+                🎨 Preview New Layout
+              </button>
+            </div>
+          </div>
+        )}
 
         {jobs.length > 0 && (
           <div className="recent-jobs">
