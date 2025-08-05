@@ -1,6 +1,241 @@
-/* Global body padding for fixed audio player */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Professional HSL-based color system from ScriptScribe */
+    --background: 0 0% 100%;
+    --foreground: 20 14.3% 4.1%;
+    --muted: 60 4.8% 95.9%;
+    --muted-foreground: 25 5.3% 44.7%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14.3% 4.1%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 14.3% 4.1%;
+    --border: 20 5.9% 90%;
+    --input: 20 5.9% 90%;
+    --primary: 207 90% 54%;
+    --primary-foreground: 211 100% 99%;
+    --secondary: 60 4.8% 95.9%;
+    --secondary-foreground: 24 9.8% 10%;
+    --accent: 60 4.8% 95.9%;
+    --accent-foreground: 24 9.8% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --ring: 20 14.3% 4.1%;
+    --radius: 0.5rem;
+    
+    /* Professional blue theme */
+    --primary-50: 207 76% 95%;
+    --primary-100: 207 76% 87%;
+    --primary-500: 207 90% 54%;
+    --primary-600: 207 90% 48%;
+    --primary-700: 207 90% 42%;
+    
+    /* Sidebar and layout */
+    --sidebar-background: 210 20% 98%;
+    --sidebar-border: 214 13% 91%;
+    
+    /* Audio player */
+    --player-background: 0 0% 100%;
+    --waveform-bg: 210 16% 93%;
+    --waveform-fill: 207 76% 87%;
+    
+    /* Legacy design system variables for compatibility */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f8f8;
+    --bg-accent: #f0f0f0;
+    --border-color: #e0e0e0;
+    --text-primary: #333333;
+    --text-secondary: #666666;
+    --text-muted: #999999;
+    --accent-color: #4a9eff;
+    --accent-hover: #3a8eef;
+    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-serif: Georgia, 'Times New Roman', Times, serif;
+    --font-mono: 'SF Mono', Monaco, monospace;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 20px;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --primary: 207 90% 54%;
+    --primary-foreground: 211 100% 99%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --ring: 240 4.9% 83.9%;
+    --radius: 0.5rem;
+    
+    /* Dark theme overrides */
+    --sidebar-background: 240 5% 6%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --player-background: 240 5% 6%;
+    --waveform-bg: 240 3.7% 15.9%;
+    --waveform-fill: 207 90% 54%;
+    
+    /* Legacy dark theme variables */
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-accent: #2a2a2a;
+    --border-color: #333333;
+    --text-primary: #f5f5f5;
+    --text-secondary: #b3b3b3;
+    --text-muted: #808080;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    padding-bottom: 80px; /* Space for fixed audio player */
+  }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-muted;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 0.125rem;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+@layer components {
+  /* Character highlight animation */
+  .text-highlight {
+    background-color: hsl(var(--primary) / 0.2);
+    color: hsl(var(--primary-foreground));
+    @apply px-0.5 rounded-sm transition-all duration-300;
+    animation: pulse-highlight 0.6s ease-in-out;
+  }
+  
+  .text-highlight-active {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+  
+  /* Deleted text styling */
+  .text-deleted {
+    text-decoration: line-through;
+    opacity: 0.5;
+    color: hsl(var(--muted-foreground));
+  }
+  
+  /* Waveform styling */
+  .waveform-container {
+    background: var(--waveform-bg);
+  }
+  
+  .waveform-progress {
+    background: linear-gradient(to right, var(--waveform-fill), hsl(var(--primary)));
+  }
+  
+  /* Professional button styling */
+  .btn-professional {
+    @apply inline-flex items-center justify-center rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+  
+  /* Speaker avatar colors */
+  .speaker-avatar-blue {
+    @apply bg-blue-100 text-blue-700;
+  }
+  
+  .speaker-avatar-green {
+    @apply bg-green-100 text-green-700;
+  }
+  
+  .speaker-avatar-purple {
+    @apply bg-purple-100 text-purple-700;
+  }
+  
+  .speaker-avatar-orange {
+    @apply bg-orange-100 text-orange-700;
+  }
+}
+
+@layer utilities {
+  /* Animation keyframes */
+  @keyframes pulse-highlight {
+    0% { 
+      background-color: hsl(var(--primary));
+      transform: scale(1);
+    }
+    50% { 
+      background-color: hsl(var(--primary));
+      transform: scale(1.02);
+    }
+    100% { 
+      background-color: hsl(var(--primary-50));
+      transform: scale(1);
+    }
+  }
+  
+  /* Transition utilities */
+  .transition-professional {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  /* Professional shadows */
+  .shadow-professional {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  }
+  
+  .shadow-professional-lg {
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+}
+
+/* =========================== */
+/* EXISTING APP STYLES (Legacy support) */
+/* =========================== */
+
+/* Global styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
 body {
-  padding-bottom: 80px; /* Space for fixed audio player */
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
 }
 
 /* HOME SCREEN STYLES */
@@ -250,46 +485,6 @@ body {
   border-color: var(--accent-color);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* Design System Variables - Matching PlaybackMode.css */
-:root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f8f8;
-  --bg-accent: #f0f0f0;
-  --border-color: #e0e0e0;
-  --text-primary: #333333;
-  --text-secondary: #666666;
-  --text-muted: #999999;
-  --accent-color: #4a9eff;
-  --accent-hover: #3a8eef;
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-serif: Georgia, 'Times New Roman', Times, serif;
-  --font-mono: 'SF Mono', Monaco, monospace;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 12px;
-  --spacing-lg: 16px;
-  --spacing-xl: 20px;
-}
-
-/* Global styles */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  font-family: var(--font-family);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  overflow: hidden;
 }
 
 /* Professional Launch Screen Layout */

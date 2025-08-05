@@ -8,6 +8,7 @@ import { AudioProvider, useAudio } from './AudioContext';
 import { ProjectProvider, useProject } from './ProjectContext';
 import { TranscriptionProvider, useTranscription } from './TranscriptionContext';
 import { NotificationProvider } from './NotificationContext';
+import { ThemeProvider } from '../components/theme-provider';
 
 // Re-export all hooks for easy importing
 export { useAudio, useLegacyAudioState, useAudioDebug } from './AudioContext';
@@ -30,15 +31,17 @@ interface AppProvidersProps {
  */
 export const AppProviders: React.FC<AppProvidersProps> = ({ children }) => {
   return (
-    <NotificationProvider>
-      <AudioProvider>
-        <ProjectProvider>
-          <TranscriptionProvider>
-            {children}
-          </TranscriptionProvider>
-        </ProjectProvider>
-      </AudioProvider>
-    </NotificationProvider>
+    <ThemeProvider defaultTheme="system" storageKey="transcript-ui-theme">
+      <NotificationProvider>
+        <AudioProvider>
+          <ProjectProvider>
+            <TranscriptionProvider>
+              {children}
+            </TranscriptionProvider>
+          </ProjectProvider>
+        </AudioProvider>
+      </NotificationProvider>
+    </ThemeProvider>
   );
 };
 

@@ -9,6 +9,7 @@
  */
 
 import React, { useRef, useCallback, useState } from 'react';
+// import { Button, Tooltip } from '@chakra-ui/react';
 import './AudioRegion.css';
 import BottomAudioPlayer from '../shared/BottomAudioPlayer';
 
@@ -116,14 +117,14 @@ const AudioRegion: React.FC<AudioRegionProps> = ({
             <button 
               className="slider-tab"
               onClick={() => onSliderChange('player')}
-              aria-label="Show audio player"
+              title="Show Audio Player"
             >
               player ∧∧
             </button>
             <button 
               className="slider-tab disabled"
               onClick={() => onSliderChange('editor')}
-              aria-label="Show audio editor (coming soon)"
+              title="Audio Editor (Coming Soon)"
               disabled
             >
               editor ∧∧
@@ -163,12 +164,14 @@ const AudioRegion: React.FC<AudioRegionProps> = ({
         <button 
           className={`slider-tab ${activeSlider === 'player' ? 'active' : ''}`}
           onClick={() => onSliderChange('player')}
+          title="Audio Player"
         >
           player ∨∨
         </button>
         <button 
           className={`slider-tab ${activeSlider === 'editor' ? 'active' : ''} disabled`}
           onClick={() => onSliderChange('editor')}
+          title="Audio Editor (Coming Soon)"
           disabled
         >
           editor ∨∨

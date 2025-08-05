@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+// import { Box, HStack, IconButton, Button, ButtonGroup, Tooltip } from '@chakra-ui/react';
 import './BottomAudioPlayer.css';
 
 interface SharedAudioState {
@@ -280,10 +281,6 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
     onAudioStateUpdate({ volume: newVolume });
   };
   
-  const handleSpeedChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newSpeed = parseFloat(e.target.value);
-    onAudioStateUpdate({ playbackSpeed: newSpeed });
-  };
 
   const formatTime = (seconds: number): string => {
     if (isNaN(seconds)) return '0:00';
@@ -329,22 +326,28 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
         </div>
 
         {/* Controls */}
-        <div className="controls">
+        <div className="audio-controls">
           <button 
-            className="control-btn small rewind" 
+            className="control-button"
             onClick={handleRewindClick}
             title="Rewind 15s"
-          ></button>
+          >
+            ⏪
+          </button>
           <button 
-            className={`control-btn large ${(typeof isPlaying === 'boolean' ? isPlaying : false) ? 'pause' : 'play'}`}
+            className="control-button play-pause"
             onClick={handlePlayPauseClick}
             title={(typeof isPlaying === 'boolean' ? isPlaying : false) ? 'Pause' : 'Play'}
-          ></button>
+          >
+            {(typeof isPlaying === 'boolean' ? isPlaying : false) ? '⏸️' : '▶️'}
+          </button>
           <button 
-            className="control-btn small forward" 
+            className="control-button"
             onClick={handleForwardClick}
-            title="Forward 15s"
-          ></button>
+            title="Forward 30s"
+          >
+            ⏩
+          </button>
         </div>
 
         {/* Progress Section */}
@@ -375,10 +378,20 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
         {/* Speed Section */}
         <div className="speed-section">
           <span className="speed-label">Speed:</span>
-          <select 
-            className="speed-dropdown" 
+          <select
             value={playbackSpeed}
-            onChange={handleSpeedChange}
+            onChange={(e) => {
+              const newSpeed = parseFloat(e.target.value);
+              onAudioStateUpdate({ playbackSpeed: newSpeed });
+            }}
+            style={{
+              width: '80px',
+              background: 'white',
+              border: '1px solid #CBD5E0',
+              borderRadius: '4px',
+              padding: '4px 8px',
+              fontSize: '14px'
+            }}
           >
             <option value="0.5">0.5×</option>
             <option value="0.75">0.75×</option>

@@ -1,15 +1,40 @@
 /**
- * HeaderRegion.tsx - Header with mode tabs and context-sensitive toolbar
+ * HeaderRegion.tsx - Modern header with professional design system
  * 
  * Features:
- * - Listen/Edit mode tabs
+ * - Listen/Edit mode tabs with Tailwind styling
  * - Context-sensitive toolbar (changes based on mode)
  * - Panel/slider toggle controls
- * - Responsive design
+ * - Modern professional styling from ScriptScribe design
  */
 
 import React, { useState, useCallback } from 'react';
-import './HeaderRegion.css';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { 
+  Mic, 
+  Settings, 
+  Download, 
+  Upload, 
+  Edit, 
+  Sun, 
+  Moon, 
+  FileText,
+  Bold,
+  Italic,
+  Underline,
+  Highlighter,
+  Strikethrough,
+  User,
+  PilcrowLeft,
+  ChevronRight,
+  ChevronLeft,
+  ChevronUp,
+  ChevronDown
+} from 'lucide-react';
+import { useTheme } from '@/components/theme-provider';
+import { cn } from '@/lib/utils';
 
 // Types
 export type AppMode = 'listen' | 'edit';
@@ -25,9 +50,9 @@ export interface HeaderRegionProps {
   onModeChange?: (mode: AppMode) => void;
 }
 
-// Toolbar button component
+// Modern toolbar button component
 interface ToolbarButtonProps {
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   active?: boolean;
   disabled?: boolean;
@@ -43,16 +68,27 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
   onClick,
   shortcut
 }) => (
-  <button
-    className={`toolbar-button ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
-    onClick={onClick}
-    disabled={disabled}
-    title={shortcut ? `${label} (${shortcut})` : label}
-    aria-label={label}
-  >
-    <span className="toolbar-button-icon">{icon}</span>
-    {shortcut && <span className="toolbar-button-shortcut">{shortcut}</span>}
-  </button>
+  <TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={active ? "default" : "ghost"}
+          size="sm"
+          onClick={onClick}
+          disabled={disabled}
+          className={cn(
+            "h-8 w-8 p-0",
+            active && "bg-primary text-primary-foreground"
+          )}
+        >
+          {icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>{shortcut ? `${label} (${shortcut})` : label}</p>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
 );
 
 const HeaderRegion: React.FC<HeaderRegionProps> = ({
@@ -92,17 +128,17 @@ const HeaderRegion: React.FC<HeaderRegionProps> = ({
 
   // Shared tools (available in both modes)
   const sharedTools = [
-    { id: 'bold', icon: '𝐁', label: 'Bold', shortcut: 'Cmd+B' },
-    { id: 'italic', icon: '𝐼', label: 'Italic', shortcut: 'Cmd+I' },
-    { id: 'underline', icon: 'U̲', label: 'Underline', shortcut: 'Cmd+U' },
-    { id: 'highlight', icon: '🖍️', label: 'Highlight', shortcut: 'Cmd+H' },
+    { id: 'bold', icon: <Bold className="h-4 w-4" />, label: 'Bold', shortcut: 'Cmd+B' },
+    { id: 'italic', icon: <Italic className="h-4 w-4" />, label: 'Italic', shortcut: 'Cmd+I' },
+    { id: 'underline', icon: <Underline className="h-4 w-4" />, label: 'Underline', shortcut: 'Cmd+U' },
+    { id: 'highlight', icon: <Highlighter className="h-4 w-4" />, label: 'Highlight', shortcut: 'Cmd+H' },
   ];
 
   // Edit-only tools
   const editTools = [
-    { id: 'strikethrough', icon: 'S̶', label: 'Strikethrough', shortcut: 'Cmd+Shift+X' },
-    { id: 'new-speaker', icon: '👤', label: 'New Speaker', shortcut: 'Cmd+Shift+S' },
-    { id: 'new-paragraph', icon: '¶', label: 'New Paragraph', shortcut: 'Enter' },
+    { id: 'strikethrough', icon: <Strikethrough className="h-4 w-4" />, label: 'Strikethrough', shortcut: 'Cmd+Shift+X' },
+    { id: 'new-speaker', icon: <User className="h-4 w-4" />, label: 'New Speaker', shortcut: 'Cmd+Shift+S' },
+    { id: 'new-paragraph', icon: <PilcrowLeft className="h-4 w-4" />, label: 'New Paragraph', shortcut: 'Enter' },
   ];
 
   // Get tools based on current mode
@@ -110,28 +146,105 @@ const HeaderRegion: React.FC<HeaderRegionProps> = ({
     ? [...sharedTools, ...editTools]
     : sharedTools;
 
+  const { theme, setTheme } = useTheme();
+
   return (
-    <header className="header-region">
-      <div className="header-content">
-        {/* Mode Tabs - Full Width */}
-        <div className="mode-tabs-container">
-          <button
-            className={`mode-tab ${currentMode === 'listen' ? 'active' : ''}`}
-            onClick={() => handleModeChange('listen')}
-            aria-pressed={currentMode === 'listen'}
-          >
-            listen
-          </button>
-          <button
-            className={`mode-tab ${currentMode === 'edit' ? 'active' : ''}`}
-            onClick={() => handleModeChange('edit')}
-            aria-pressed={currentMode === 'edit'}
-          >
-            edit
-          </button>
+    <TooltipProvider>
+      <header className="bg-white border-b h-16 flex items-center justify-between px-6 flex-shrink-0 z-50" style={{borderColor: 'hsl(var(--border))'}}>
+        {/* Left section - App logo and project info */}
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <Mic className="h-4 w-4 text-primary-foreground" />
+            </div>
+            <span className="text-xl font-semibold text-foreground">TranscriptionProject</span>
+          </div>
+          <div className="h-6 w-px bg-border" />
+          <div className="flex items-center space-x-2">
+            <FileText className="h-3 w-3 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Current Project</span>
+          </div>
         </div>
-      </div>
-    </header>
+
+        {/* Center section - Mode tabs and toolbar */}
+        <div className="flex items-center space-x-4">
+          {/* Mode Tabs */}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-muted-foreground">Edit Mode</span>
+            <Switch 
+              checked={currentMode === 'edit'} 
+              onCheckedChange={(checked) => handleModeChange(checked ? 'edit' : 'listen')} 
+            />
+          </div>
+          
+          {/* Toolbar */}
+          <div className="flex items-center space-x-1 border-l pl-4" style={{borderColor: 'hsl(var(--border))'}}>
+            {availableTools.map(tool => (
+              <ToolbarButton
+                key={tool.id}
+                icon={tool.icon}
+                label={tool.label}
+                shortcut={tool.shortcut}
+                active={selectedTools.has(tool.id)}
+                onClick={() => handleToolClick(tool.id)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Right section - Controls */}
+        <div className="flex items-center space-x-3">          
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={() => onToggleAudioSlider('player')}>
+                {audioSliderVisible ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{audioSliderVisible ? 'Hide' : 'Show'} Audio Player</p>
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={onTogglePanels}>
+                {panelsVisible ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{panelsVisible ? 'Hide' : 'Show'} Panels (P)</p>
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Toggle theme</p>
+            </TooltipContent>
+          </Tooltip>
+          
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+          
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Settings</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </header>
+    </TooltipProvider>
   );
 };
 

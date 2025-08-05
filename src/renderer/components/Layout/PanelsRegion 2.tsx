@@ -9,7 +9,6 @@
  */
 
 import React, { useRef, useCallback, useState } from 'react';
-// import { IconButton, Tooltip } from '@chakra-ui/react';
 import './PanelsRegion.css';
 
 export interface PanelsRegionProps {
@@ -28,12 +27,7 @@ const SpeakersPanel: React.FC<PanelProps> = ({ onClose }) => (
   <div className="panel">
     <div className="panel-header">
       <h3 className="panel-title">speakers</h3>
-      <button 
-        className="panel-close" 
-        onClick={onClose} 
-        title="Close speakers panel"
-        aria-label="Close speakers panel"
-      >
+      <button className="panel-close" onClick={onClose} aria-label="Close speakers panel">
         ✕
       </button>
     </div>
@@ -54,12 +48,7 @@ const ClipsPanel: React.FC<PanelProps> = ({ onClose }) => (
   <div className="panel">
     <div className="panel-header">
       <h3 className="panel-title">clips</h3>
-      <button 
-        className="panel-close" 
-        onClick={onClose} 
-        title="Close clips panel"
-        aria-label="Close clips panel"
-      >
+      <button className="panel-close" onClick={onClose} aria-label="Close clips panel">
         ✕
       </button>
     </div>
@@ -139,8 +128,7 @@ const PanelsRegion: React.FC<PanelsRegionProps> = ({
           <div className="panels-collapsed">
             <button 
               className="panels-expand-button"
-              onClick={() => onClose()}
-              title="Show panels"
+              onClick={() => onClose()} // This will toggle visibility
               aria-label="Show panels"
             >
               ‹

@@ -56,7 +56,7 @@ import { AppProviders, useTranscription, useProject, useSelectedJob, useAudio, u
 import { useTranscriptionErrorHandler } from './hooks/useTranscriptionErrorHandler';
 
 // View components
-import { HomeView, TranscriptionProgressView, SpeakerIdentificationView, PlaybackView, NewLayoutView } from './views';
+import { HomeView, TranscriptionProgressView, SpeakerIdentificationView, PlaybackView } from './views';
 
 // Dialogs and shared components
 import ImportDialog from './components/ImportDialog/ImportDialog';
@@ -80,7 +80,6 @@ const AppCore: React.FC = () => {
   const [version, setVersion] = useState<string>('1.0.0');
   const [platform, setPlatform] = useState<string>('unknown');
   const [currentView, setCurrentView] = useState<ViewType>('home');
-  const [showNewLayout, setShowNewLayout] = useState<boolean>(false);
   
   // Dialog state
   const [showImportDialog, setShowImportDialog] = useState<boolean>(false);
@@ -459,15 +458,6 @@ const AppCore: React.FC = () => {
     }
   }, [projectActions, handleTranscriptionError]);
 
-  // ==================== New Layout Handler ====================
-
-  const handleShowNewLayout = useCallback(() => {
-    setShowNewLayout(true);
-  }, []);
-
-  const handleHideNewLayout = useCallback(() => {
-    setShowNewLayout(false);
-  }, []);
 
   // ==================== Audio Source Management ====================
 
@@ -482,10 +472,10 @@ const AppCore: React.FC = () => {
 
   if (!isInitialized) {
     return (
-      <div className="loading-screen">
-        <div className="loading-content">
-          <h2>Loading TranscriptionProject...</h2>
-          <div className="loading-spinner"></div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold text-foreground mb-4">Loading TranscriptionProject...</h2>
+          <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto"></div>
         </div>
       </div>
     );
@@ -493,11 +483,16 @@ const AppCore: React.FC = () => {
 
   if (initError) {
     return (
-      <div className="error-screen">
-        <div className="error-content">
-          <h2>Initialization Error</h2>
-          <p>{initError}</p>
-          <button onClick={() => window.location.reload()}>Retry</button>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center max-w-md p-6">
+          <h2 className="text-2xl font-semibold text-destructive mb-4">Initialization Error</h2>
+          <p className="text-muted-foreground mb-6">{initError}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -505,64 +500,56 @@ const AppCore: React.FC = () => {
 
   // ==================== Main App Render ====================
 
-  // If showing new layout, render it instead of main app
-  if (showNewLayout) {
-    return (
-      <TranscriptionErrorBoundary>
-        <NewLayoutView onBack={handleHideNewLayout} />
-      </TranscriptionErrorBoundary>
-    );
-  }
-
   return (
     <TranscriptionErrorBoundary>
-      <div className="app">
+      <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
       {/* Header */}
-      <div className="app-header">
-        <div className="app-header-left">
-          <h1 className="app-title">🎙️ TranscriptionProject</h1>
-          {projectState.projectData && (
-            <span className="project-name">
-              {projectState.projectData.project?.name || 'Untitled Project'}
-            </span>
-          )}
-        </div>
-        
-        <div className="app-header-right">
-          <button 
-            className="import-project-btn"
-            onClick={() => setShowProjectImportDialog(true)}
-            title="Import existing project"
-          >
-            📁 Import Project
-          </button>
+      <header className="bg-white border-b px-6 py-4 flex-shrink-0" style={{borderColor: 'hsl(var(--border))'}}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold text-primary">🎙️ TranscriptionProject</h1>
+            {projectState.projectData && (
+              <span className="text-sm text-muted-foreground">
+                {projectState.projectData.project?.name || 'Untitled Project'}
+              </span>
+            )}
+          </div>
           
-          {selectedJob && (
-            <SaveButton
-              onSave={projectActions.saveProject}
-              hasUnsavedChanges={projectState.hasUnsavedChanges}
-              projectName={projectState.projectData?.project?.name}
-            />
-          )}
-          
-          <button 
-            className="settings-btn"
-            onClick={handleOpenApiSettings}
-            title="API Settings"
-          >
-            ⚙️
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
+              onClick={() => setShowProjectImportDialog(true)}
+              title="Import existing project"
+            >
+              📁 Import Project
+            </button>
+            
+            {selectedJob && (
+              <SaveButton
+                onSave={projectActions.saveProject}
+                hasUnsavedChanges={projectState.hasUnsavedChanges}
+                projectName={projectState.projectData?.project?.name}
+              />
+            )}
+            
+            <button 
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 w-9"
+              onClick={handleOpenApiSettings}
+              title="API Settings"
+            >
+              ⚙️
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
       {/* Main Content - Route to Views */}
-      <div className="app-content">
+      <main className="flex-1 overflow-auto">
         {currentView === 'home' && (
           <HomeView
             onNewProject={handleNewProject}
             onOpenProject={handleOpenExistingProject}
             onJobSelect={handleJobSelect}
-            onShowNewLayout={handleShowNewLayout}
           />
         )}
 
@@ -584,21 +571,23 @@ const AppCore: React.FC = () => {
             onBack={() => setCurrentView('home')}
           />
         )}
-      </div>
+      </main>
 
       {/* Bottom Audio Player */}
       {selectedJob && currentAudioPath && (
-        <BottomAudioPlayer
-          audioSrc={currentAudioPath}
-          fileName={selectedJob.fileName}
-          sharedAudioState={{
-            currentTime: audioState.currentTime,
-            isPlaying: audioState.isPlaying,
-            volume: audioState.volume,
-            playbackSpeed: audioState.playbackSpeed,
-          }}
-          onAudioStateUpdate={handleAudioStateUpdate}
-        />
+        <div className="flex-shrink-0 border-t" style={{borderColor: 'hsl(var(--border))'}}>
+          <BottomAudioPlayer
+            audioSrc={currentAudioPath}
+            fileName={selectedJob.fileName}
+            sharedAudioState={{
+              currentTime: audioState.currentTime,
+              isPlaying: audioState.isPlaying,
+              volume: audioState.volume,
+              playbackSpeed: audioState.playbackSpeed,
+            }}
+            onAudioStateUpdate={handleAudioStateUpdate}
+          />
+        </div>
       )}
 
       {/* Dialogs */}
