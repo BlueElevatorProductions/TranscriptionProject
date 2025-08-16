@@ -4,7 +4,7 @@ import './ImportDialog.css';
 interface ProjectImportDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onProjectLoaded: (projectData: any) => void;
+  onProjectLoaded: (projectData: any, filePath?: string) => void;
 }
 
 const ProjectImportDialog: React.FC<ProjectImportDialogProps> = ({ 
@@ -34,8 +34,8 @@ const ProjectImportDialog: React.FC<ProjectImportDialogProps> = ({
       // Load project file
       const projectData = await window.electronAPI.loadProject(filePath);
       
-      // Success
-      onProjectLoaded(projectData);
+      // Success - pass both project data and file path
+      onProjectLoaded(projectData, filePath);
       onClose();
       
     } catch (error: any) {
@@ -77,8 +77,8 @@ const ProjectImportDialog: React.FC<ProjectImportDialogProps> = ({
       // Load project file from dropped file
       const projectData = await window.electronAPI.loadProject(transcriptFile.path);
       
-      // Success
-      onProjectLoaded(projectData);
+      // Success - pass both project data and file path
+      onProjectLoaded(projectData, transcriptFile.path);
       onClose();
       
     } catch (error: any) {

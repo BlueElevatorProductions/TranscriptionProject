@@ -1,0 +1,41 @@
+/* design-tokens.css
+   Token variables for the Transcript App UI.
+   Sidebar uses Arial; transcript/content uses Avenir (or your chosen body font).
+*/
+
+:root {
+  /* Core palette from SVG extraction */
+  --bg: 0 0% 95%;              /* #f2f2f2 */
+  --surface: 0 0% 100%;        /* #ffffff */
+  --sidebar: 162 100% 10%;     /* #003223 */
+  --text: 345 6% 13%;          /* #231f20 */
+  --text-muted: 0 0% 40%;      /* #666666 */
+  --border: 0 0% 80%;          /* #cccccc */
+  --accent: 205 90% 60%;       /* #3fa9f5 */
+  --warn: 29 100% 64%;         /* #ffa048 */
+
+  /* Region-specific colors (used by StarterComponents class names) */
+  --sidebar-bg: hsl(var(--sidebar));
+  --sidebar-text: hsl(var(--surface));
+
+  --transcript-bg: transparent;              /* keep the content area clean */
+  --transcript-text: hsl(var(--surface));    /* if you use a dark theme, swap to var(--text) */
+
+  --player-bg: hsl(var(--surface));
+  --player-text: hsl(var(--text));
+
+  --hover-bg: hsl(var(--panel, 0 0% 95%));   /* fallback to panel tone */
+
+  /* Typography families */
+  --font-sidebar: Arial, ui-sans-serif, -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans";
+  --font-transcript: Avenir, -apple-system, system-ui, ui-sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans";
+
+  /* Sizes (you can extend via Tailwind scales) */
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 24px;
+}
+
+/* Convenience CSS classes (optional if you prefer pure Tailwind) */
+.sidebar-font { font-family: var(--font-sidebar); }
+.transcript-font { font-family: var(--font-transcript); }

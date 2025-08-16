@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "echo '🚀 Use: npm run start-dev for concurrent development' && echo '⚡ Or run dev:vite and dev:electron in separate terminals'",
     "start-dev": "echo '🚀 Starting development servers...' && npm run dev:vite & sleep 3 && npm run dev:electron",
-    "dev:vite": "vite --port 5174",
+    "dev:vite": "vite --port 3000 --host",
     "dev:electron": "npm run build:main && electron . --max-old-space-size=4096",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "vite build",
@@ -34,6 +34,7 @@
     "@radix-ui/react-slider": "^1.3.5",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.2.5",
+    "@radix-ui/react-tabs": "^1.1.12",
     "@radix-ui/react-tooltip": "^1.2.7",
     "@tailwindcss/typography": "^0.5.16",
     "autoprefixer": "^10.4.21",

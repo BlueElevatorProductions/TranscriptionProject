@@ -191,7 +191,7 @@ export type ViewType =
   | 'speaker-identification' 
   | 'playback';
 
-export type PlaybackModeType = 'playback' | 'transcript-edit';
+export type PlaybackModeType = 'playback' | 'transcript-edit' | 'audio-edit';
 
 export interface DialogState {
   showImportDialog: boolean;

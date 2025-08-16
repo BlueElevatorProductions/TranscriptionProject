@@ -1,14 +1,17 @@
 /**
- * useKeyboardShortcuts.ts - Global keyboard shortcuts for the application
+ * useKeyboardShortcuts.ts - Comprehensive keyboard shortcuts for the application
  * 
- * Provides keyboard shortcuts for common actions:
+ * Keyboard Shortcuts:
  * - Space: Play/Pause audio
- * - P: Toggle panels (future feature)
- * - Shift+P: Toggle audio player
- * - 1/2: Switch between Listen/Edit modes (future feature)
+ * - Tab: Switch between modes (Playback/Transcript Edit/Audio Edit)
  * - Cmd/Ctrl+S: Save project
- * - Cmd/Ctrl+O: Open project
+ * - Cmd/Ctrl+P: Print transcript  
+ * - Cmd/Ctrl+B: Bold selected text
+ * - Cmd/Ctrl+I: Italicize selected text
+ * - Cmd/Ctrl+H: Highlight selected text (or current sentence during playback)
  * - Cmd/Ctrl+N: New project
+ * - Option/Alt+C: New clip (selection to clip or cursor position)
+ * - Escape: Close modals/panels
  */
 
 import { useEffect, useCallback } from 'react';
@@ -16,17 +19,22 @@ import { useEffect, useCallback } from 'react';
 export interface KeyboardShortcutHandlers {
   // Audio controls
   onPlayPause?: () => void;
-  onToggleAudioPlayer?: () => void;
   
-  // Layout controls (future features from Dev Preview)
-  onTogglePanels?: () => void;
-  onSwitchToListen?: () => void;
-  onSwitchToEdit?: () => void;
+  // Mode switching
+  onSwitchMode?: () => void; // Tab key cycling
   
   // File operations
   onSave?: () => void;
-  onOpen?: () => void;
+  onPrint?: () => void;
   onNew?: () => void;
+  
+  // Text formatting
+  onBold?: () => void;
+  onItalic?: () => void;
+  onHighlight?: () => void;
+  
+  // Clip operations
+  onNewClip?: () => void;
   
   // Navigation
   onEscape?: () => void;
@@ -46,68 +54,84 @@ export const useKeyboardShortcuts = (handlers: KeyboardShortcutHandlers) => {
 
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const modKey = isMac ? event.metaKey : event.ctrlKey;
+    const altKey = isMac ? event.altKey : event.altKey;
 
     // Handle different key combinations
     switch (event.key.toLowerCase()) {
       // Audio controls
       case ' ':
         // Spacebar: Play/Pause
-        if (!event.shiftKey && !modKey) {
+        if (!event.shiftKey && !modKey && !altKey) {
           event.preventDefault();
           handlers.onPlayPause?.();
         }
         break;
 
-      // Layout controls (from Dev Preview)
-      case 'p':
-        if (event.shiftKey) {
-          // Shift+P: Toggle audio player
+      // Mode switching
+      case 'tab':
+        // Tab: Switch between modes
+        if (!modKey && !altKey) {
           event.preventDefault();
-          handlers.onToggleAudioPlayer?.();
-        } else if (!modKey) {
-          // P: Toggle panels (future feature)
-          event.preventDefault();
-          handlers.onTogglePanels?.();
-        }
-        break;
-
-      // Mode switching (future feature)
-      case '1':
-        if (!modKey && !event.shiftKey) {
-          event.preventDefault();
-          handlers.onSwitchToListen?.();
-        }
-        break;
-
-      case '2':
-        if (!modKey && !event.shiftKey) {
-          event.preventDefault();
-          handlers.onSwitchToEdit?.();
+          handlers.onSwitchMode?.();
         }
         break;
 
       // File operations
       case 's':
-        if (modKey) {
+        if (modKey && !event.shiftKey && !altKey) {
           // Cmd/Ctrl+S: Save
           event.preventDefault();
           handlers.onSave?.();
         }
         break;
 
-      case 'o':
-        if (modKey) {
-          // Cmd/Ctrl+O: Open
+      case 'p':
+        if (modKey && !event.shiftKey && !altKey) {
+          // Cmd/Ctrl+P: Print
           event.preventDefault();
-          handlers.onOpen?.();
+          handlers.onPrint?.();
         }
         break;
 
       case 'n':
-        if (modKey) {
-          // Cmd/Ctrl+N: New
+        if (modKey && !event.shiftKey && !altKey) {
+          // Cmd/Ctrl+N: New project
           event.preventDefault();
           handlers.onNew?.();
+        }
+        break;
+
+      // Text formatting
+      case 'b':
+        if (modKey && !event.shiftKey && !altKey) {
+          // Cmd/Ctrl+B: Bold
+          event.preventDefault();
+          handlers.onBold?.();
+        }
+        break;
+
+      case 'i':
+        if (modKey && !event.shiftKey && !altKey) {
+          // Cmd/Ctrl+I: Italic
+          event.preventDefault();
+          handlers.onItalic?.();
+        }
+        break;
+
+      case 'h':
+        if (modKey && !event.shiftKey && !altKey) {
+          // Cmd/Ctrl+H: Highlight
+          event.preventDefault();
+          handlers.onHighlight?.();
+        }
+        break;
+
+      // Clip operations
+      case 'c':
+        if (altKey && !modKey && !event.shiftKey) {
+          // Option/Alt+C: New clip
+          event.preventDefault();
+          handlers.onNewClip?.();
         }
         break;
 

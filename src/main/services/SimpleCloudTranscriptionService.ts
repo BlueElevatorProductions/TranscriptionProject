@@ -58,8 +58,7 @@ export class SimpleCloudTranscriptionService {
       throw new Error('OpenAI API key not configured');
     }
 
-    console.log('Starting OpenAI transcription for:', audioPath);
-    console.log('API Key present:', this.apiKeys.openai ? 'Yes' : 'No');
+    // Starting OpenAI transcription
 
     // Validate API key format
     const apiKey = this.apiKeys.openai.trim();
@@ -71,24 +70,20 @@ export class SimpleCloudTranscriptionService {
       throw new Error('OpenAI API key appears to be truncated');
     }
     
-    console.log('API Key validation passed:', {
-      starts_with_sk: apiKey.startsWith('sk-'),
-      length: apiKey.length,
-      first_10_chars: apiKey.substring(0, 10) + '...'
-    });
+    // API Key validation passed
 
     try {
       progressCallback({ progress: 10, status: 'Converting audio format...' });
       
       // Convert audio to supported format if needed
       const convertedPath = await this.convertAudioForOpenAI(audioPath);
-      console.log('Using file for transcription:', convertedPath);
+      // Using converted file for transcription
       
       progressCallback({ progress: 20, status: 'Uploading to OpenAI...' });
 
       // Verify file exists and get size
       const stats = await fs.promises.stat(convertedPath);
-      console.log(`File size: ${stats.size} bytes`);
+      // File size validated
       
       if (stats.size === 0) {
         throw new Error('Audio file is empty');
@@ -111,14 +106,7 @@ export class SimpleCloudTranscriptionService {
       // OpenAI prompt should be a sample text with the desired formatting style
       formData.append('prompt', 'Welcome to the show. Today, we\'ll discuss important topics with proper punctuation. How are you doing? That\'s great! Let\'s get started.'); // Sample text showing proper punctuation style
 
-      console.log('Making OpenAI API request with punctuation-optimized parameters...');
-      console.log('Request parameters:', {
-        model: 'whisper-1',
-        response_format: 'verbose_json',
-        timestamp_granularities: 'word',
-        language: 'en',
-        prompt: 'Welcome to the show. Today, we\'ll discuss important topics...'
-      });
+      // Making OpenAI API request with optimized parameters
       const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
@@ -128,8 +116,7 @@ export class SimpleCloudTranscriptionService {
         body: formData
       });
 
-      console.log('OpenAI API Response Status:', response.status);
-      console.log('OpenAI API Response Headers:', response.headers.raw());
+      // OpenAI API response received
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -140,13 +127,7 @@ export class SimpleCloudTranscriptionService {
       progressCallback({ progress: 90, status: 'Processing results...' });
 
       const result = await response.json() as any;
-      console.log('OpenAI API Response received:', {
-        hasText: !!result.text,
-        hasSegments: !!result.segments,
-        hasWords: !!result.words,
-        language: result.language,
-        textLength: result.text?.length || 0
-      });
+      // API response processed
       
       // CRITICAL: Log the actual response to debug
       console.log('Raw OpenAI Response:', JSON.stringify(result, null, 2));

@@ -15,6 +15,24 @@ module.exports = {
     },
     extend: {
       colors: {
+        /* Region-scoped colors from new UI design */
+        'sidebar-bg': 'var(--sidebar-bg)',
+        'sidebar-text': 'var(--sidebar-text)',
+        'transcript-bg': 'var(--transcript-bg)',
+        'transcript-text': 'var(--transcript-text)',
+        'player-bg': 'var(--player-bg)',
+        'player-text': 'var(--player-text)',
+        'hover-bg': 'var(--hover-bg)',
+        
+        /* General tokens for broader use */
+        bg: 'hsl(var(--bg))',
+        surface: 'hsl(var(--surface))',
+        sidebar: 'hsl(var(--sidebar))',
+        text: 'hsl(var(--text))',
+        'text-muted': 'hsl(var(--text-muted))',
+        warn: 'hsl(var(--warn))',
+        
+        /* Existing colors kept for compatibility */
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -50,9 +68,10 @@ module.exports = {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        '2xl': 'calc(var(--radius-lg) + 8px)',
       },
       keyframes: {
         "accordion-down": {
@@ -85,6 +104,8 @@ module.exports = {
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
+        arial: ['var(--font-sidebar)', 'sans-serif'],        // use className="font-arial"
+        transcript: ['var(--font-transcript)', 'sans-serif'] // use className="font-transcript"
       },
     },
   },

@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import './NewProjectDialog.css';
+import '../Modals/Modal.css';
 
 export interface NewProjectDialogProps {
   isOpen: boolean;

@@ -1,587 +1,253 @@
 # TranscriptionProject
 
-> A professional desktop transcription editor with advanced audio synchronization and cloud API integration
+A professional desktop transcription application built with Electron, React, and TypeScript. Features a modern interface with cloud transcription services, advanced audio synchronization, and professional editing tools.
 
 ## Overview
 
-TranscriptionProject is a sophisticated Electron-based desktop application designed for podcast producers, journalists, and audio editors. It features a dual-mode interface for professional transcript editing with real-time audio synchronization, cloud transcription services, and an advanced word-level editing system.
+TranscriptionProject is a desktop application designed for content creators, journalists, and audio professionals who need accurate, editable transcripts. The app provides a streamlined workflow from audio import through cloud transcription to professional editing with real-time audio synchronization.
 
-## ✅ Current Features
+## Features
 
-### **Dual Mode Professional Interface**
-- **Playback Mode**: Clean paragraph-based reading interface optimized for listening and review
-- **Transcript Edit Mode**: Detailed word-level editing with professional tools and context menus
-- **Seamless Mode Switching**: Instant transitions between interfaces with shared state preservation
-- **Resizable Layout**: User-customizable panels with drag-to-resize functionality
+### Modern User Interface
+- **Dark Green Sidebar**: Professional ScriptScribe-inspired design with Listen/Edit mode tabs
+- **Responsive Layout**: Tailwind CSS with clean, modern styling
+- **Mode Switching**: Toggle between Listen mode (playback-focused) and Edit mode (editing-focused)
+- **Panel System**: Expandable sidebar panels for speakers, clips, fonts, and project management
 
-### **Advanced Transcript Editing System**
-- **Word-Level Editing**: Double-click any word to edit, right-click for insertion and context options
-- **Complete Undo/Redo System**: Full edit history with Cmd+Z/Cmd+Shift+Z keyboard shortcuts
-- **Text Cursor Navigation**: Click-to-position cursor with arrow key navigation between words
-- **Paragraph Management**: Enter key for paragraph breaks with visual indicators
-- **Context Menu System**: Right-click access to word operations, clip creation, and speaker assignment
-- **Speaker Management**: Inline editing throughout transcript with real-time updates
+### Cloud Transcription Services
+- **OpenAI Whisper Integration**: High-quality transcription with word-level timestamps
+- **AssemblyAI Support**: Fast transcription with speaker detection
+- **Progress Tracking**: Real-time transcription progress with detailed status updates
+- **API Key Management**: Secure, encrypted storage of API credentials
 
-### **Professional Audio Integration**
-- **Unified Audio Player**: Consistent bottom player across all modes with shared state
-- **Real-time Word Highlighting**: Synchronized highlighting during playback in both interfaces
-- **Interactive Transcript**: Click any word to jump audio to that precise timestamp
-- **Advanced Transport Controls**: Play/pause, 15-second skip, volume, and variable speed (0.5× to 2.0×)
-- **Timeline Scrubbing**: Visual progress with click-to-seek functionality
-- **Global Keyboard Shortcuts**: Spacebar for play/pause across all application modes
+### Audio Integration
+- **Unified Audio Player**: Bottom-mounted player with transport controls
+- **Real-time Synchronization**: Word-level highlighting during playback
+- **Interactive Transcript**: Click any word to jump to that audio timestamp
+- **Speed Control**: Variable playback speed (0.5× to 2×)
+- **Timeline Scrubbing**: Visual progress bar with click-to-seek
 
-### **Cloud Transcription Services**
-- **OpenAI Whisper Integration**: High-quality cloud transcription with word-level timestamps
-- **AssemblyAI Support**: Fast transcription with built-in speaker detection capabilities
-- **Local WhisperX Option**: Offline processing for privacy-sensitive content
-- **Intelligent Punctuation**: Advanced redistribution algorithm for proper formatting
-- **Secure API Management**: Encrypted storage with machine-specific key derivation
+### Professional Editing
+- **Word-Level Editing**: Click to edit individual words or segments
+- **Speaker Management**: Assign and manage speaker names throughout transcripts
+- **Clip Creation**: Create audio clips from transcript selections
+- **Context Menus**: Right-click for editing options and word operations
+- **Font Controls**: Customize transcript display with font panel
 
-### **Modern Project Management**
-- **Project File System**: ZIP-based `.transcript` format for portable project storage
-- **Audio Embedding**: Optional audio inclusion in project files for portability (temporarily disabled for stability)
-- **Speaker Identification**: Semi-automated speaker naming with audio sample playback
-- **Import/Export**: Multiple audio format support with metadata preservation
-- **Project-First Workflow**: Create and name projects before importing audio for organized management
+### Project Management
+- **Project-First Workflow**: Create named projects before importing audio
+- **ZIP-based Format**: `.transcript` files contain all project data
+- **Auto-save**: Automatic project saving with unsaved changes tracking
+- **Import/Export**: Support for various audio formats
+- **Recent Projects**: Quick access to recently opened projects
 
-### **Comprehensive Error Handling** (NEW)
-- **Toast Notifications**: Non-intrusive success, warning, and error messages with auto-dismiss
-- **Error Recovery**: Smart error classification with actionable recovery suggestions
-- **API Key Validation**: Guided error resolution for configuration issues
-- **Error Details**: Technical information available for debugging while keeping user messages friendly
-- **Crash Protection**: Error boundaries prevent app crashes with graceful recovery options
+### Error Handling & Notifications
+- **Toast Notifications**: Non-intrusive status messages and error alerts
+- **Error Recovery**: Smart error handling with actionable suggestions
+- **Crash Protection**: Error boundaries prevent application crashes
+- **Debug Information**: Detailed error logs for troubleshooting
 
-## Technology Stack & Architecture
+## Technology Stack
 
-### **Core Technologies**
-- **Frontend**: React 18 with TypeScript for type-safe development
-- **Desktop Framework**: Electron 32.2.1 with secure IPC communication
-- **Build System**: Vite for fast development with hot reload
-- **UI Framework**: Tailwind CSS v3 + shadcn/ui components for modern design system
-- **Audio Processing**: HTML5 Audio API with Electron file system integration
-- **State Management**: React Context API with centralized providers
-- **Styling**: Tailwind utility classes + HSL color tokens for consistency
-- **Theme System**: Built-in dark/light mode with system preference detection
+### Core Technologies
+- **Electron 32+**: Cross-platform desktop framework
+- **React 18**: Modern React with functional components and hooks
+- **TypeScript**: Full type safety throughout the application
+- **Vite**: Fast development server and build tool
+- **Tailwind CSS**: Utility-first CSS framework for styling
 
-### **Application Architecture** (REFACTORED)
+### UI Components
+- **Radix UI**: Accessible, unstyled components for complex interactions
+  - Tabs, Sliders, Dialogs, Dropdowns, Tooltips
+- **Lucide React**: Consistent icon set throughout the interface
+- **Custom Components**: Built on Radix primitives with Tailwind styling
 
-```
-Electron Application
-├── Main Process (src/main/)
-│   ├── main.ts                     # Application entry point & window management
-│   ├── preload.ts                  # Secure IPC bridge (88+ API methods)
-│   └── services/
-│       ├── SimpleCloudTranscriptionService.ts    # OpenAI/AssemblyAI integration
-│       ├── ProjectFileService.ts                 # Modern .transcript format
-│       └── ProjectPackageService.ts              # ZIP-based project packaging
-│
-└── Renderer Process (src/renderer/)
-    ├── App.tsx                     # Main app with error boundaries & routing
-    ├── contexts/                   # Centralized state management (NEW)
-    │   ├── AudioContext.tsx        # Audio playback state
-    │   ├── ProjectContext.tsx      # Project data management
-    │   ├── TranscriptionContext.tsx # Transcription lifecycle
-    │   ├── NotificationContext.tsx  # Toast notifications (NEW)
-    │   └── index.tsx               # Combined provider system
-    ├── views/                      # Top-level view components (NEW)
-    │   ├── HomeView.tsx            # Landing page with project options
-    │   ├── TranscriptionProgressView.tsx # Progress tracking
-    │   ├── SpeakerIdentificationView.tsx # Speaker naming
-    │   └── PlaybackView.tsx        # Main editing interface
-    ├── components/
-    │   ├── PlaybackMode/
-    │   │   ├── PlaybackModeContainer.tsx          # Clean reading interface
-    │   │   └── CleanTranscriptDisplay.tsx         # Paragraph-grouped display
-    │   ├── TranscriptEdit/
-    │   │   ├── TranscriptEditContainer.tsx        # Professional editing interface
-    │   │   ├── TranscriptPanel.tsx                # Word-level editing canvas
-    │   │   ├── ContextMenu.tsx                    # Right-click operations
-    │   │   └── useClips.ts                        # Clip management hook
-    │   ├── Notifications/          # Error handling UI (NEW)
-    │   │   ├── Toast.tsx           # Toast notification component
-    │   │   └── ToastContainer.tsx  # Toast management system
-    │   ├── Modals/                 # Modal components (NEW)
-    │   │   └── ErrorModal.tsx      # Critical error display
-    │   ├── NewProject/             # Project creation (NEW)
-    │   │   └── NewProjectDialog.tsx # New project workflow
-    │   ├── shared/
-    │   │   ├── BottomAudioPlayer.tsx              # Unified audio controls
-    │   │   ├── SpeakersPanel.tsx                  # Speaker management UI
-    │   │   └── SaveButton.tsx                     # Project save controls
-    │   └── ImportDialog/
-    │       ├── ImportDialog.tsx                   # File import & model selection
-    │       └── ProjectImportDialog.tsx            # Project file import (NEW)
-    ├── services/                   # Business logic services (NEW)
-    │   └── errorHandling.ts        # Error classification & messages
-    └── hooks/
-        ├── useAudioPlayer.ts       # Audio state management
-        └── useTranscriptionErrorHandler.ts # Error handling hook (NEW)
-```
+### State Management
+- **React Context**: Centralized state management with multiple contexts
+  - `AudioContext`: Audio playback state and controls
+  - `ProjectContext`: Project data and metadata management
+  - `TranscriptionContext`: Transcription jobs and processing state
+  - `NotificationContext`: Toast notifications and error handling
 
-### **Data Flow Architecture**
+### Backend Services
+- **Node.js APIs**: Integration with OpenAI and AssemblyAI services
+- **File System**: Secure file handling with Electron's main process
+- **Encryption**: AES-256 encryption for API key storage
+- **IPC Communication**: Secure communication between main and renderer processes
+
+## Architecture
 
 ```
-Audio Import → Cloud/Local Transcription → Speaker Identification → Dual-Mode Editing → Project Export
-
-1. File Import Dialog (ImportDialog.tsx)
-   ↓ IPC → main.ts → SimpleCloudTranscriptionService.ts
-2. Transcription Processing (OpenAI/AssemblyAI/WhisperX)
-   ↓ Progress Events → IPC → App.tsx
-3. Speaker Identification (SpeakerIdentification.tsx)
-   ↓ Speaker Mapping → Global State
-4. Editing Interfaces (PlaybackMode + TranscriptEdit)
-   ↓ Shared State → Real-time Synchronization
-5. Project Persistence (ProjectFileService.ts)
-   ↓ ZIP Archive → .transcript files
+┌─────────────────────────────────────────────────────────────┐
+│                    Electron Application                      │
+├─────────────────────────────────────────────────────────────┤
+│ Main Process (src/main/)                                    │
+│ ├── main.ts                    # App entry & window mgmt    │
+│ ├── preload.ts                 # Secure IPC bridge         │
+│ └── services/                                               │
+│     ├── SimpleCloudTranscriptionService.ts                 │
+│     ├── ProjectFileService.ts                              │
+│     └── ProjectPackageService.ts                           │
+├─────────────────────────────────────────────────────────────┤
+│ Renderer Process (src/renderer/)                           │
+│ ├── App.tsx                    # Main app component        │
+│ ├── main.tsx                   # React app entry point     │
+│ ├── contexts/                  # State management          │
+│ │   ├── AudioContext.tsx                                   │
+│ │   ├── ProjectContext.tsx                                 │
+│ │   ├── TranscriptionContext.tsx                          │
+│ │   ├── NotificationContext.tsx                           │
+│ │   └── index.tsx              # Combined providers        │
+│ ├── components/                                             │
+│ │   ├── ui/                                                │
+│ │   │   └── NewUIShell.tsx     # Main interface shell     │
+│ │   ├── shared/                # Reusable components       │
+│ │   ├── ImportDialog/          # File import workflows     │
+│ │   ├── NewProject/            # Project creation          │
+│ │   ├── Notifications/         # Toast system              │
+│ │   └── TranscriptEdit/        # Editing components        │
+│ ├── hooks/                     # Custom React hooks        │
+│ ├── services/                  # Business logic            │
+│ └── types/                     # TypeScript definitions    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Developer Documentation
+## Data Flow
 
-### **Core Components Deep Dive**
+1. **Project Creation**: User creates new project → Project context initialized
+2. **Audio Import**: File selected → Sent to main process → Cloud transcription service
+3. **Transcription**: Progress updates via IPC → UI shows real-time status
+4. **Results**: Completed transcript → Project context → UI rendering
+5. **Editing**: User interactions → Context updates → Real-time UI updates
+6. **Saving**: Project data → ZIP packaging → File system storage
 
-#### **App.tsx - Central State Manager**
-- **Responsibilities**: View routing, shared audio state, project lifecycle, API coordination
-- **Key Features**: 
-  - Multi-view state machine (`home`, `transcription-progress`, `speaker-identification`, `playback`)
-  - Centralized `handleAudioStateUpdate` with state validation and type safety
-  - Project file management with auto-save and unsaved changes tracking
-  - IPC event coordination with polling fallbacks
+## Core Components
 
-#### **TranscriptEditContainer.tsx - Professional Editing**
-- **Architecture**: Word-level editing with comprehensive undo/redo system
-- **Core Systems**:
-  - **Edit History**: Linear undo/redo with action types (`word-edit`, `speaker-change`, `paragraph-break`)
-  - **Clip Management**: `useClips` hook for sophisticated clip operations and speaker assignment
-  - **Keyboard Shortcuts**: Cmd+Z/Shift+Z for undo/redo, spacebar for play/pause
-  - **Context Menu Integration**: Right-click operations with word insertion and clip creation
+### NewUIShell.tsx
+The main interface component featuring:
+- Dark green sidebar with mode tabs (Listen/Edit)
+- Project management controls (New, Open, Save)
+- Panel toggles (Speakers, Clips, Fonts)
+- Main content area with transcript display
+- Integrated audio player at bottom
 
-#### **PlaybackModeContainer.tsx - Document Interface**
-- **Design Philosophy**: Clean, document-focused reading experience
-- **Key Features**:
-  - **Paragraph Grouping**: Intelligent segment grouping by speaker and timing gaps
-  - **Resizable Layout**: Drag-to-resize sidebar with constraints and persistence
-  - **Global Shortcuts**: Document-wide spacebar handling with input field detection
+### Audio System
+- **BottomAudioPlayer**: Unified audio controls across all modes
+- **Audio Context**: Centralized audio state management
+- **Word Synchronization**: Real-time highlighting during playback
+- **Interactive Navigation**: Click-to-seek functionality
 
-#### **BottomAudioPlayer.tsx - Unified Audio System**
-- **Technical Implementation**: HTML5 Audio with Electron file system bridge
-- **Core Features**:
-  - **Secure File Loading**: IPC → ArrayBuffer → Blob URL conversion
-  - **State Synchronization**: Shared audio state with defensive validation
-  - **Time Updates**: Animation frame-based updates with 50ms precision
-  - **Format Support**: Wide audio format compatibility with MIME type detection
+### Project System
+- **ZIP-based Projects**: Self-contained `.transcript` files
+- **Metadata Management**: Project settings, speaker info, clips
+- **Auto-save**: Automatic saving with change detection
+- **Import/Export**: Multiple audio format support
 
-### **Key TypeScript Interfaces**
-
-```typescript
-interface TranscriptionJob {
-  id: string;
-  filePath: string;
-  fileName: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  progress: number;
-  result?: WhisperTranscriptionResult;
-  speakerNames?: { [key: string]: string };
-}
-
-interface SharedAudioState {
-  currentTime: number;
-  isPlaying: boolean;
-  volume: number;
-  playbackSpeed: number;
-}
-
-interface Segment {
-  id: number;
-  start: number;
-  end: number;
-  text: string;
-  speaker: string;
-  words: Word[];
-  paragraphBreak?: boolean;
-}
-
-interface Word {
-  start: number;
-  end: number;
-  word: string;
-  score: number;
-}
+### Transcription Pipeline
 ```
-
-### **Service Layer Architecture**
-
-#### **SimpleCloudTranscriptionService.ts**
-- **OpenAI Integration**: Whisper-1 model with optimized prompts for punctuation
-- **AssemblyAI Support**: Fast transcription with speaker diarization
-- **Features**: Audio format conversion (FFmpeg), progress callbacks, connection testing
-- **Error Handling**: Comprehensive error capture with user-friendly messages
-
-#### **ProjectFileService.ts - Modern Project Format**
-- **File Structure**: ZIP-based `.transcript` files with organized JSON structure
-- **Contents**:
-  - `project.json` - Project metadata and settings
-  - `transcription.json` - Complete transcript data with word timestamps
-  - `metadata/speakers.json` - Speaker information and mappings
-  - `metadata/clips.json` - Clip definitions and metadata
-  - `audio/original.*` - Optional embedded audio files
-- **Compression**: DEFLATE level 6 for optimal size/speed balance
-
-### **Security & Encryption**
-
-#### **API Key Management**
-- **Storage**: `~/.config/TranscriptionProject/api-keys.enc`
-- **Encryption**: AES-256-CBC with machine-specific key derivation
-- **Key Generation**: SHA256(`platform + app.version + executable.path`)
-- **Security Model**: Process isolation with secure IPC bridge
-
-### **Audio Processing Pipeline**
-
-```
-Audio File → Electron File API → ArrayBuffer → Blob URL → HTML5 Audio
-                ↓
-          Format Validation → Size Checking → MIME Type Detection
-                ↓
-          Word-Level Synchronization → Real-time Highlighting → Interactive Seeking
-```
-
-### **State Management Patterns**
-
-#### **Shared Audio State**
-- **Architecture**: Centralized state with prop drilling and defensive validation
-- **Update Pattern**: `handleAudioStateUpdate` with type safety and NaN protection
-- **Synchronization**: Cross-component state sharing with immediate UI updates
-
-#### **Edit History System**
-```typescript
-interface EditAction {
-  type: 'word-edit' | 'speaker-change' | 'clip-create' | 'word-insert' | 'word-delete' | 'paragraph-break';
-  data: any;
-  timestamp: number;
-}
+Audio File → Cloud Service → Word Timestamps → Speaker Detection → UI Display
 ```
 
 ## Getting Started
 
-### **Prerequisites**
-- Node.js 18+ with npm
-- Git for version control
-- (Optional) Python 3.8+ for local WhisperX transcription
+### Prerequisites
+- Node.js 18 or higher
+- npm package manager
+- (Optional) API keys for OpenAI or AssemblyAI
 
-### **Installation**
+### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/BlueElevatorProductions/TranscriptionProject.git
+git clone [repository-url]
 cd TranscriptionProject
 
 # Install dependencies
 npm install
 
-# Set up environment variables (copy .env.example to .env)
-cp .env.example .env
+# Start development servers
+npm run start-dev
 ```
 
-### **Development Workflow**
+### Development
 
 ```bash
-# Start concurrent development servers
-npm run start-dev
-
-# Or run separately:
-# Terminal 1: Frontend development server (port 5174)
+# Start Vite dev server (port 3000)
 npm run dev:vite
 
-# Terminal 2: Electron application
+# Start Electron app (separate terminal)
 npm run dev:electron
 
-# Build main process only
-npm run build:main
+# Build for production
+npm run build
 ```
 
-### **Configuration**
+### Configuration
 
-#### **Environment Variables (.env)**
-```bash
-# OpenAI API Configuration
-OPENAI_API_KEY=your_openai_api_key_here
+1. **API Keys**: Configure in the app's settings panel
+   - Click the gear icon in the sidebar
+   - Enter OpenAI or AssemblyAI API key
+   - Keys are encrypted and stored locally
 
-# Development Settings
-NODE_ENV=development
-```
+2. **Development**: Create `.env` file for development API keys
+   ```
+   OPENAI_API_KEY=your_openai_key_here
+   ```
 
-#### **API Key Setup**
-1. Launch the application
-2. Click the gear icon (⚙️) in the top-right header
-3. Enter your OpenAI API key (encrypted and stored locally)
-4. Keys are machine-specific and automatically encrypted
+## File Structure
 
-## Suggested Improvements & Future Development
+### Project Files (.transcript)
+ZIP archives containing:
+- `project.json`: Project metadata and settings
+- `transcription.json`: Complete transcript with word timestamps
+- `metadata/speakers.json`: Speaker names and mappings
+- `metadata/clips.json`: Audio clip definitions
+- (Optional) `audio/`: Original audio files
 
-### **Architecture Enhancements**
+### Configuration
+- API keys: `~/.config/TranscriptionProject/api-keys.enc`
+- Recent projects: Managed by Electron's userData directory
 
-#### **State Management Evolution**
-- **Current**: React state with prop drilling
-- **Suggested**: Context providers or Redux Toolkit for complex state
-- **Benefits**: Reduced prop drilling, better debugging, predictable updates
+## Development Guidelines
 
-#### **Component Architecture Refinements**
-- **Extract Shared Logic**: Create custom hooks for common patterns (word navigation, time formatting)
-- **Component Composition**: Break down large components into smaller, focused units
-- **Error Boundaries**: Add granular error handling for each major component tree
+### Code Organization
+- **Components**: Functional React components with TypeScript
+- **Hooks**: Custom hooks for reusable logic
+- **Contexts**: Centralized state management
+- **Services**: Business logic and external API integration
+- **Types**: Comprehensive TypeScript definitions
 
-#### **Performance Optimizations**
-- **Word Highlighting**: Implement virtual scrolling for large transcripts
-- **Audio Loading**: Add progressive loading for large audio files
-- **Memory Management**: Implement cleanup for blob URLs and temporary files
+### Styling
+- **Tailwind CSS**: Utility-first styling approach
+- **Design Tokens**: Consistent colors and spacing via CSS variables
+- **Responsive Design**: Mobile-friendly layouts where applicable
+- **Dark Theme**: Professional dark green color scheme
 
-### **Feature Enhancements**
+### State Management
+- **React Context**: Multiple specialized contexts
+- **Immutable Updates**: Proper state update patterns
+- **Type Safety**: Full TypeScript coverage for state
+- **Error Boundaries**: Graceful error handling
 
-#### **Advanced Editing Features**
-- **Find & Replace**: Global text search with regex support
-- **Bulk Operations**: Multi-selection editing and speaker reassignment
-- **Text Formatting**: Rich text support with markdown export
-- **Collaboration**: Real-time collaborative editing with conflict resolution
+## Scripts
 
-#### **Export System Improvements**
-- **Format Support**: SRT, VTT, Word, PDF export options
-- **Audio Export**: Clip-based audio extraction with fade in/out
-- **Batch Processing**: Multiple project export with templates
-
-#### **Transcription Pipeline Enhancements**
-- **Model Selection**: User-configurable Whisper model sizes
-- **Custom Vocabulary**: Domain-specific word lists for improved accuracy
-- **Language Support**: Multi-language transcription with automatic detection
-- **Confidence Scoring**: Visual confidence indicators for transcript quality
-
-### **Technical Debt & Code Quality**
-
-#### **TypeScript Improvements**
-- **Strict Mode**: Enable strict TypeScript compilation
-- **Type Definitions**: Create comprehensive type definitions for all data structures
-- **Generic Utilities**: Develop reusable type utilities for common patterns
-
-#### **Testing Infrastructure**
-- **Unit Tests**: Comprehensive test coverage for core business logic
-- **Integration Tests**: End-to-end workflow testing with realistic data
-- **Performance Tests**: Automated performance regression testing
-
-#### **Build & Deployment**
-- **Production Builds**: Configure optimized production builds
-- **Code Splitting**: Implement lazy loading for improved startup performance
-- **Bundle Analysis**: Regular bundle size monitoring and optimization
-
-### **Security Enhancements**
-- **Content Security Policy**: Implement strict CSP for renderer processes
-- **Dependency Auditing**: Regular security audits for npm dependencies
-- **File Validation**: Enhanced file type and content validation
-
-### **User Experience Improvements**
-- **Onboarding**: Interactive tutorial for new users
-- **Keyboard Shortcuts**: Comprehensive shortcut system with customization
-- **Accessibility**: Full WCAG 2.1 compliance with screen reader support
-- **Themes**: Dark mode and customizable color schemes
-
-## 🎨 **New UX Design Implementation** (Currently Active)
-
-### **Modern Design System Implementation**
-
-We've successfully implemented a new design system based on ScriptScribe, featuring Tailwind CSS and shadcn/ui components for a professional, modern interface.
-
-#### **Design Implementation Status**
-- ✅ **Design System Foundation**: Tailwind CSS v3 with HSL color tokens
-- ✅ **Component Library**: shadcn/ui components (Button, Card, Dialog, Slider, etc.)
-- ✅ **Theme Support**: Light/dark mode with system preference detection
-- ✅ **Professional Typography**: Inter font with optimized scaling
-- 🚧 **Mode Differentiation**: Listen vs Edit modes to be reimplemented
-- 📋 **Remaining Work**: Update audio player, modals, and form components
-- **Mode Tabs**: Listen/Edit mode switching with toolbar adaptations
-- **Responsive Layout**: Minimum width enforcement with horizontal scrolling when needed
-
-#### **Current Implementation Status** (8-Phase Plan - ~70% Complete) ⭐
-
-##### ✅ **Phase 1: Foundation & Layout Architecture** - **COMPLETED**
-- [x] **MainLayout Component**: 4-region CSS Grid layout (Header, Transcript, Panels, Audio)
-- [x] **Responsive System**: Dynamic grid columns with custom CSS properties
-- [x] **Region Components**: HeaderRegion, TranscriptRegion, PanelsRegion, AudioRegion
-- [x] **Window Resize Handling**: 1200px minimum width with overflow scrolling
-- [x] **Color Scheme**: Light cyan background, white document, blue-gray panels
-
-##### ✅ **Phase 2: Mode System & Toolbar** - **COMPLETED** ⭐
-- [x] **Listen/Edit Mode Tabs**: Chakra UI v3 Dynamic Tabs with professional styling ⭐
-- [x] **Context-Sensitive Toolbar**: Full implementation with mode awareness and tooltips
-- [x] **Mode State Management**: React Context with proper state transitions
-- [x] **Enhanced UI Components**: Professional button styling with hover effects ⭐
-- [x] **Icon Integration**: Visual mode indicators (🎧 listen, ✏️ edit) for better UX
-- [ ] **Advanced Animations**: Framer Motion integration for smooth transitions
-
-##### 🔄 **Phase 3: Transcript Interaction** - **PARTIALLY COMPLETED**
-- [x] **Unified Transcript Component**: Single component replacing dual-mode system
-- [x] **Mode-Aware Interactions**: Click behavior changes based on Listen/Edit mode
-- [x] **Real-time Word Highlighting**: Performance-optimized highlighting during playback
-- [ ] **Text Cursor System**: Edit mode cursor positioning and navigation
-- [ ] **Text Selection**: Multi-word selection for editing operations
-
-##### ✅ **Phase 4: Panels System** - **MOSTLY COMPLETED** 
-- [x] **Panels Extend App Width**: Panels now extend rightward instead of sliding over content ⭐
-- [x] **Speakers & Clips Integration**: Existing panels migrated to new system
-- [x] **Panel Container**: Scroll functionality and responsive behavior
-- [x] **Toggle Functionality**: Keyboard shortcuts (P key) and visual controls
-- [ ] **Drag-and-Drop Reordering**: Panel organization and customization
-- [ ] **Panel + Button**: Dropdown menu for adding new panels
-
-##### ✅ **Phase 5: Audio Sliders** - **RECENTLY COMPLETED** ⭐
-- [x] **Enhanced Player Slider**: Integration with existing BottomAudioPlayer design
-- [x] **Professional Audio Controls**: Waveform thumbnail, timeline scrubbing, transport controls
-- [x] **Speed Dropdown**: Replaced buttons with dropdown (0.5x - 2x speed options) ⭐
-- [x] **Auto-Exclusive Behavior**: Only one audio slider active at a time
-- [x] **Editor Slider Foundation**: Placeholder component for future audio editing
-- [ ] **Minor**: Audio tab positioning refinement (deferred)
-
-##### ❌ **Phase 6: Keyboard & Accessibility** - **PENDING**
-- [ ] **Global Keyboard Shortcuts**: Comprehensive shortcut system (P, A, Cmd+S, etc.)
-- [ ] **Tab Order Management**: Proper focus management across dynamic layout
-- [ ] **Screen Reader Support**: ARIA labels, live regions, semantic HTML
-- [ ] **Focus Indicators**: Visual feedback for keyboard navigation
-
-##### ❌ **Phase 7: State Persistence & Polish** - **PENDING**
-- [ ] **User Preferences**: Remember panel sizes, visible panels, mode preferences
-- [ ] **Per-Project State**: Save layout preferences with project files
-- [ ] **Visual Polish**: Loading states, micro-interactions, hover effects
-- [ ] **Error States**: Graceful degradation for edge cases
-
-##### ❌ **Phase 8: Testing & Migration** - **PENDING**
-- [ ] **Comprehensive Testing**: Unit tests for new layout components
-- [ ] **Performance Testing**: Large transcript handling and memory usage
-- [ ] **Migration Strategy**: Feature flags and gradual rollout system
-- [ ] **User Documentation**: Updated guides for new interface
-
-#### **Key Technical Achievements**
-- **CSS Grid Layout**: Dynamic 2-column grid that adapts to panel visibility
-- **Panel Width Extension**: Panels expand app rightward (300px) instead of overlaying
-- **Minimum Width Enforcement**: 1200px minimum prevents layout collapse
-- **Chakra UI v3 Integration**: Professional component library with Dynamic Tabs ⭐
-- **Component Compatibility**: Successfully resolved v3 API breaking changes
-- **Enhanced User Experience**: Tooltips, hover effects, and visual feedback throughout
-- **Existing Component Integration**: Seamless integration of BottomAudioPlayer
-- **Color Scheme Accuracy**: Precise color matching to mockup specifications
-- **Responsive Breakpoint Handling**: Removed problematic mobile breakpoints
-
-#### **Next Development Session Priorities**
-1. **Text Cursor System**: Implement Edit mode cursor positioning and navigation
-2. **Framer Motion Integration**: Add smooth animations for panel transitions  
-3. **Panel Drag-and-Drop**: Enable custom panel ordering and organization
-4. **Keyboard Shortcuts**: Complete global shortcut system implementation
-5. **Audio Tab Positioning**: Resolve minor positioning issue with collapsed audio tabs
-
----
-
-## Development Status
-
-### ✅ **Completed Implementation**
-- [x] **Core Architecture**: Electron/React/TypeScript foundation with secure IPC
-- [x] **Modern Design System**: Tailwind CSS v3 + shadcn/ui components ⭐ NEW
-- [x] **Dual Interface System**: Playback and Transcript Edit modes with seamless switching
-- [x] **Audio Integration**: Real-time synchronization with word-level highlighting
-- [x] **Cloud Transcription**: OpenAI Whisper and AssemblyAI integration
-- [x] **Professional Editing**: Word-level editing with undo/redo and context menus
-- [x] **Project Management**: ZIP-based project files with save/load functionality
-- [x] **Security**: Encrypted API key storage with machine-specific binding
-- [x] **Error Handling**: Comprehensive toast notifications and error recovery system
-- [x] **Modular Architecture**: Refactored to Context providers and view components
-- [x] **Project Workflow**: New project creation with project-first approach
-- [x] **Crash Protection**: Error boundaries and defensive programming
-- [x] **Theme System**: Dark/light mode support with system preference detection ⭐ NEW
-- [x] **Component Migration**: Phase 1 & 2 of ScriptScribe design implementation ⭐ NEW
-
-### 🚧 **Active Development Priorities**
-- [ ] **Listen vs Edit Modes**: Reimplement mode differentiation from Dev Preview
-- [ ] **Component Updates**: Update BottomAudioPlayer, modals, and forms to new design
-- [ ] **Keyboard Shortcuts**: Implement global shortcuts using new hook
-- [ ] **Text Cursor & Selection**: Edit mode enhancements for professional editing
-- [ ] **Animation System**: Framer Motion integration for smooth transitions
-- [ ] **Keyboard Shortcuts**: Comprehensive global shortcut system
-- [ ] **Panel Customization**: Drag-and-drop reordering and management
-
-### 📋 **Future Roadmap** 
-- [ ] **Design System Completion**: Finish Phase 3-5 of ScriptScribe implementation
-- [ ] **Listen/Edit Modes**: Distinct UI behaviors for different workflows
-- [ ] **Audio Embedding**: Re-enable audio file embedding in project packages  
-- [ ] **Local Transcription**: WhisperX integration for offline processing
-- [ ] **Export System**: Multiple format support (SRT, VTT, Word, PDF)
-- [ ] **Performance**: Further optimization for large files and memory usage
-- [ ] **Testing**: Expand test coverage for new design system components
-- [ ] **Collaboration**: Real-time collaborative editing capabilities
-- [ ] **Mobile Companion**: React Native app for remote transcription management
-- [ ] **Plugin System**: Extensible architecture for third-party integrations
-- [ ] **Cloud Sync**: Optional cloud storage for cross-device project access
+| Command | Description |
+|---------|-------------|
+| `npm run start-dev` | Start both Vite and Electron for development |
+| `npm run dev:vite` | Start Vite development server only |
+| `npm run dev:electron` | Start Electron app only |
+| `npm run build` | Build production version |
+| `npm run build:renderer` | Build frontend only |
+| `npm run build:main` | Build Electron main process only |
 
 ## Contributing
 
-### **Code Style & Standards**
-- **TypeScript**: Strict typing with comprehensive interfaces
-- **React**: Functional components with hooks, no class components
-- **Naming**: Descriptive names with consistent camelCase/PascalCase
-- **Comments**: JSDoc for public APIs, inline comments for complex logic
+1. Follow TypeScript best practices
+2. Use functional React components with hooks
+3. Maintain consistent code formatting
+4. Add comprehensive error handling
+5. Update this README for significant changes
 
-### **Development Guidelines**
-- **Commits**: Conventional commit messages with scope
-- **Branches**: Feature branches with descriptive names
-- **Testing**: Tests required for new features and bug fixes
-- **Documentation**: Update README and inline docs for significant changes
+## License
 
-## Recent Major Updates
-
-### 🚀 **Latest Update - Chakra UI Integration & UX Enhancements** (January 2025)
-
-**Major Features Added:**
-- **Chakra UI v3 Integration**: Professional component library with Dynamic Tabs for mode switching ⭐
-- **Enhanced User Interface**: Tooltips, hover effects, and professional styling throughout
-- **Improved Mode Switching**: Visual mode indicators with icons (🎧 listen, ✏️ edit)
-- **Component System Upgrade**: Replaced native HTML elements with Chakra UI components
-- **Accessibility Improvements**: Better screen reader support and keyboard navigation
-
-**Technical Achievements:**
-- **API Compatibility**: Successfully resolved Chakra UI v3 breaking changes
-- **Dynamic Tabs Implementation**: Using latest v3 API structure (Tabs.Root, Tabs.List, Tabs.Trigger)
-- **ChakraProvider Configuration**: Properly configured with defaultSystem for v3
-- **Component Migration**: Systematic replacement while maintaining functionality
-- **Build System Stability**: Resolved import conflicts and dependency issues
-
-**User Experience Enhancements:**
-- **Professional Styling**: Consistent design system with rounded corners and shadows
-- **Interactive Feedback**: Hover states and active indicators for all controls
-- **Visual Polish**: Color-coded mode tabs with intuitive iconography
-- **Tooltip System**: Helpful hints and keyboard shortcuts displayed on hover
-- **Responsive Design**: Maintained layout flexibility with enhanced components
-
-### 🚀 **Previous Release - Enhanced Error Handling & Architecture** (December 2024)
-
-**Major Features Added:**
-- **Comprehensive Error Handling System**: Toast notifications, error recovery, API key validation
-- **Modular Architecture Refactor**: Context providers, view components, 70% code reduction in App.tsx
-- **Project-First Workflow**: New project creation with guided file management
-- **Crash Protection**: Error boundaries and defensive programming throughout
-- **Enhanced Project Management**: Improved save/load with ZIP-based packages
-
-**Technical Improvements:**
-- **30+ New Components**: Error handling, project management, modular views
-- **3000+ Lines Added**: Toast system, context providers, error classification
-- **Architecture Transformation**: From monolithic to modular design
-- **TypeScript Coverage**: Comprehensive type definitions across new components
-- **Memory Optimization**: Streaming file processing and crash prevention
-
-**Stability Enhancements:**
-- **Error Boundaries**: Prevent app crashes with graceful recovery
-- **Defensive State Management**: Null checks and validation throughout
-- **Memory Management**: Optimized for large audio files
-- **Debug Logging**: Comprehensive debugging for crash diagnosis
-
----
-
-*Built with ❤️ for professional audio transcription workflows*
-
-**Key Contributors**: Development team focused on creating professional-grade transcription tools for content creators, journalists, and audio professionals.
-
-**License**: [Add your license information here]
-
-**Support**: For questions or support, please [add contact information or issue tracker link]
+MIT License - see LICENSE file for details

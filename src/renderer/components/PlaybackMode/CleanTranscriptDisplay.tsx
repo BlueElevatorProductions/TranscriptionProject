@@ -57,32 +57,7 @@ const CleanTranscriptDisplay: React.FC<CleanTranscriptDisplayProps> = ({
   const [tempName, setTempName] = useState('');
   const containerRef = React.useRef<HTMLDivElement>(null);
   
-  // Debug: Log timing data for the first few words on component mount
-  React.useEffect(() => {
-    if (paragraphs.length > 0) {
-      console.log('🔍 TRANSCRIPT TIMING DEBUG - First few words:');
-      let wordCount = 0;
-      const debugWords = ['art', 'believers', 'group'];
-      
-      for (const paragraph of paragraphs) {
-        for (const segment of paragraph.segments) {
-          if (segment.words) {
-            for (const word of segment.words) {
-              wordCount++;
-              const wordText = word.word.toLowerCase().replace(/[.,!?]/g, '');
-              
-              // Log first 20 words or any debug words
-              if (wordCount <= 20 || debugWords.includes(wordText)) {
-                console.log(`Word ${wordCount}: "${word.word}" (${wordText}) -> ${word.start.toFixed(3)}s - ${word.end.toFixed(3)}s (duration: ${(word.end - word.start).toFixed(3)}s)`);
-              }
-              
-              if (wordCount > 50 && !debugWords.includes(wordText)) break; // Don't log too many
-            }
-          }
-        }
-      }
-    }
-  }, [paragraphs]);
+  // Debug logging removed to reduce console noise
   
   // Use direct DOM manipulation instead of React re-rendering for highlighting
   React.useEffect(() => {
@@ -92,10 +67,7 @@ const CleanTranscriptDisplay: React.FC<CleanTranscriptDisplayProps> = ({
     const currentWords = containerRef.current.querySelectorAll('.word.current-word');
     currentWords.forEach(word => word.classList.remove('current-word'));
     
-    // Debug: Log timing for specific problem words
-    const debugWords = ['art', 'believers', 'group'];
     let foundAnyWord = false;
-    let debugInfo = [];
     
     // Find and highlight the current word using direct DOM query
     const allWords = containerRef.current.querySelectorAll('.word');
@@ -104,22 +76,7 @@ const CleanTranscriptDisplay: React.FC<CleanTranscriptDisplayProps> = ({
       if (wordData) {
         const wordText = wordData.word.toLowerCase().replace(/[.,!?]/g, ''); // Clean up punctuation
         
-        // Debug specific words
-        if (debugWords.includes(wordText)) {
-          const wordDuration = wordData.end - wordData.start;
-          const effectiveEnd = wordDuration <= 0 ? wordData.start + 0.1 : wordData.end;
-          
-          debugInfo.push({
-            word: wordText,
-            currentTime: (currentTime || 0).toFixed(3),
-            start: wordData.start.toFixed(3),
-            end: wordData.end.toFixed(3),
-            effectiveEnd: effectiveEnd.toFixed(3),
-            duration: wordDuration.toFixed(3),
-            shouldHighlight: (currentTime || 0) >= wordData.start && (currentTime || 0) < effectiveEnd,
-            timeDiff: ((currentTime || 0) - wordData.start).toFixed(3)
-          });
-        }
+        // Debug logging removed
         
         // Fix zero-duration words by using a minimum duration threshold
         const wordDuration = wordData.end - wordData.start;
@@ -129,24 +86,13 @@ const CleanTranscriptDisplay: React.FC<CleanTranscriptDisplayProps> = ({
           wordElement.classList.add('current-word');
           foundAnyWord = true;
           
-          // Extra logging when highlighting problem words
-          if (debugWords.includes(wordText)) {
-            console.log(`🎯 HIGHLIGHTING: "${wordText}" at time ${(currentTime || 0).toFixed(3)} (${wordData.start.toFixed(3)}-${effectiveEnd.toFixed(3)}) [original: ${wordData.end.toFixed(3)}]`);
-          }
+          // Debug logging removed
           break; // Only highlight one word at a time
         }
       }
     }
     
-    // Log debug info for problem words every few updates
-    if (debugInfo.length > 0 && Math.random() < 0.1) { // 10% sampling to reduce noise
-      console.log(`📊 DEBUG WORDS at time ${(currentTime || 0).toFixed(3)}:`, debugInfo);
-    }
-    
-    // Log when no word is highlighted but we're in the problematic range
-    if (!foundAnyWord && (currentTime || 0) > 1 && (currentTime || 0) < 20) { // Rough range for the first sentences
-      console.log(`⚠️  NO WORD HIGHLIGHTED at time ${(currentTime || 0).toFixed(3)}`);
-    }
+    // Debug logging removed to reduce console noise
   }, [currentTime]);
 
   const handleSpeakerClick = (speakerId: string, currentName: string) => {

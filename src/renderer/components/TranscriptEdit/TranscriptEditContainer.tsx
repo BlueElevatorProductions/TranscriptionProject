@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TranscriptPanel from './TranscriptPanel';
 // import Sidebar from './Sidebar'; // Replaced with SpeakersPanel for consistency
-import SpeakersPanel from '../shared/SpeakersPanel';
+import PanelContainer from '../shared/PanelContainer';
+import AppHeader from '../shared/AppHeader';
 import { useClips } from './useClips';
-import './TranscriptEdit.css';
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 interface SharedAudioState {
   currentTime: number;
@@ -22,6 +23,7 @@ interface TranscriptEditProps {
   onSwitchToPlayback: () => void;
   sharedAudioState: SharedAudioState;
   onAudioStateUpdate: (updates: Partial<SharedAudioState>) => void;
+  onSave?: () => Promise<void>;
 }
 
 interface EditAction {
@@ -39,7 +41,8 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
   onBack, 
   onSwitchToPlayback,
   sharedAudioState,
-  onAudioStateUpdate
+  onAudioStateUpdate,
+  onSave
 }) => {
   // Use shared audio state instead of local state
   const { currentTime, isPlaying, volume, playbackSpeed } = sharedAudioState;
@@ -51,6 +54,14 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
   const [tempSpeakerName, setTempSpeakerName] = useState('');
   const [isCreatingClip, setIsCreatingClip] = useState(false); // Prevent duplicate clip creation
+  
+  // Panel visibility state
+  const [panelStates, setPanelStates] = useState({
+    speakers: true,
+    clips: false,
+    fonts: false,
+    info: false
+  });
   
   // Undo/Redo system
   const [editHistory, setEditHistory] = useState<EditAction[]>([]);
@@ -115,6 +126,14 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
 
   const handleWordClick = (timestamp: number) => {
     onAudioStateUpdate({ currentTime: timestamp });
+  };
+
+  // Panel toggle handler
+  const handleTogglePanel = (panelName: string) => {
+    setPanelStates(prev => ({
+      ...prev,
+      [panelName]: !prev[panelName as keyof typeof prev]
+    }));
   };
 
   // Speaker editing functions
@@ -470,13 +489,47 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
     // Note: currentWordIndex will be updated by the useEffect above
   };
 
-  // Global keyboard shortcuts
+  // Mode-specific keyboard shortcuts for transcript editing
+  useKeyboardShortcuts({
+    onBold: () => {
+      // TODO: Implement bold text formatting for selected text
+      console.log('Bold shortcut pressed in Transcript Edit mode');
+    },
+    onItalic: () => {
+      // TODO: Implement italic text formatting for selected text
+      console.log('Italic shortcut pressed in Transcript Edit mode');
+    },
+    onHighlight: () => {
+      // TODO: Implement highlight formatting for selected text
+      console.log('Highlight shortcut pressed in Transcript Edit mode');
+    },
+    onNewClip: () => {
+      // Create new clip at current cursor position
+      if (currentWordIndex >= 0) {
+        if (!isCreatingClip) {
+          setIsCreatingClip(true);
+          try {
+            createNewClip(currentWordIndex);
+          } finally {
+            setTimeout(() => setIsCreatingClip(false), 500);
+          }
+        }
+      }
+    },
+    onEscape: () => {
+      // Close any open panels/modals or clear selections
+      if (editingSpeakerId) {
+        handleSpeakerCancel();
+      }
+      setSelectedSegments([]);
+    }
+  });
+
+  // Separate undo/redo keyboard handling
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Check if we're in an input field
+    const handleUndoRedo = (event: KeyboardEvent) => {
       const isInInput = ['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement)?.tagName);
       
-      // Handle undo/redo
       if ((event.metaKey || event.ctrlKey) && !isInInput) {
         switch (event.key) {
           case 'z':
@@ -494,45 +547,26 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
             break;
         }
       }
-      
-      // Handle spacebar only if not typing in an input or textarea
-      if (event.code === 'Space' && !isInInput) {
-        event.preventDefault();
-        // Ensure isPlaying is always a boolean
-        const currentIsPlaying = typeof isPlaying === 'boolean' ? isPlaying : false;
-        onAudioStateUpdate({ isPlaying: !currentIsPlaying });
-      }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-
+    document.addEventListener('keydown', handleUndoRedo);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleUndoRedo);
     };
   }, [performUndo, performRedo]);
 
   return (
     <div className="transcript-edit-container">
-      <header className="transcript-edit-header">
-        <div className="header-left">
-          <button className="back-button" onClick={onBack}>
-            ← Back
-          </button>
-          <div className="project-info">
-            <h1>{transcriptionJob.fileName}</h1>
-            <div className="mode-badges">
-              <span 
-                className="mode-badge"
-                onClick={onSwitchToPlayback}
-              >
-                Playback
-              </span>
-              <span className="mode-badge active">Transcript Edit</span>
-              <span className="mode-badge">Audio Edit</span>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        projectName={transcriptionJob.fileName}
+        onCloseProject={onBack}
+        onSave={onSave}
+        onNewProject={() => {/* TODO: Implement new project */}}
+        onImportAudio={() => {/* TODO: Implement import audio */}}
+        onPrint={() => {/* TODO: Implement print */}}
+        panelStates={panelStates}
+        onTogglePanel={handleTogglePanel}
+      />
 
       <div className="document-layout">
         <div className="document-container">
@@ -578,20 +612,47 @@ const TranscriptEditContainer: React.FC<TranscriptEditProps> = ({
           />
         </div>
         
-        <div className="right-sidebar">
-          <SpeakersPanel
-            mode="transcript-edit"
-            speakers={speakerIds}
-            speakerNames={speakers}
-            editingSpeakerId={editingSpeakerId}
-            tempSpeakerName={tempSpeakerName}
-            onSpeakerEdit={handleSpeakerEdit}
-            onSpeakerSave={handleSpeakerSave}
-            onSpeakerCancel={handleSpeakerCancel}
-            onTempNameChange={setTempSpeakerName}
-          />
-          
-        </div>
+        <PanelContainer
+          panelStates={panelStates}
+          onTogglePanel={handleTogglePanel}
+          sidebarWidth={320}
+          panelProps={{
+            speakers: {
+              mode: 'transcript-edit',
+              speakers: speakerIds,
+              speakerNames: speakers,
+              editingSpeakerId: editingSpeakerId,
+              tempSpeakerName: tempSpeakerName,
+              onSpeakerEdit: handleSpeakerEdit,
+              onSpeakerSave: handleSpeakerSave,
+              onSpeakerCancel: handleSpeakerCancel,
+              onTempNameChange: setTempSpeakerName
+            },
+            clips: {
+              clips: clips,
+              onCreateClip: () => console.log('Create clip'),
+              onPlayClip: (id: string) => console.log('Play clip:', id),
+              onDeleteClip: (id: string) => console.log('Delete clip:', id),
+              onRenameClip: (id: string, name: string) => console.log('Rename clip:', id, name)
+            },
+            fonts: {
+              fontSize: 16,
+              lineHeight: 1.5,
+              fontFamily: 'Inter',
+              onFontSizeChange: (size: number) => console.log('Font size:', size),
+              onLineHeightChange: (height: number) => console.log('Line height:', height),
+              onFontFamilyChange: (family: string) => console.log('Font family:', family)
+            },
+            info: {
+              fileName: transcriptionJob.fileName,
+              projectName: transcriptionJob.fileName,
+              duration: segments.reduce((acc: number, seg: any) => acc + (seg.end - seg.start), 0),
+              wordCount: segments.reduce((acc: number, seg: any) => acc + (seg.words?.length || 0), 0),
+              speakerCount: speakerIds.length,
+              transcriptionModel: transcriptionJob.model || 'whisper-1'
+            }
+          }}
+        />
       </div>
     </div>
   );

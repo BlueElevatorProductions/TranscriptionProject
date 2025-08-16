@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import './ApiSettings.css';
 
 interface ApiSettingsProps {
   onSave: (apiKeys: { [service: string]: string }) => void;

@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import './ContextMenu.css';
 
 interface ContextMenuItem {
   label: string;

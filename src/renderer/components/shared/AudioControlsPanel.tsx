@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useState } from 'react';
-import './AudioControlsPanel.css';
 
 interface AudioControlsPanelProps {
   mode: 'playback' | 'transcript-edit';

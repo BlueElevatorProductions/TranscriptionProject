@@ -8,6 +8,8 @@
   max-height: 90vh;
   overflow: hidden;
   animation: slideIn 0.3s ease-out;
+  position: relative;
+  z-index: 1;
 }
 
 .dialog-header {
@@ -235,6 +237,8 @@
   .new-project-dialog {
     background: #1f2937;
     color: #f9fafb;
+    position: relative;
+    z-index: 1;
   }
 
   .dialog-header {

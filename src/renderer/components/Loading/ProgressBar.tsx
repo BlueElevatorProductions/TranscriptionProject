@@ -4,7 +4,6 @@
  */
 
 import React from 'react';
-import './ProgressBar.css';
 
 export interface ProgressBarProps {
   progress: number; // 0-100

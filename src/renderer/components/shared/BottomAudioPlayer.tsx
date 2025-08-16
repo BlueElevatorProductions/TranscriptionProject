@@ -38,11 +38,11 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
     
     const loadAudio = async () => {
       if (!audioSrc) {
-        console.log('BottomAudioPlayer - No audio source provided');
+        // No audio source provided
         return;
       }
       
-      console.log('BottomAudioPlayer - Loading audio from path:', audioSrc);
+      // Loading audio from path
       setIsAudioReady(false);
       setAudioBlobUrl(null);
       
@@ -54,7 +54,7 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
         
         // Read audio file as ArrayBuffer through IPC
         const audioBuffer = await window.electronAPI.readAudioFile(audioSrc);
-        console.log('BottomAudioPlayer - Got audio buffer, size:', audioBuffer?.byteLength || 'null');
+        // Audio buffer loaded
         
         if (!audioBuffer || audioBuffer.byteLength === 0) {
           throw new Error('Audio file is empty or could not be read');
@@ -79,7 +79,7 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
         const blob = new Blob([audioBuffer], { type: mimeType });
         blobUrl = URL.createObjectURL(blob);
         
-        console.log('BottomAudioPlayer - Created blob URL:', blobUrl);
+        // Blob URL created
         setAudioBlobUrl(blobUrl);
         
       } catch (error) {
@@ -92,7 +92,7 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
     // Cleanup blob URL
     return () => {
       if (blobUrl) {
-        console.log('BottomAudioPlayer - Cleaning up blob URL');
+        // Cleaning up blob URL
         URL.revokeObjectURL(blobUrl);
       }
     };
@@ -101,7 +101,7 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
   // Set up audio element when blob URL is ready
   useEffect(() => {
     if (audioRef.current && audioBlobUrl && audioRef.current.src !== audioBlobUrl) {
-      console.log('BottomAudioPlayer - Setting audio element src to blob URL:', audioBlobUrl);
+      // Setting audio element source
       audioRef.current.src = audioBlobUrl;
       
       // Add error handling
@@ -117,13 +117,13 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
       };
       
       const handleLoadedData = () => {
-        console.log('BottomAudioPlayer - Audio loaded successfully, duration:', audioRef.current?.duration);
+        // Audio loaded successfully
         setIsAudioReady(true);
         setDuration(audioRef.current?.duration || 0);
       };
       
       const handleCanPlay = () => {
-        console.log('BottomAudioPlayer - Audio can start playing');
+        // Audio ready to play
         setIsAudioReady(true);
         setDuration(audioRef.current?.duration || 0);
       };
@@ -155,12 +155,12 @@ const BottomAudioPlayer: React.FC<BottomAudioPlayerProps> = ({
       };
       
       const handlePlay = () => {
-        console.log('BottomAudioPlayer - Play event');
+        // Audio playing
         startTimeUpdates();
       };
       
       const handlePause = () => {
-        console.log('BottomAudioPlayer - Pause event');
+        // Audio paused
         if (updateInterval) {
           clearInterval(updateInterval);
           updateInterval = null;

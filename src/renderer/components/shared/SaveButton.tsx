@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import './SaveButton.css';
 
 interface SaveButtonProps {
   onSave: () => Promise<void>;

@@ -25,6 +25,12 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
     case 'LOAD_PROJECT': {
       const projectData = action.payload;
       console.log('ProjectContext - Loading project:', projectData.project.name);
+      console.log('ProjectContext - Speakers data:', {
+        speakersObject: projectData.speakers,
+        speakerMappings: projectData.speakers?.speakerMappings,
+        speakers: projectData.speakers?.speakers,
+        fallback: projectData.speakers?.speakerMappings || projectData.speakers?.speakers || {}
+      });
       
       return {
         ...state,
@@ -298,6 +304,15 @@ export const useProject = (): UseProjectReturn => {
         dispatch({ type: 'SET_LOADING', payload: false });
         
         console.log('ProjectContext - Project saved successfully to:', filePath);
+        
+        // Track in recent projects (dynamic import to avoid circular dependency)
+        try {
+          const { default: RecentProjectsService } = await import('../services/RecentProjectsService');
+          const recentProject = RecentProjectsService.createRecentProjectFromData(saveData, filePath);
+          RecentProjectsService.addRecentProject(recentProject);
+        } catch (error) {
+          console.warn('Could not update recent projects:', error);
+        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to save project';
         console.error('ProjectContext - Save failed:', error);

@@ -3,9 +3,9 @@
  * Modularized from App.tsx for better organization
  */
 
-import React from 'react';
-import { useTranscriptionJobs } from '../contexts';
+import React, { useState, useEffect } from 'react';
 import { TranscriptionJob } from '../types';
+import RecentProjectsService, { RecentProject } from '../services/RecentProjectsService';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -16,41 +16,119 @@ import {
   CheckCircle, 
   XCircle, 
   Loader2,
-  Sparkles
+  Sparkles,
+  Users,
+  FileAudio
 } from 'lucide-react';
 
 interface HomeViewProps {
   onNewProject: () => void;
   onOpenProject: () => void;
   onJobSelect: (job: TranscriptionJob) => void;
+  onProjectFileSelect?: (filePath: string) => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ onNewProject, onOpenProject, onJobSelect }) => {
-  const { jobs } = useTranscriptionJobs();
+const HomeView: React.FC<HomeViewProps> = ({ 
+  onNewProject, 
+  onOpenProject, 
+  onJobSelect,
+  onProjectFileSelect 
+}) => {
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'processing':
-        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
-      case 'error':
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      default:
-        return <Clock className="h-4 w-4 text-gray-500" />;
+  // Load recent projects on mount and listen for updates
+  useEffect(() => {
+    // Load initial projects
+    const loadRecentProjects = () => {
+      const projects = RecentProjectsService.getRecentProjects();
+      setRecentProjects(projects);
+    };
+
+    loadRecentProjects();
+
+    // Listen for updates to recent projects
+    const handleRecentProjectsUpdate = (event: CustomEvent) => {
+      setRecentProjects(event.detail || []);
+    };
+
+    window.addEventListener('recentProjectsUpdated', handleRecentProjectsUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener('recentProjectsUpdated', handleRecentProjectsUpdate as EventListener);
+    };
+  }, []);
+
+  const handleRecentProjectClick = async (project: RecentProject) => {
+    try {
+      // Check if file still exists
+      const exists = await RecentProjectsService.validateProjectExists(project.filePath);
+      
+      if (!exists) {
+        // File doesn't exist, remove from recent list
+        RecentProjectsService.removeRecentProject(project.filePath);
+        alert(`Project file not found: ${project.filePath}`);
+        return;
+      }
+
+      // Load the project file
+      if (onProjectFileSelect) {
+        onProjectFileSelect(project.filePath);
+      } else {
+        // Fallback: use the electronAPI directly
+        const projectData = await (window as any).electronAPI.loadProject(project.filePath);
+        
+        // Call the parent handler to load the project
+        const loadProjectEvent = new CustomEvent('loadProjectFile', { 
+          detail: { projectData, filePath: project.filePath } 
+        });
+        window.dispatchEvent(loadProjectEvent);
+      }
+    } catch (error) {
+      console.error('Failed to load recent project:', error);
+      alert('Failed to load project. Please try opening it manually.');
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'text-green-600 bg-green-50 border-green-200';
-      case 'processing':
-        return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'error':
-        return 'text-red-600 bg-red-50 border-red-200';
-      default:
-        return 'text-gray-600 bg-gray-50 border-gray-200';
+  const formatFileSize = (bytes?: number): string => {
+    if (!bytes) return '';
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+  };
+
+  const formatDuration = (seconds?: number): string => {
+    if (!seconds) return '';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
+  const formatLastAccessed = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor(diff / (1000 * 60));
+
+    if (days > 7) {
+      return date.toLocaleDateString();
+    } else if (days > 0) {
+      return `${days} day${days > 1 ? 's' : ''} ago`;
+    } else if (hours > 0) {
+      return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    } else if (minutes > 0) {
+      return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    } else {
+      return 'Just now';
     }
   };
 
@@ -111,55 +189,69 @@ const HomeView: React.FC<HomeViewProps> = ({ onNewProject, onOpenProject, onJobS
         </div>
 
 
-        {/* Recent Transcriptions */}
-        {jobs.length > 0 ? (
+        {/* Recent Projects */}
+        {recentProjects.length > 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>Recent Transcriptions</CardTitle>
+              <CardTitle>Recent Projects</CardTitle>
               <CardDescription>
-                Continue working on your recent projects
+                Continue working on your saved transcription projects
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {jobs.map(job => (
+                {recentProjects.map(project => (
                   <div 
-                    key={job.id}
+                    key={project.filePath}
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                    onClick={() => onJobSelect(job)}
+                    onClick={() => handleRecentProjectClick(project)}
                   >
                     <div className="flex items-center gap-4">
                       <div className="flex-shrink-0">
-                        {getStatusIcon(job.status)}
+                        <FileText className="h-5 w-5 text-primary" />
                       </div>
                       <div>
-                        <h4 className="font-medium text-foreground">{job.fileName}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(job.status)}`}>
-                            {job.status}
-                          </span>
-                          {job.status === 'completed' && job.result?.segments && (
+                        <h4 className="font-medium text-foreground">{project.name}</h4>
+                        <div className="flex items-center gap-4 mt-1">
+                          {project.audioFileName && (
+                            <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                              <FileAudio className="h-3 w-3" />
+                              {project.audioFileName}
+                            </span>
+                          )}
+                          {project.speakerCount !== undefined && project.speakerCount > 0 && (
+                            <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                              <Users className="h-3 w-3" />
+                              {project.speakerCount} speaker{project.speakerCount > 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {project.segmentCount !== undefined && project.segmentCount > 0 && (
                             <span className="text-sm text-muted-foreground">
-                              {job.result.segments.length} segments
+                              {project.segmentCount} segments
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-muted-foreground">
+                            {formatLastAccessed(project.lastAccessed)}
+                          </span>
+                          {project.duration && (
+                            <span className="text-xs text-muted-foreground">
+                              • {formatDuration(project.duration)}
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
                     
-                    <div className="flex-shrink-0">
-                      {job.status === 'processing' && (
-                        <div className="w-24 bg-muted rounded-full h-2">
-                          <div 
-                            className="bg-primary h-2 rounded-full transition-all duration-300" 
-                            style={{ width: `${job.progress}%` }}
-                          ></div>
+                    <div className="flex-shrink-0 text-right">
+                      <div className="text-xs text-muted-foreground">
+                        {project.filePath.split('/').pop()}
+                      </div>
+                      {project.fileSize && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {formatFileSize(project.fileSize)}
                         </div>
-                      )}
-                      {job.status === 'error' && job.error && (
-                        <span className="text-xs text-red-500 max-w-32 truncate" title={job.error}>
-                          {job.error}
-                        </span>
                       )}
                     </div>
                   </div>
@@ -173,7 +265,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onNewProject, onOpenProject, onJobS
               <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-6">
                 <FileText className="h-12 w-12 text-muted-foreground" />
               </div>
-              <CardTitle className="mb-2">No transcriptions yet</CardTitle>
+              <CardTitle className="mb-2">No recent projects</CardTitle>
               <CardDescription className="max-w-md mx-auto">
                 Import your first audio file to get started with professional transcription editing
               </CardDescription>

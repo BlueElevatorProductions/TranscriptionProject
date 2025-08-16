@@ -100,12 +100,17 @@ class App {
 
     // Load the app
     if (isDev()) {
-      this.mainWindow.loadURL('http://localhost:5174');
+      this.mainWindow.loadURL('http://localhost:3000');
       // Open DevTools in development
       this.mainWindow.webContents.openDevTools();
     } else {
       this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     }
+    
+    // Add event listeners for error handling
+    this.mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('Electron: Page failed to load:', errorCode, errorDescription);
+    });
 
     // Show window when ready to prevent visual flash
     this.mainWindow.once('ready-to-show', () => {
@@ -514,6 +519,16 @@ class App {
       }
     });
 
+    // Check if a file exists
+    ipcMain.handle('checkFileExists', async (event, filePath) => {
+      try {
+        return fs.existsSync(filePath);
+      } catch (error) {
+        console.error('Error checking file existence:', error);
+        return false;
+      }
+    });
+    
     // Convenience handlers for project file dialogs
     ipcMain.handle('openProjectDialog', async () => {
       const result = await dialog.showOpenDialog(this.mainWindow!, {

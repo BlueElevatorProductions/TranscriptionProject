@@ -15,6 +15,7 @@ export { useAudio, useLegacyAudioState, useAudioDebug } from './AudioContext';
 export { useProject, useSpeakers, useSegments, useProjectMetadata, useLegacyProjectState } from './ProjectContext';
 export { useTranscription, useTranscriptionJobs, useSelectedJob, useTranscriptionProgress, useLegacyTranscriptionState } from './TranscriptionContext';
 export { useNotifications, useSuccessToast, useErrorToast, useWarningToast, useInfoToast, useApiErrorToast } from './NotificationContext';
+export { useTranscriptionErrorHandler } from '../hooks/useTranscriptionErrorHandler';
 
 // Re-export types
 export type { UseAudioReturn, UseProjectReturn, UseTranscriptionReturn } from '../types';

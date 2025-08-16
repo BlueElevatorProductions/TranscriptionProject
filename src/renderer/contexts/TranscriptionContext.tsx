@@ -89,11 +89,15 @@ function transcriptionReducer(state: TranscriptionState, action: TranscriptionAc
       );
 
       const completedJob = updatedJobs.find(job => job.id === id);
+      
+      // IMPORTANT: Only update selectedJob if it's the currently selected job
+      // or if no job is currently selected
+      const shouldUpdateSelectedJob = !state.selectedJob || state.selectedJob.id === id;
 
       return {
         ...state,
         jobs: updatedJobs,
-        selectedJob: completedJob || state.selectedJob,
+        selectedJob: shouldUpdateSelectedJob ? completedJob : state.selectedJob,
         isProcessing: state.currentTranscriptionId === id ? false : state.isProcessing,
       };
     }

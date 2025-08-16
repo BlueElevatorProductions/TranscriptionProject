@@ -76,6 +76,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // API connection testing
   testCloudConnection: (provider: string) => 
     ipcRenderer.invoke('test-cloud-connection', provider),
+  
+  // File existence check
+  checkFileExists: (filePath: string) =>
+    ipcRenderer.invoke('checkFileExists', filePath),
 
   // Project file system (new .transcript format)
   openProjectDialog: () => ipcRenderer.invoke('openProjectDialog'),

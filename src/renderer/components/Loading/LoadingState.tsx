@@ -6,7 +6,6 @@
 import React from 'react';
 import LoadingSpinner from './LoadingSpinner';
 import ProgressBar from './ProgressBar';
-import './LoadingState.css';
 
 export interface LoadingStateProps {
   title?: string;
