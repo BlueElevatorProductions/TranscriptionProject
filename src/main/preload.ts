@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('get-transcription-status', jobId),
   getAllTranscriptions: () => ipcRenderer.invoke('get-all-transcriptions'),
   getTranscriptionUpdates: () => ipcRenderer.invoke('getTranscriptionUpdates'),
+  cancelTranscription: (jobId: string) => 
+    ipcRenderer.invoke('cancel-transcription', jobId),
 
   // Transcription event listeners
   onTranscriptionProgress: (callback: (job: any) => void) => {

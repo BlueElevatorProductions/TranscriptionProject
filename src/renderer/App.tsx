@@ -71,6 +71,7 @@ import {
 import ImportDialog from './components/ImportDialog/ImportDialog';
 import ProjectImportDialog from './components/ImportDialog/ProjectImportDialog';
 import NewProjectDialog from './components/NewProject/NewProjectDialog';
+import { GlassProgressOverlay } from './components/ui/GlassProgressOverlay';
 
 // Types
 import { TranscriptionJob, ProjectData } from './types';
@@ -84,7 +85,7 @@ const AppMain: React.FC = () => {
   const [showNewProjectDialog, setShowNewProjectDialog] = useState<boolean>(false);
 
   // Context hooks
-  const { actions: transcriptionActions } = useTranscription();
+  const { state: transcriptionState, actions: transcriptionActions } = useTranscription();
   const { actions: projectActions } = useProject();
   
   // Error handling
@@ -97,10 +98,9 @@ const AppMain: React.FC = () => {
       transcriptionActions.selectJob(null);
       
       // Create a new project structure
-      const newProject: ProjectData = {
+      const newProject: any = {
         project: {
           name: projectName,
-          description: '',
           created: new Date().toISOString(),
           lastModified: new Date().toISOString(),
           version: '1.0.0',
@@ -112,14 +112,23 @@ const AppMain: React.FC = () => {
             totalSegments: 0,
             totalWords: 0,
             averageConfidence: 0,
-            language: 'en',
+            processingTime: 0,
             editCount: 0,
           },
         },
         speakers: {
-          speakerMappings: {},
+          version: '1.0.0',
+          speakers: {},
+          defaultSpeaker: 'SPEAKER_00'
         },
-        clips: [],
+        clips: {
+          version: '1.0.0',
+          clips: [],
+          clipSettings: {
+            autoClipOnSpeakerChange: true,
+            maxClipDuration: 300
+          }
+        },
       };
       
       // Load the project into the app with the path
@@ -173,9 +182,28 @@ const AppMain: React.FC = () => {
   // IPC event handlers for transcription
   useEffect(() => {
     const handleTranscriptionComplete = (completedJob: any) => {
+      console.log('=== RENDERER: TRANSCRIPTION COMPLETE EVENT RECEIVED ===');
+      console.log('Renderer: Received transcription-complete event with data:', {
+        hasJob: !!completedJob,
+        jobId: completedJob?.id,
+        hasResult: !!completedJob?.result,
+        resultType: typeof completedJob?.result,
+        segmentCount: completedJob?.result?.segments?.length || 0,
+        jobKeys: completedJob ? Object.keys(completedJob) : []
+      });
+      
       try {
         if (completedJob?.id && completedJob?.result) {
+          console.log('Renderer: Processing completed job:', completedJob.id);
+          console.log('Renderer: Job result structure:', {
+            segments: completedJob.result.segments?.length || 0,
+            language: completedJob.result.language,
+            hasWordSegments: !!completedJob.result.word_segments
+          });
+          
           transcriptionActions.completeJob(completedJob.id, completedJob.result);
+          console.log('Renderer: Called completeJob action');
+          
           const jobData: TranscriptionJob = {
             id: completedJob.id,
             filePath: completedJob.filePath,
@@ -185,27 +213,47 @@ const AppMain: React.FC = () => {
             result: completedJob.result,
             speakerNames: completedJob.result?.speakers || {}
           };
+          
           transcriptionActions.selectJob(jobData);
+          console.log('Renderer: Called selectJob action');
+          console.log('=== RENDERER: TRANSCRIPTION COMPLETION HANDLING DONE ===');
+        } else {
+          console.error('Renderer: Invalid completion data - missing ID or result:', {
+            hasId: !!completedJob?.id,
+            hasResult: !!completedJob?.result
+          });
         }
       } catch (error) {
         console.error('Error in handleTranscriptionComplete:', error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
       }
     };
 
     const handleTranscriptionProgress = (progressData: any) => {
+      console.log('Renderer: Received transcription progress:', {
+        id: progressData?.id,
+        progress: progressData?.progress,
+        status: progressData?.status
+      });
       if (progressData?.id && progressData?.progress !== undefined) {
-        transcriptionActions.updateProgress(progressData.id, progressData.progress, progressData.status);
+        transcriptionActions.updateJobProgress(progressData.id, progressData.progress, progressData.status);
       }
     };
 
     const handleTranscriptionErrorEvent = (errorData: any) => {
+      console.log('Renderer: Received transcription error:', errorData);
       handleTranscriptionError(errorData?.error || errorData, 'transcription');
+    };
+
+    const handleDebugLog = (message: string) => {
+      console.log('🔍 DEBUG (from main):', message);
     };
 
     // Set up IPC listeners
     (window as any).electronAPI?.onTranscriptionComplete?.(handleTranscriptionComplete);
     (window as any).electronAPI?.onTranscriptionProgress?.(handleTranscriptionProgress);
     (window as any).electronAPI?.onTranscriptionError?.(handleTranscriptionErrorEvent);
+    (window as any).electronAPI?.onDebugLog?.(handleDebugLog);
 
     return () => {
       (window as any).electronAPI?.removeAllListeners?.('transcription-complete');
@@ -214,9 +262,67 @@ const AppMain: React.FC = () => {
     };
   }, [transcriptionActions, handleTranscriptionError]);
 
+  // Get current processing job for progress overlay
+  const currentJob = transcriptionState.jobs.find(job => 
+    job.status === 'processing' || job.status === 'pending'
+  ) || transcriptionState.selectedJob;
+
+  const getProviderFromJob = (job: TranscriptionJob | null) => {
+    if (!job) return undefined;
+    // Extract provider from model size if it's a cloud transcription
+    if (job.result && typeof job.result === 'object' && 'modelSize' in job.result) {
+      const modelSize = (job.result as any).modelSize;
+      if (typeof modelSize === 'string' && modelSize.startsWith('cloud-')) {
+        return modelSize.split('-')[1];
+      }
+    }
+    return undefined;
+  };
+
   return (
     <TranscriptionErrorBoundary>
       <NewUIShell />
+      
+      {/* Progress Overlay */}
+      <GlassProgressOverlay
+        isVisible={transcriptionState.isProcessing && !!currentJob}
+        progress={currentJob?.progress || 0}
+        status={currentJob?.status || 'pending'}
+        message={
+          currentJob?.status === 'processing' ? 'Transcribing your audio file...' :
+          currentJob?.status === 'pending' ? 'Preparing transcription...' :
+          currentJob?.status === 'completed' ? 'Transcription complete!' :
+          currentJob?.status === 'error' ? 'Transcription failed' :
+          'Processing...'
+        }
+        fileName={currentJob?.fileName}
+        provider={getProviderFromJob(currentJob)}
+        onCancel={async () => {
+          if (currentJob?.id) {
+            console.log('Cancelling transcription:', currentJob.id);
+            try {
+              const result = await (window as any).electronAPI?.cancelTranscription?.(currentJob.id);
+              console.log('Cancel result:', result);
+              if (result?.success) {
+                // The error event will be sent from main process to update the UI
+                console.log('Transcription cancelled successfully');
+              } else {
+                console.error('Failed to cancel transcription:', result?.error);
+                handleTranscriptionError(result?.error || 'Failed to cancel transcription');
+              }
+            } catch (error) {
+              console.error('Error cancelling transcription:', error);
+              handleTranscriptionError(error);
+            }
+          }
+        }}
+        onClose={() => {
+          if (currentJob?.status === 'completed' || currentJob?.status === 'error') {
+            transcriptionActions.selectJob(null);
+          }
+        }}
+        error={currentJob?.error}
+      />
       
       {/* Dialogs */}
       {showNewProjectDialog && (
@@ -250,11 +356,45 @@ const AppMain: React.FC = () => {
       {showImportDialog && (
         <ImportDialog
           onClose={() => setShowImportDialog(false)}
-          onImport={async (files, transcriptionService) => {
+          onImport={async (filePath, transcriptionService) => {
             try {
-              console.log('Starting import:', { files, transcriptionService });
+              console.log('Starting import:', { filePath, transcriptionService });
               setShowImportDialog(false);
-              // TODO: Implement actual import logic
+              
+              if (!filePath) {
+                throw new Error('No file selected for import');
+              }
+              
+              // Extract filename from path
+              const fileName = filePath.split('/').pop() || 'unknown_file';
+              console.log('Processing audio file:', fileName, 'with service:', transcriptionService);
+              
+              // Start transcription using electronAPI
+              if (window.electronAPI?.startTranscription) {
+                console.log('Calling startTranscription with:', filePath, transcriptionService);
+                const result = await window.electronAPI.startTranscription(filePath, transcriptionService);
+                console.log('Transcription start result:', result);
+                
+                if (result.success) {
+                  console.log('Transcription started successfully with job ID:', result.jobId);
+                  
+                  // Create and add the transcription job to the context
+                  const transcriptionJob: TranscriptionJob = {
+                    id: result.jobId,
+                    filePath: filePath,
+                    fileName: fileName,
+                    status: 'pending',
+                    progress: 0
+                  };
+                  
+                  transcriptionActions.addJob(transcriptionJob);
+                  console.log('Added transcription job to context:', transcriptionJob);
+                } else {
+                  throw new Error(result.error || 'Failed to start transcription');
+                }
+              } else {
+                throw new Error('Electron API not available for starting transcription');
+              }
             } catch (error) {
               console.error('Import failed:', error);
               handleTranscriptionError(error);

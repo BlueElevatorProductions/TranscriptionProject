@@ -1,4 +1,5 @@
 import React from "react";
+import { X } from "lucide-react";
 
 /**
  * SecondaryPanel
@@ -32,13 +33,13 @@ const SecondaryPanel: React.FC<SecondaryPanelProps> = ({
       aria-hidden={!open}
     >
       <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-gray-300 bg-white">
-        <h3 className="text-base font-medium">{title}</h3>
+        <h3 className="text-base font-medium text-gray-700">{title}</h3>
         <button
           onClick={onClose}
-          className="rounded px-2 py-1 text-sm hover:bg-hover-bg"
+          className="rounded p-1.5 hover:bg-gray-100 transition-colors"
           aria-label="Close panel"
         >
-          Close
+          <X className="w-4 h-4" />
         </button>
       </div>
       <div className="p-4">{children}</div>

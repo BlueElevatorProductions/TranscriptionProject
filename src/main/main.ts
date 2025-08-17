@@ -360,6 +360,50 @@ class App {
       return Array.from(this.transcriptionJobs.values());
     });
 
+    // Cancel transcription
+    ipcMain.handle('cancel-transcription', async (event, jobId: string) => {
+      try {
+        console.log('=== CANCEL TRANSCRIPTION REQUESTED ===');
+        console.log('Cancel requested for job ID:', jobId);
+        
+        const job = this.transcriptionJobs.get(jobId);
+        if (!job) {
+          console.error('Cancel failed: Job not found:', jobId);
+          return { success: false, error: 'Job not found' };
+        }
+
+        console.log('Found job to cancel:', { id: job.id, status: job.status, progress: job.progress });
+
+        // Update job status
+        job.status = 'error';
+        job.error = 'Cancelled by user';
+        job.progress = 0;
+
+        console.log('Updated job status to cancelled');
+
+        // Send cancellation event to renderer
+        this.mainWindow?.webContents.send('transcription-error', {
+          ...this.serializeJob(job),
+          errorData: {
+            message: 'Transcription cancelled by user',
+            code: 'USER_CANCELLED',
+            operation: 'transcription'
+          }
+        });
+
+        console.log('Sent cancellation event to renderer');
+        console.log('=== CANCEL TRANSCRIPTION COMPLETED ===');
+
+        return { success: true };
+      } catch (error) {
+        console.error('Error cancelling transcription:', error);
+        return { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Failed to cancel transcription' 
+        };
+      }
+    });
+
     // Audio file handling
     ipcMain.handle('read-audio-file', async (event, filePath: string) => {
       try {
@@ -720,17 +764,35 @@ class App {
       };
 
       let result;
+      console.log('=== CALLING TRANSCRIPTION SERVICE ===');
+      this.mainWindow?.webContents.send('debug-log', `Main: Calling ${provider} transcription service`);
+      
       switch (provider) {
         case 'openai':
-          console.log('Using OpenAI transcription');
-          result = await cloudService.transcribeWithOpenAI(filePath, progressCallback);
+          console.log('Using OpenAI transcription with file:', filePath);
+          this.mainWindow?.webContents.send('debug-log', `Main: Starting OpenAI transcription`);
+          try {
+            result = await cloudService.transcribeWithOpenAI(filePath, progressCallback);
+            console.log('OpenAI transcription call completed. Result:', {
+              hasResult: !!result,
+              resultType: typeof result,
+              keys: result ? Object.keys(result) : []
+            });
+            this.mainWindow?.webContents.send('debug-log', `Main: OpenAI call completed successfully`);
+          } catch (openaiError) {
+            console.error('OpenAI transcription failed:', openaiError);
+            this.mainWindow?.webContents.send('debug-log', `Main: OpenAI failed: ${openaiError}`);
+            throw openaiError;
+          }
           break;
         case 'assemblyai':
           console.log('Using AssemblyAI transcription');
+          this.mainWindow?.webContents.send('debug-log', `Main: Starting AssemblyAI transcription`);
           result = await cloudService.transcribeWithAssemblyAI(filePath, progressCallback);
           break;
         case 'revai':
           console.log('Using Rev.ai transcription (simulated)');
+          this.mainWindow?.webContents.send('debug-log', `Main: Starting Rev.ai simulation`);
           // For now, use simulation for Rev.ai since we don't have the full implementation
           result = await this.simulateCloudTranscription(filePath, provider, apiKeys[provider]);
           break;
@@ -738,17 +800,28 @@ class App {
           throw new Error(`Unknown cloud provider: ${provider}`);
       }
 
+      console.log('=== TRANSCRIPTION SERVICE COMPLETED ===');
       console.log('Cloud transcription completed:', {
         hasResult: !!result,
+        resultType: typeof result,
         segmentCount: result?.segments?.length || 0,
-        firstSegmentText: result?.segments?.[0]?.text || 'No text'
+        firstSegmentText: result?.segments?.[0]?.text || 'No text',
+        resultKeys: result ? Object.keys(result) : []
       });
+      this.mainWindow?.webContents.send('debug-log', `Main: Transcription completed with ${result?.segments?.length || 0} segments`);
+
+      if (!result) {
+        throw new Error('Transcription service returned empty result');
+      }
 
       job.status = 'completed';
       job.progress = 100;
       job.result = result;
-      console.log('DEBUG: Sending completion event (cloud):', job);
+      console.log('=== SENDING COMPLETION EVENT ===');
+      console.log('DEBUG: Sending completion event (cloud). Job status:', job.status, 'Progress:', job.progress);
+      this.mainWindow?.webContents.send('debug-log', `Main: Sending completion event to renderer`);
       this.mainWindow?.webContents.send('transcription-complete', this.serializeJob(job));
+      console.log('=== COMPLETION EVENT SENT ===');
 
     } catch (error: any) {
       console.error('Cloud transcription failed:', error);

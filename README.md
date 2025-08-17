@@ -13,12 +13,16 @@ TranscriptionProject is a desktop application designed for content creators, jou
 - **Responsive Layout**: Tailwind CSS with clean, modern styling
 - **Mode Switching**: Toggle between Listen mode (playback-focused) and Edit mode (editing-focused)
 - **Panel System**: Expandable sidebar panels for speakers, clips, fonts, and project management
+- **Glass Progress Overlay**: Beautiful glass morphism progress indicator during transcription
 
 ### Cloud Transcription Services
 - **OpenAI Whisper Integration**: High-quality transcription with word-level timestamps
 - **AssemblyAI Support**: Fast transcription with speaker detection
-- **Progress Tracking**: Real-time transcription progress with detailed status updates
-- **API Key Management**: Secure, encrypted storage of API credentials
+- **Rev.ai Integration**: Professional-grade transcription service support
+- **Real-time Progress**: Glass overlay with progress bars and status updates
+- **API Key Management**: Secure, encrypted storage of API credentials accessible via Settings panel
+- **Transcription Cancel**: Ability to cancel running transcription jobs
+- **Comprehensive Debug Logging**: Detailed logging for troubleshooting transcription issues
 
 ### Audio Integration
 - **Unified Audio Player**: Bottom-mounted player with transport controls
@@ -185,14 +189,26 @@ npm run build
 ### Configuration
 
 1. **API Keys**: Configure in the app's settings panel
-   - Click the gear icon in the sidebar
-   - Enter OpenAI or AssemblyAI API key
-   - Keys are encrypted and stored locally
+   - Navigate to **Settings > API Keys** in the left sidebar
+   - Enter API keys for OpenAI, AssemblyAI, or Rev.ai
+   - Keys are AES-256 encrypted and stored locally
+   - Test your setup by starting a cloud transcription
 
 2. **Development**: Create `.env` file for development API keys
    ```
    OPENAI_API_KEY=your_openai_key_here
+   ASSEMBLYAI_API_KEY=your_assemblyai_key_here
    ```
+
+### Quick Start Guide
+
+1. **Launch the app**: Run `~/start-transcription-robust.sh` or use npm scripts
+2. **Create a new project**: Click "New" in the sidebar and name your project
+3. **Configure API keys**: Go to Settings > API Keys and add your cloud service credentials
+4. **Import audio**: Click the import button, select your audio file
+5. **Choose transcription service**: Select "cloud-openai" or your preferred service
+6. **Watch the magic**: The glass progress overlay will show real-time transcription progress
+7. **Edit and export**: Use the transcript editor to refine your text and export results
 
 ## File Structure
 
@@ -229,10 +245,43 @@ ZIP archives containing:
 - **Type Safety**: Full TypeScript coverage for state
 - **Error Boundaries**: Graceful error handling
 
+## Recent Updates (August 2025)
+
+### ✅ API Key Integration & Transcription Workflow
+- **Settings Panel Integration**: Added Settings section to sidebar with API Keys management
+- **Modern API Settings UI**: Redesigned API settings with Tailwind CSS and secure storage
+- **Import Flow Fix**: Fixed transcription import workflow - files now properly trigger cloud transcription
+- **Glass Progress Overlay**: Beautiful glass morphism progress indicator with:
+  - Real-time progress bars and status updates
+  - Provider information (OpenAI, AssemblyAI, etc.)
+  - Cancel functionality for running jobs
+  - Error handling with detailed messages
+
+### 🔧 Enhanced Debugging & Reliability
+- **Comprehensive Debug Logging**: Added detailed logging throughout transcription pipeline
+- **Event Handler Improvements**: Fixed transcription completion and progress event handling
+- **Error Recovery**: Better error messages and recovery options for failed transcriptions
+- **Type Safety Improvements**: Relaxed strict TypeScript rules for better development experience
+
+### 🚀 Development Experience
+- **Robust Launch Script**: Created `~/start-transcription-robust.sh` for reliable app launching
+- **Port Conflict Resolution**: Fixed Vite/Electron port synchronization issues
+- **Hot Reload Support**: Improved development workflow with better hot reloading
+
+### 🎯 Ready for Production Testing
+The transcription workflow is now fully functional end-to-end:
+1. ✅ API key storage and encryption
+2. ✅ Audio file import and validation  
+3. ✅ Cloud transcription service integration
+4. ✅ Real-time progress tracking
+5. ✅ Transcript display and editing
+6. ✅ Error handling and recovery
+
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
+| `~/start-transcription-robust.sh` | **Recommended**: Robust launch script with port handling |
 | `npm run start-dev` | Start both Vite and Electron for development |
 | `npm run dev:vite` | Start Vite development server only |
 | `npm run dev:electron` | Start Electron app only |

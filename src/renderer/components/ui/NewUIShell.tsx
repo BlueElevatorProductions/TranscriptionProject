@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Slider from '@radix-ui/react-slider';
-import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings } from 'lucide-react';
 import { useAudio, useProject, useSelectedJob } from '../../contexts';
-import { Segment } from '../../types';
+import { Segment, SharedAudioState } from '../../types';
 import SecondaryPanel from '../SecondaryPanel';
 import SpeakersPanel, { Speaker } from '../SpeakersPanel';
 import ClipBasedTranscript from './ClipBasedTranscript';
 import ClipsPanel from '../shared/ClipsPanel';
 import FontsPanel, { FontSettings } from '../shared/FontsPanel';
 import { useClips } from '../TranscriptEdit/useClips';
+import { GlassAudioPlayer } from './GlassAudioPlayer';
+import ApiSettings from '../Settings/ApiSettings';
 
 interface NewUIShellProps {
   // Any props from parent component
@@ -25,7 +27,9 @@ export const EnhancedSidebar: React.FC<{
   onOpenFonts: () => void;
   onOpenSpeakers: () => void;
   onOpenClips: () => void;
-}> = ({ mode, onModeChange, onNewProject, onOpenProject, onSaveProject, onOpenFonts, onOpenSpeakers, onOpenClips }) => {
+  onOpenPlayback: () => void;
+  onOpenApiSettings: () => void;
+}> = ({ mode, onModeChange, onNewProject, onOpenProject, onSaveProject, onOpenFonts, onOpenSpeakers, onOpenClips, onOpenPlayback, onOpenApiSettings }) => {
   return (
     <aside 
       className="bg-green-900 text-white font-arial w-64 h-full flex flex-col" 
@@ -118,8 +122,34 @@ export const EnhancedSidebar: React.FC<{
           {/* Audio Settings */}
           <div>
             <h3 className="text-sm font-semibold mb-3 opacity-70">AUDIO</h3>
-            <p className="text-xs opacity-60">
-              Configure playback speed and other audio settings in the player below.
+            <div className="space-y-2">
+              <button
+                onClick={onOpenPlayback}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
+              >
+                <Music size={16} />
+                Playback
+              </button>
+            </div>
+            <p className="text-xs opacity-60 mt-2">
+              Control audio playback and navigation.
+            </p>
+          </div>
+          
+          {/* Settings */}
+          <div>
+            <h3 className="text-sm font-semibold mb-3 opacity-70">SETTINGS</h3>
+            <div className="space-y-2">
+              <button
+                onClick={onOpenApiSettings}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
+              >
+                <Settings size={16} />
+                API Keys
+              </button>
+            </div>
+            <p className="text-xs opacity-60 mt-2">
+              Configure transcription service API keys.
             </p>
           </div>
           
@@ -494,6 +524,14 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   const [speakersPanelOpen, setSpeakersPanelOpen] = useState(false);
   const [clipsPanelOpen, setClipsPanelOpen] = useState(false);
   const [fontsPanelOpen, setFontsPanelOpen] = useState(false);
+  const [playbackPanelOpen, setPlaybackPanelOpen] = useState(false);
+  const [apiSettingsPanelOpen, setApiSettingsPanelOpen] = useState(false);
+  const [currentApiKeys, setCurrentApiKeys] = useState<{ [service: string]: string }>({});
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isAudioReady, setIsAudioReady] = useState(false);
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [duration, setDuration] = useState(0);
+  const isSeekingRef = useRef(false);
   
   // Font settings state
   const [fontSettings, setFontSettings] = useState<FontSettings>({
@@ -504,7 +542,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   // Get contexts
   const { state: projectState, actions: projectActions } = useProject();
   const { selectedJob } = useSelectedJob();
-  const { actions: audioActions } = useAudio();
+  const { state: audioState, actions: audioActions } = useAudio();
   
   // Get segments for clips hook
   const segments = React.useMemo(() => {
@@ -529,6 +567,204 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     hasSegments: !!projectState.projectData?.transcription?.segments?.length,
     segmentCount: projectState.projectData?.transcription?.segments?.length
   });
+  
+  // Get audio file path from job or project
+  const audioFilePath = React.useMemo(() => {
+    if (selectedJob?.filePath) {
+      return selectedJob.filePath;
+    } else if (projectState.projectData?.audio?.originalFile) {
+      return projectState.projectData.audio.originalFile;
+    }
+    return null;
+  }, [selectedJob, projectState.projectData]);
+  
+  // Load audio file when path changes
+  useEffect(() => {
+    let blobUrl: string | null = null;
+    
+    const loadAudio = async () => {
+      if (!audioFilePath) {
+        setIsAudioReady(false);
+        setAudioBlobUrl(null);
+        return;
+      }
+      
+      try {
+        // Check if electronAPI is available
+        if (!window.electronAPI || !window.electronAPI.readAudioFile) {
+          throw new Error('Electron API not available');
+        }
+        
+        // Read audio file as ArrayBuffer through IPC
+        const audioBuffer = await window.electronAPI.readAudioFile(audioFilePath);
+        
+        if (!audioBuffer || audioBuffer.byteLength === 0) {
+          throw new Error('Audio file is empty or could not be read');
+        }
+        
+        // Get audio MIME type
+        const getAudioMimeType = (filePath: string): string => {
+          const ext = filePath.toLowerCase().split('.').pop();
+          switch (ext) {
+            case 'mp3': return 'audio/mpeg';
+            case 'wav': return 'audio/wav';
+            case 'm4a': return 'audio/mp4';
+            case 'flac': return 'audio/flac';
+            case 'ogg': return 'audio/ogg';
+            case 'webm': return 'audio/webm';
+            default: return 'audio/wav';
+          }
+        };
+        
+        // Create blob from buffer
+        const mimeType = getAudioMimeType(audioFilePath);
+        const blob = new Blob([audioBuffer], { type: mimeType });
+        blobUrl = URL.createObjectURL(blob);
+        
+        setAudioBlobUrl(blobUrl);
+      } catch (error) {
+        console.error('NewUIShell - Failed to load audio file:', error);
+      }
+    };
+    
+    loadAudio();
+    
+    // Cleanup blob URL
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [audioFilePath]);
+  
+  // Set up audio element when blob URL is ready
+  useEffect(() => {
+    if (audioRef.current && audioBlobUrl && audioRef.current.src !== audioBlobUrl) {
+      audioRef.current.src = audioBlobUrl;
+      
+      const handleLoadedData = () => {
+        setIsAudioReady(true);
+        setDuration(audioRef.current?.duration || 0);
+        audioActions.setAudioSource(audioFilePath || '', audioRef.current?.duration || 0);
+      };
+      
+      const handleCanPlay = () => {
+        setIsAudioReady(true);
+        setDuration(audioRef.current?.duration || 0);
+      };
+      
+      // Handle time updates for word highlighting
+      let updateInterval: NodeJS.Timeout | null = null;
+      
+      const startTimeUpdates = () => {
+        if (updateInterval) {
+          clearInterval(updateInterval);
+        }
+        updateInterval = setInterval(() => {
+          if (audioRef.current && !isSeekingRef.current && !audioRef.current.paused) {
+            // Add small offset to compensate for processing delays
+            const audioTime = audioRef.current.currentTime + 0.05; // 50ms ahead
+            audioActions.updateAudioState({ currentTime: audioTime });
+          }
+        }, 50); // 50ms = 20 updates per second
+      };
+      
+      const handlePlay = () => {
+        startTimeUpdates();
+      };
+      
+      const handlePause = () => {
+        if (updateInterval) {
+          clearInterval(updateInterval);
+          updateInterval = null;
+        }
+      };
+      
+      audioRef.current.addEventListener('loadeddata', handleLoadedData);
+      audioRef.current.addEventListener('canplay', handleCanPlay);
+      audioRef.current.addEventListener('play', handlePlay);
+      audioRef.current.addEventListener('pause', handlePause);
+      
+      // Cleanup listeners
+      return () => {
+        if (audioRef.current) {
+          audioRef.current.removeEventListener('loadeddata', handleLoadedData);
+          audioRef.current.removeEventListener('canplay', handleCanPlay);
+          audioRef.current.removeEventListener('play', handlePlay);
+          audioRef.current.removeEventListener('pause', handlePause);
+        }
+        if (updateInterval) {
+          clearInterval(updateInterval);
+        }
+      };
+    }
+  }, [audioBlobUrl, audioFilePath, audioActions]);
+  
+  // Handle play/pause state changes
+  useEffect(() => {
+    if (audioRef.current && isAudioReady) {
+      if (audioState.isPlaying && audioRef.current.paused) {
+        audioRef.current.play().catch(error => {
+          console.error('NewUIShell - Audio play failed:', error);
+        });
+      } else if (!audioState.isPlaying && !audioRef.current.paused) {
+        audioRef.current.pause();
+      }
+    }
+  }, [audioState.isPlaying, isAudioReady]);
+  
+  // Handle seek
+  useEffect(() => {
+    if (audioRef.current && isAudioReady && Math.abs(audioRef.current.currentTime - audioState.currentTime) > 0.5) {
+      isSeekingRef.current = true;
+      audioRef.current.currentTime = audioState.currentTime;
+      setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 200);
+    }
+  }, [audioState.currentTime, isAudioReady]);
+  
+  // Handle volume and speed changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = audioState.volume;
+      audioRef.current.playbackRate = audioState.playbackSpeed;
+    }
+  }, [audioState.volume, audioState.playbackSpeed]);
+  
+  // Load API keys on component mount
+  useEffect(() => {
+    const loadApiKeys = async () => {
+      try {
+        if (window.electronAPI?.getApiKeys) {
+          const keys = await window.electronAPI.getApiKeys();
+          setCurrentApiKeys(keys || {});
+          console.log('Loaded API keys:', Object.keys(keys || {}));
+        }
+      } catch (error) {
+        console.error('Failed to load API keys:', error);
+      }
+    };
+    loadApiKeys();
+  }, []);
+  
+  // API Keys handlers
+  const handleApiKeySave = async (apiKeys: { [service: string]: string }) => {
+    try {
+      if (window.electronAPI?.saveApiKeys) {
+        await window.electronAPI.saveApiKeys(apiKeys);
+        setCurrentApiKeys(apiKeys);
+        setApiSettingsPanelOpen(false);
+        console.log('API keys saved successfully');
+      }
+    } catch (error) {
+      console.error('Failed to save API keys:', error);
+    }
+  };
+  
+  const handleApiKeyCancel = () => {
+    setApiSettingsPanelOpen(false);
+  };
   
   // Extract speakers from segments AND globalSpeakers
   const speakers: Speaker[] = React.useMemo(() => {
@@ -671,15 +907,11 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         onNewProject={handleNewProject}
         onOpenProject={handleOpenProject}
         onSaveProject={handleSaveProject}
-        onOpenFonts={handleOpenFonts}
-        onOpenSpeakers={() => {
-          console.log('NewUIShell - Opening speakers panel with speakers:', speakers);
-          setSpeakersPanelOpen(true);
-        }}
-        onOpenClips={() => {
-          console.log('NewUIShell - Opening clips panel with clips:', clipsHook.clips);
-          setClipsPanelOpen(true);
-        }}
+        onOpenFonts={() => setFontsPanelOpen(!fontsPanelOpen)}
+        onOpenSpeakers={() => setSpeakersPanelOpen(!speakersPanelOpen)}
+        onOpenClips={() => setClipsPanelOpen(!clipsPanelOpen)}
+        onOpenPlayback={() => setPlaybackPanelOpen(!playbackPanelOpen)}
+        onOpenApiSettings={() => setApiSettingsPanelOpen(!apiSettingsPanelOpen)}
       />
       
       {/* Secondary Panel */}
@@ -734,14 +966,29 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         />
       </SecondaryPanel>
       
+      {/* API Settings Panel */}
+      <SecondaryPanel
+        open={apiSettingsPanelOpen}
+        title="API Settings"
+        onClose={() => setApiSettingsPanelOpen(false)}
+        widthPx={500}
+      >
+        <ApiSettings
+          currentKeys={currentApiKeys}
+          onSave={handleApiKeySave}
+          onCancel={handleApiKeyCancel}
+        />
+      </SecondaryPanel>
+      
       <div 
-        className="flex-1 flex flex-col min-w-0"
+        className="flex-1 flex flex-col min-w-0 relative"
         style={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
           backgroundColor: 'white',
-          minWidth: 0
+          minWidth: 0,
+          position: 'relative'
         }}
       >
         {mode === 'edit' ? (
@@ -749,7 +996,87 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         ) : (
           <EnhancedTranscript mode={mode} clipsHook={clipsHook} fontSettings={fontSettings} />
         )}
-        <EnhancedAudioPlayer />
+        
+        {/* Glass Audio Player - positioned within transcript area */}
+        <GlassAudioPlayer
+        isVisible={playbackPanelOpen}
+        isPlaying={audioState.isPlaying}
+        currentTime={audioState.currentTime}
+        duration={audioState.duration}
+        volume={audioState.volume}
+        speed={audioState.playbackSpeed}
+        fileName={selectedJob?.fileName || projectState.projectData?.project?.name || 'Audio'}
+        onPlayPause={() => {
+          if (audioState.isPlaying) {
+            audioActions.pause();
+          } else {
+            audioActions.play();
+          }
+        }}
+        onSeek={(time) => audioActions.seek(time)}
+        onSkipToClipStart={() => {
+          // Find current clip and skip to its start or previous clip
+          const currentClip = clipsHook.clips.find(
+            clip => audioState.currentTime >= clip.startTime && audioState.currentTime <= clip.endTime
+          );
+          if (currentClip) {
+            // If we're more than 2 seconds into the clip, restart it
+            if (audioState.currentTime - currentClip.startTime > 2) {
+              audioActions.seek(currentClip.startTime);
+            } else {
+              // Otherwise, go to previous clip
+              const currentIndex = clipsHook.clips.indexOf(currentClip);
+              if (currentIndex > 0) {
+                const prevClip = clipsHook.clips[currentIndex - 1];
+                audioActions.seek(prevClip.startTime);
+              } else {
+                audioActions.seek(0);
+              }
+            }
+          } else {
+            audioActions.seek(0);
+          }
+        }}
+        onSkipToClipEnd={() => {
+          // Find current clip and skip to next clip
+          const currentClip = clipsHook.clips.find(
+            clip => audioState.currentTime >= clip.startTime && audioState.currentTime <= clip.endTime
+          );
+          if (currentClip) {
+            const currentIndex = clipsHook.clips.indexOf(currentClip);
+            if (currentIndex < clipsHook.clips.length - 1) {
+              const nextClip = clipsHook.clips[currentIndex + 1];
+              audioActions.seek(nextClip.startTime);
+              // Auto-play the next clip
+              if (!audioState.isPlaying) {
+                audioActions.play();
+              }
+            } else {
+              // If last clip, go to its end
+              audioActions.seek(currentClip.endTime);
+            }
+          } else if (clipsHook.clips.length > 0) {
+            // If between clips, find next clip
+            const nextClip = clipsHook.clips.find(clip => clip.startTime > audioState.currentTime);
+            if (nextClip) {
+              audioActions.seek(nextClip.startTime);
+              if (!audioState.isPlaying) {
+                audioActions.play();
+              }
+            }
+          }
+        }}
+        onVolume={(volume) => audioActions.updateAudioState({ volume })}
+        onSpeedChange={(speed) => audioActions.updateAudioState({ playbackSpeed: speed })}
+        onClose={() => setPlaybackPanelOpen(false)}
+      />
+      
+      {/* Hidden audio element for actual playback */}
+      <audio
+        ref={audioRef}
+        style={{ display: 'none' }}
+        preload="metadata"
+      />
       </div>
     </div>
   );

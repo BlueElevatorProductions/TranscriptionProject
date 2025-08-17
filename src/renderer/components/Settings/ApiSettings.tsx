@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Eye, EyeOff, Lock } from 'lucide-react';
 
 interface ApiSettingsProps {
   onSave: (apiKeys: { [service: string]: string }) => void;
@@ -32,121 +33,133 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
   };
 
   return (
-    <div className="api-settings-overlay">
-      <div className="api-settings-dialog">
-        <h2>Configure API Keys</h2>
-        <p>Enter your API keys for cloud transcription services. Keys are stored locally and encrypted.</p>
+    <div>
+      <p className="text-sm text-gray-700 mb-6">
+        Enter your API keys for cloud transcription services. Keys are stored locally and encrypted.
+      </p>
         
-        <div className="api-key-inputs">
-          <div className="api-key-group">
-            <label htmlFor="openai-key">
-              <strong>OpenAI API Key</strong>
-              <span className="service-description">For Whisper API access (~$0.006/minute)</span>
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="openai-key" className="block text-sm font-medium text-gray-700 mb-1">
+              OpenAI API Key
             </label>
-            <div className="key-input-container">
+            <p className="text-xs text-gray-500 mb-2">For Whisper API access (~$0.006/minute)</p>
+            <div className="relative">
               <input
                 id="openai-key"
                 type={showKeys.openai ? "text" : "password"}
                 value={apiKeys.openai}
                 onChange={(e) => handleKeyChange('openai', e.target.value)}
                 placeholder="sk-..."
-                className="api-key-input"
+                className="w-full px-3 py-2 pr-10 bg-surface border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <button
                 type="button"
-                className="toggle-visibility"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
                 onClick={() => toggleShowKey('openai')}
                 title={showKeys.openai ? "Hide key" : "Show key"}
               >
-                {showKeys.openai ? "🙈" : "👁️"}
+                {showKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <a 
               href="https://platform.openai.com/api-keys" 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="get-key-link"
+              className="inline-block mt-2 text-xs text-blue-600 hover:text-blue-800"
             >
               Get OpenAI API Key →
             </a>
           </div>
           
-          <div className="api-key-group">
-            <label htmlFor="assemblyai-key">
-              <strong>AssemblyAI API Key</strong>
-              <span className="service-description">For fast transcription with speaker detection (~$0.37/hour)</span>
+          <div>
+            <label htmlFor="assemblyai-key" className="block text-sm font-medium text-gray-700 mb-1">
+              AssemblyAI API Key
             </label>
-            <div className="key-input-container">
+            <p className="text-xs text-gray-500 mb-2">For fast transcription with speaker detection (~$0.37/hour)</p>
+            <div className="relative">
               <input
                 id="assemblyai-key"
                 type={showKeys.assemblyai ? "text" : "password"}
                 value={apiKeys.assemblyai}
                 onChange={(e) => handleKeyChange('assemblyai', e.target.value)}
                 placeholder="Enter AssemblyAI API key..."
-                className="api-key-input"
+                className="w-full px-3 py-2 pr-10 bg-surface border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <button
                 type="button"
-                className="toggle-visibility"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
                 onClick={() => toggleShowKey('assemblyai')}
                 title={showKeys.assemblyai ? "Hide key" : "Show key"}
               >
-                {showKeys.assemblyai ? "🙈" : "👁️"}
+                {showKeys.assemblyai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <a 
               href="https://www.assemblyai.com/dashboard/signup" 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="get-key-link"
+              className="inline-block mt-2 text-xs text-blue-600 hover:text-blue-800"
             >
               Get AssemblyAI API Key →
             </a>
           </div>
           
-          <div className="api-key-group">
-            <label htmlFor="revai-key">
-              <strong>Rev.ai API Key</strong>
-              <span className="service-description">For fastest professional transcription (~$1.25/hour)</span>
+          <div>
+            <label htmlFor="revai-key" className="block text-sm font-medium text-gray-700 mb-1">
+              Rev.ai API Key
             </label>
-            <div className="key-input-container">
+            <p className="text-xs text-gray-500 mb-2">For fastest professional transcription (~$1.25/hour)</p>
+            <div className="relative">
               <input
                 id="revai-key"
                 type={showKeys.revai ? "text" : "password"}
                 value={apiKeys.revai}
                 onChange={(e) => handleKeyChange('revai', e.target.value)}
                 placeholder="Enter Rev.ai API key..."
-                className="api-key-input"
+                className="w-full px-3 py-2 pr-10 bg-surface border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <button
                 type="button"
-                className="toggle-visibility"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
                 onClick={() => toggleShowKey('revai')}
                 title={showKeys.revai ? "Hide key" : "Show key"}
               >
-                {showKeys.revai ? "🙈" : "👁️"}
+                {showKeys.revai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <a 
               href="https://www.rev.ai/getting_started" 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="get-key-link"
+              className="inline-block mt-2 text-xs text-blue-600 hover:text-blue-800"
             >
               Get Rev.ai API Key →
             </a>
           </div>
         </div>
         
-        <div className="security-note">
-          <p>🔒 <strong>Security:</strong> API keys are encrypted and stored locally on your device. They are never transmitted except to the respective transcription services.</p>
+        <div className="flex items-start gap-2 p-3 bg-gray-50 rounded-md">
+          <Lock className="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm text-gray-700">
+              <strong>Security:</strong> API keys are encrypted and stored locally on your device. They are never transmitted except to the respective transcription services.
+            </p>
+          </div>
         </div>
         
-        <div className="dialog-actions">
-          <button className="secondary-btn" onClick={onCancel}>
+        <div className="flex items-center gap-3 pt-4">
+          <button 
+            className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" 
+            onClick={onCancel}
+          >
             Cancel
           </button>
-          <button className="primary-btn" onClick={handleSave}>
+          <button 
+            className="px-4 py-2 text-sm text-white bg-accent hover:bg-blue-600 rounded-md transition-colors" 
+            onClick={handleSave}
+          >
             Save API Keys
           </button>
         </div>
