@@ -19,7 +19,7 @@ interface ProjectData {
  */
 export class ProjectPackageService {
   private static readonly CURRENT_VERSION = '1.0';
-  private static readonly SUPPORTED_VERSIONS = ['1.0'];
+  private static readonly SUPPORTED_VERSIONS = ['1.0', '1.0.0'];
   private static readonly PACKAGE_STRUCTURE = {
     PROJECT_JSON: 'project.json',
     TRANSCRIPTION_JSON: 'transcription.json',

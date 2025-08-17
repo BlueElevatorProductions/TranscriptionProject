@@ -259,6 +259,7 @@ const AppMain: React.FC = () => {
       (window as any).electronAPI?.removeAllListeners?.('transcription-complete');
       (window as any).electronAPI?.removeAllListeners?.('transcription-progress');
       (window as any).electronAPI?.removeAllListeners?.('transcription-error');
+      (window as any).electronAPI?.removeAllListeners?.('debug-log');
     };
   }, [transcriptionActions, handleTranscriptionError]);
 

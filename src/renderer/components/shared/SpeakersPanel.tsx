@@ -34,21 +34,12 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
   onTempNameChange
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  console.log('SpeakersPanel render - props:', { 
-    mode,
-    editingSpeakerId, 
-    tempSpeakerName,
-    speakersCount: speakers.length,
-    onSpeakerEdit: !!onSpeakerEdit
-  });
 
   // Focus the input with a delay to prevent immediate blur
   useEffect(() => {
     if (editingSpeakerId && inputRef.current) {
-      console.log('SpeakersPanel useEffect: Attempting to focus input for', editingSpeakerId);
       const timer = setTimeout(() => {
         if (inputRef.current) {
-          console.log('SpeakersPanel useEffect: Focusing input element');
           inputRef.current.focus();
           inputRef.current.select();
         }
@@ -91,12 +82,6 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
           const segmentCount = getSpeakerSegmentCount(speaker);
           const isEditing = editingSpeakerId === speaker.id;
           
-          console.log('Speaker render check:', {
-            speakerId: speaker.id,
-            speakerName,
-            editingSpeakerId,
-            isEditing: isEditing
-          });
 
           return (
             <div key={speaker.id} className="speaker-item">
@@ -119,9 +104,7 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    onFocus={() => {
-                      console.log('Speaker input focused for:', speaker.id);
-                    }}
+                    onFocus={() => {}}
                     className="speaker-name-input"
                     ref={inputRef}
                   />
@@ -130,12 +113,10 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
                     className="speaker-name clickable"
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log('SpeakersPanel onClick triggered:', { speakerId: speaker.id, speakerName });
                       onSpeakerEdit(speaker.id, speakerName);
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      console.log('SpeakersPanel onDoubleClick triggered:', { speakerId: speaker.id, speakerName });
                       onSpeakerEdit(speaker.id, speakerName);
                     }}
                   >

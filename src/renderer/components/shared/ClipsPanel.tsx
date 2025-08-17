@@ -26,10 +26,6 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
   const allClips = clips;
   const userClips = clips.filter(clip => clip.type === 'user-created');
   
-  console.log('=== ClipsPanel Debug ===');
-  console.log('All clips received:', clips.length, clips.map(c => ({ id: c.id, type: c.type, speaker: c.speaker })));
-  console.log('User clips filtered:', userClips.length, userClips.map(c => ({ id: c.id, type: c.type })));
-  console.log('======================');
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);

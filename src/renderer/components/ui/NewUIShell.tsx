@@ -205,12 +205,6 @@ export const EnhancedTranscript: React.FC<{
   
   // Get segments from the selected job or project
   const segments: Segment[] = React.useMemo(() => {
-    console.log('EnhancedTranscript - Debug:', {
-      selectedJob,
-      projectState: projectState.projectData,
-      hasJobSegments: selectedJob?.result?.segments?.length,
-      hasProjectSegments: projectState.projectData?.transcription?.segments?.length
-    });
     
     if (selectedJob?.result?.segments) {
       return selectedJob.result.segments;
@@ -245,8 +239,6 @@ export const EnhancedTranscript: React.FC<{
     }
   };
   
-  console.log('EnhancedTranscript - segments:', segments);
-  console.log('EnhancedTranscript - clips from hook:', clipsHook?.clips);
   
   // Use clips if available, otherwise fall back to segments
   const clips = clipsHook?.clips || [];
@@ -561,12 +553,6 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     setSpeakerNames: (speakers) => projectActions.updateSpeakers(speakers)
   });
   
-  console.log('NewUIShell - Project state:', {
-    projectData: projectState.projectData,
-    globalSpeakers: projectState.globalSpeakers,
-    hasSegments: !!projectState.projectData?.transcription?.segments?.length,
-    segmentCount: projectState.projectData?.transcription?.segments?.length
-  });
   
   // Get audio file path from job or project
   const audioFilePath = React.useMemo(() => {
@@ -739,7 +725,6 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         if (window.electronAPI?.getApiKeys) {
           const keys = await window.electronAPI.getApiKeys();
           setCurrentApiKeys(keys || {});
-          console.log('Loaded API keys:', Object.keys(keys || {}));
         }
       } catch (error) {
         console.error('Failed to load API keys:', error);
@@ -755,7 +740,6 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         await window.electronAPI.saveApiKeys(apiKeys);
         setCurrentApiKeys(apiKeys);
         setApiSettingsPanelOpen(false);
-        console.log('API keys saved successfully');
       }
     } catch (error) {
       console.error('Failed to save API keys:', error);
@@ -799,13 +783,10 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     });
     
     const result = Array.from(speakerMap.values());
-    console.log('NewUIShell - Extracted speakers:', result, 'globalSpeakers:', globalSpeakers);
-    console.log('NewUIShell - Segments found:', segments.length, 'First segment speaker:', segments[0]?.speaker);
     
     // If no speakers found but we have segments, create default speakers
     if (result.length === 0 && segments.length > 0) {
       const speakerIds = [...new Set(segments.map((seg: any) => seg.speaker).filter(Boolean))];
-      console.log('NewUIShell - Creating default speakers for IDs:', speakerIds);
       
       return speakerIds.map((speakerId: string) => ({
         id: speakerId,
@@ -819,37 +800,31 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   
   // Handle speaker changes
   const handleSpeakersChange = (updatedSpeakers: Speaker[]) => {
-    console.log('NewUIShell - handleSpeakersChange called with:', updatedSpeakers);
     
     const speakerMappings = updatedSpeakers.reduce((acc, speaker) => {
       acc[speaker.id] = speaker.name;
       return acc;
     }, {} as { [key: string]: string });
     
-    console.log('NewUIShell - Updating speakers with mappings:', speakerMappings);
     projectActions.updateSpeakers(speakerMappings);
   };
   
   // Handle project actions
   const handleNewProject = () => {
-    console.log('New project clicked');
     // Trigger the new project dialog
     const event = new CustomEvent('open-new-project');
     window.dispatchEvent(event);
   };
   
   const handleOpenProject = () => {
-    console.log('Open project clicked');
     // Trigger the project import dialog
     const event = new CustomEvent('open-project-import');
     window.dispatchEvent(event);
   };
 
   const handleSaveProject = async () => {
-    console.log('Save project clicked');
     try {
       await projectActions.saveProject();
-      console.log('Project saved successfully');
     } catch (error) {
       console.error('Save failed:', error);
       // Could show a notification here
@@ -857,12 +832,10 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   };
 
   const handleOpenFonts = () => {
-    console.log('Fonts panel clicked');
     setFontsPanelOpen(true);
   };
 
   const handleFontSettingsChange = (newSettings: FontSettings) => {
-    console.log('Font settings changed:', newSettings);
     setFontSettings(newSettings);
   };
   
@@ -941,10 +914,8 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           onClipSelect={clipsHook.selectClip}
           onClipDelete={(clipId) => {
             // TODO: Implement clip deletion
-            console.log('Delete clip:', clipId);
           }}
           onClipPlay={(clip) => {
-            console.log('Play clip:', clip);
             audioActions.seek(clip.startTime);
             audioActions.play();
           }}

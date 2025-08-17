@@ -39,7 +39,7 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
       const segmentWordCount = segment.words?.length || 1;
       if (runningIndex <= startWordIndex && startWordIndex < runningIndex + segmentWordCount) {
         const speakerId = segment.speaker || 'SPEAKER_00';
-        speaker = speakerNames?.[speakerId] || speakerId;
+        speaker = speakerId; // Store speaker ID, not display name
         break;
       }
       runningIndex += segmentWordCount;
@@ -67,14 +67,7 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
 
   // Generate clips from segments - create clips on speaker changes AND split points
   const clips = useMemo(() => {
-    console.log('=== useClips Debug ===');
-    console.log('Input segments:', segments?.length || 0, segments?.slice(0, 2));
-    console.log('Input speakerNames:', speakerNames);
-    console.log('Split points:', splitPoints);
-    console.log('Merged boundaries:', mergedBoundaries);
-    
     if (!segments || segments.length === 0) {
-      console.log('No segments available, returning empty clips');
       return [];
     }
 
@@ -92,42 +85,34 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
       }
     });
 
-    console.log('Total words:', allWords.length);
-    console.log('Split points to apply:', splitPoints);
 
     // Create breakpoints (speaker changes + user split points)
     const breakpoints = new Set<number>();
     
     // Add speaker change breakpoints (excluding merged boundaries)
     runningWordIndex = 0;
-    let lastSpeaker = '';
+    let lastSpeakerId = '';
     segments.forEach((segment: any) => {
       const speakerId = segment.speaker || 'SPEAKER_00';
-      const speakerName = speakerNames?.[speakerId] || speakerId;
       
-      if (lastSpeaker && lastSpeaker !== speakerName) {
+      if (lastSpeakerId && lastSpeakerId !== speakerId) {
         // Only add speaker change breakpoint if it hasn't been merged
         if (!mergedBoundaries.includes(runningWordIndex)) {
           breakpoints.add(runningWordIndex);
-          console.log('Added speaker change breakpoint at word:', runningWordIndex);
-        } else {
-          console.log('Skipping merged speaker boundary at word:', runningWordIndex);
         }
       }
       
-      lastSpeaker = speakerName;
+      lastSpeakerId = speakerId;
       runningWordIndex += segment.words?.length || 1;
     });
 
     // Add user split points
     splitPoints.forEach(splitPoint => {
       breakpoints.add(splitPoint);
-      console.log('Added user split breakpoint at word:', splitPoint);
     });
 
     // Convert to sorted array
     const sortedBreakpoints = Array.from(breakpoints).sort((a, b) => a - b);
-    console.log('All breakpoints:', sortedBreakpoints);
 
     // Create clips between breakpoints
     let clipStartWordIndex = 0;
@@ -139,7 +124,6 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
           const isUserCreated = splitPoints.includes(breakpoint);
           const clip = createClipFromWords(clipWords, clipStartWordIndex, `clip-${generatedClips.length}`, segments, speakerNames, isUserCreated);
           generatedClips.push(clip);
-          console.log('Created clip from words', clipStartWordIndex, 'to', breakpoint - 1, ':', clip.id, isUserCreated ? '(user-created)' : '(speaker-change)');
         }
         clipStartWordIndex = breakpoint;
       }
@@ -151,12 +135,9 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
       if (clipWords.length > 0) {
         const clip = createClipFromWords(clipWords, clipStartWordIndex, `clip-${generatedClips.length}`, segments, speakerNames, false);
         generatedClips.push(clip);
-        console.log('Created final clip from words', clipStartWordIndex, 'to end:', clip.id);
       }
     }
 
-    console.log('Generated clips:', generatedClips.length, generatedClips.map(c => ({ id: c.id, type: c.type, speaker: c.speaker, words: c.words.length })));
-    console.log('=================');
     return generatedClips;
   }, [segments, speakerNames, splitPoints, mergedBoundaries, createClipFromWords]);
 
@@ -199,92 +180,51 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
 
   // Merge clip with the one above it
   const mergeClipWithAbove = (clipId: string) => {
-    console.log('🔀 === mergeClipWithAbove Debug ===');
-    console.log('Merging clip:', clipId);
-    console.log('Current clips:', clips.map(c => ({
-      id: c.id,
-      type: c.type,
-      startWordIndex: c.startWordIndex,
-      endWordIndex: c.endWordIndex
-    })));
-    console.log('Current split points:', splitPoints);
     
     // Find the clip index
     const clipIndex = clips.findIndex(c => c.id === clipId);
     if (clipIndex <= 0) {
-      console.log('❌ Cannot merge - clip is first or not found. ClipIndex:', clipIndex);
       return false;
     }
     
     const currentClip = clips[clipIndex];
     const previousClip = clips[clipIndex - 1];
     
-    console.log('Current clip:', {
-      id: currentClip.id,
-      type: currentClip.type,
-      startWordIndex: currentClip.startWordIndex,
-      endWordIndex: currentClip.endWordIndex
-    });
-    console.log('Previous clip:', {
-      id: previousClip.id,
-      type: previousClip.type,
-      startWordIndex: previousClip.startWordIndex,
-      endWordIndex: previousClip.endWordIndex
-    });
     
     // Check what created this boundary
     const boundaryWordIndex = currentClip.startWordIndex;
     const isUserSplit = splitPoints.includes(boundaryWordIndex);
     const isSpeakerChange = !isUserSplit; // If not a user split, it must be a speaker change
     
-    console.log('Boundary at word index:', boundaryWordIndex);
-    console.log('Is user split?', isUserSplit);
-    console.log('Is speaker change?', isSpeakerChange);
     
     if (isUserSplit) {
       // Remove the split point between these clips
       setSplitPoints(prev => {
         const newSplitPoints = prev.filter(sp => sp !== boundaryWordIndex);
         
-        console.log('Removing user split point at:', boundaryWordIndex);
-        console.log('Old split points:', prev);
-        console.log('New split points:', newSplitPoints);
         
         return newSplitPoints;
       });
-      console.log('✅ User-created split removed');
     } else {
-      console.log('⚠️ This is a speaker-change boundary, adding to merged boundaries');
       // Add this boundary to the merged boundaries list
       setMergedBoundaries(prev => {
         if (prev.includes(boundaryWordIndex)) {
-          console.log('Boundary already merged');
           return prev;
         }
         const newMergedBoundaries = [...prev, boundaryWordIndex].sort((a, b) => a - b);
-        console.log('Adding merged boundary at:', boundaryWordIndex);
-        console.log('Old merged boundaries:', prev);
-        console.log('New merged boundaries:', newMergedBoundaries);
         return newMergedBoundaries;
       });
-      console.log('✅ Speaker boundary marked as merged');
     }
     
-    console.log('✅ Merge operation completed');
     return true;
   };
 
   // Create new clip by adding a split point
   const createNewClip = (splitWordIndex: number) => {
-    console.log('🚀 === createNewClip Debug ===');
-    console.log('Split word index:', splitWordIndex);
-    console.log('Current split points:', splitPoints);
     
     const currentClip = findClipByWordIndex(splitWordIndex);
-    console.log('Found current clip:', currentClip ? { id: currentClip.id, startWordIndex: currentClip.startWordIndex, endWordIndex: currentClip.endWordIndex } : 'None');
     
     if (!currentClip) {
-      console.log('❌ No clip found for word index:', splitWordIndex);
       return false;
     }
 
@@ -293,13 +233,10 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
       const exists = prev.includes(splitWordIndex);
       
       if (exists) {
-        console.log('❌ Split point already exists at word index:', splitWordIndex);
         return prev;
       }
       
       const newSplitPoints = [...prev, splitWordIndex].sort((a, b) => a - b);
-      console.log('✅ Added split point at word index:', splitWordIndex);
-      console.log('New split points:', newSplitPoints);
       return newSplitPoints;
     });
 
@@ -310,13 +247,11 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
   const addNewSpeakerLabel = (wordIndex: number, newSpeakerName: string) => {
     const currentClip = findClipByWordIndex(wordIndex);
     if (!currentClip) {
-      console.log('No clip found for word index:', wordIndex);
       return false;
     }
 
     const splitPoint = wordIndex - currentClip.startWordIndex;
     if (splitPoint <= 0) {
-      console.log('Invalid split point for speaker change:', splitPoint);
       return false;
     }
 
@@ -324,12 +259,10 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
     const splitWord = currentClip.words[splitPoint];
     const splitTime = splitWord?.start || currentClip.startTime + (currentClip.duration * (splitPoint / currentClip.words.length));
 
-    console.log('Adding new speaker label:', newSpeakerName, 'at word index:', wordIndex, 'split time:', splitTime);
     
     // Find the segment index that corresponds to this clip
     const segmentIndex = parseInt(currentClip.id.replace('clip-', ''));
     if (isNaN(segmentIndex) || !segments[segmentIndex]) {
-      console.log('Cannot find segment for clip:', currentClip.id);
       return false;
     }
 
@@ -371,8 +304,6 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
       setSpeakerNames(updatedSpeakerNames);
     }
 
-    console.log('Successfully added new speaker label:', newSpeakerName, 'at', splitTime);
-    console.log('Note: Segments updated locally but caller should update project context');
     return true;
   };
 

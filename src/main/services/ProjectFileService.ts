@@ -15,7 +15,7 @@ interface ProjectData {
 
 export class ProjectFileService {
   private static readonly CURRENT_VERSION = '1.0';
-  private static readonly SUPPORTED_VERSIONS = ['1.0'];
+  private static readonly SUPPORTED_VERSIONS = ['1.0', '1.0.0'];
 
   static async saveProject(projectData: ProjectData, filePath: string): Promise<void> {
     try {

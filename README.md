@@ -33,8 +33,9 @@ TranscriptionProject is a desktop application designed for content creators, jou
 
 ### Professional Editing
 - **Word-Level Editing**: Click to edit individual words or segments
-- **Speaker Management**: Assign and manage speaker names throughout transcripts
-- **Clip Creation**: Create audio clips from transcript selections
+- **Dynamic Clip System**: Visual boundaries for organizing transcript content
+- **Speaker Management**: Assign and manage speaker names with automatic segment splitting
+- **Real-time Speaker Changes**: Change speakers within clips with automatic segment reconstruction
 - **Context Menus**: Right-click for editing options and word operations
 - **Font Controls**: Customize transcript display with font panel
 
@@ -245,7 +246,46 @@ ZIP archives containing:
 - **Type Safety**: Full TypeScript coverage for state
 - **Error Boundaries**: Graceful error handling
 
+## Core Systems
+
+### Clip and Speaker Management System
+
+The application uses a unified system where **clips** and **segments** represent the same conceptual unit - a portion of the transcript with a specific speaker and time range.
+
+#### How It Works
+- **Segments**: Core transcript data from transcription services (OpenAI, AssemblyAI, etc.)
+- **Clips**: Visual editing boundaries created by users for organizing content
+- **Dynamic Segmentation**: When speakers are changed within clips, segments are automatically split/merged to maintain data consistency
+
+#### Speaker Assignment Process
+1. **Initial State**: Transcription services provide segments with speaker detection
+2. **Clip Creation**: Users can split transcript into clips at any word boundary
+3. **Speaker Changes**: When a speaker is changed for a clip:
+   - System finds all segments that overlap with the clip boundary
+   - Overlapping segments are split at exact clip boundaries
+   - The portion within the clip gets the new speaker assignment
+   - Adjacent portions retain their original speakers
+4. **Real-time Updates**: UI immediately reflects changes without page refresh
+
+#### Key Components
+- **`useClips.ts`**: Generates clip boundaries from segments and user splits
+- **`ClipBasedTranscript.tsx`**: Handles speaker dropdown interactions and segment splitting
+- **`ProjectContext.tsx`**: Manages speaker mappings and segment updates
+
+#### Important Design Principles
+- **No Orphaned Changes**: All speaker changes must result in valid segment updates
+- **Boundary Consistency**: Clip boundaries always align with word-level timestamps
+- **Data Integrity**: Original transcription data is preserved through transformations
+- **ID-based Speakers**: Speaker assignments use consistent IDs (SPEAKER_00, SPEAKER_01) with display name mappings
+
 ## Recent Updates (August 2025)
+
+### ✅ Speaker Management System Overhaul (Latest)
+- **Fixed Speaker Dropdown Issues**: Resolved issue where speaker changes weren't persisting
+- **Implemented Segment Splitting**: When speakers are changed within clips, segments are now properly split at word boundaries
+- **Unified Clip/Segment Architecture**: Eliminated confusion between clips and segments - they now work as a unified system
+- **Real-time Speaker Updates**: Speaker changes now immediately reflect in the UI without requiring app restart
+- **Console Logging Cleanup**: Removed excessive console.log statements while preserving error handling
 
 ### ✅ API Key Integration & Transcription Workflow
 - **Settings Panel Integration**: Added Settings section to sidebar with API Keys management
@@ -268,14 +308,15 @@ ZIP archives containing:
 - **Port Conflict Resolution**: Fixed Vite/Electron port synchronization issues
 - **Hot Reload Support**: Improved development workflow with better hot reloading
 
-### 🎯 Ready for Production Testing
+### 🎯 Production Ready Features
 The transcription workflow is now fully functional end-to-end:
 1. ✅ API key storage and encryption
 2. ✅ Audio file import and validation  
 3. ✅ Cloud transcription service integration
 4. ✅ Real-time progress tracking
 5. ✅ Transcript display and editing
-6. ✅ Error handling and recovery
+6. ✅ Advanced speaker management with automatic segment splitting
+7. ✅ Error handling and recovery
 
 ## Scripts
 

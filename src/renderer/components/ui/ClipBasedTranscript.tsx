@@ -102,7 +102,6 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
   
   // Handle word double-click for editing
   const handleWordDoubleClick = useCallback((clip: Clip, wordIndex: number) => {
-    console.log('Double-click on word in clip:', clip.id, 'word index:', wordIndex);
     setEditingWord({
       clipId: clip.id,
       wordIndex,
@@ -151,7 +150,6 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
     const word = clip.words[wordIndex];
     const globalWordIndex = getGlobalWordIndex(clip.id, wordIndex);
     
-    console.log('Right-click on word:', word, 'in clip:', clip.id);
     
     setContextMenu({
       visible: true,
@@ -189,39 +187,85 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
   
   // Handle speaker click to show dropdown
   const handleSpeakerClick = useCallback((clipId: string, currentSpeaker: string) => {
-    console.log('Speaker clicked for clip:', clipId, 'current speaker:', currentSpeaker);
     setSpeakerDropdownOpen(clipId);
     setEditingSpeaker(null); // Close any text editing
   }, []);
 
   // Handle speaker change for a specific clip
   const handleSpeakerChange = useCallback((clipId: string, newSpeakerId: string) => {
-    console.log('Changing speaker for clip', clipId, 'to', newSpeakerId);
-    
     // Find the clip and update its speaker in the underlying segments
     const clip = clips.find(c => c.id === clipId);
     if (!clip) {
-      console.error('Clip not found:', clipId);
       return;
     }
 
-    // Update the segments that correspond to this clip's word range
-    const newSegments = [...segments];
+    // Instead of trying to find segments that fit within clip boundaries,
+    // we need to split/merge segments to match the clip boundaries exactly
+    const newSegments: any[] = [];
     let runningWordIndex = 0;
     
-    for (let segIndex = 0; segIndex < newSegments.length; segIndex++) {
-      const segment = newSegments[segIndex];
+    for (let segIndex = 0; segIndex < segments.length; segIndex++) {
+      const segment = segments[segIndex];
       const segmentWordCount = segment.words?.length || 1;
+      const segmentStartIndex = runningWordIndex;
       const segmentEndIndex = runningWordIndex + segmentWordCount - 1;
       
-      // Check if this segment overlaps with the clip's word range
-      const clipStartIndex = clip.startWordIndex;
-      const clipEndIndex = clip.endWordIndex;
-      
-      if (segmentEndIndex >= clipStartIndex && runningWordIndex <= clipEndIndex) {
-        // This segment overlaps with the clip, update its speaker
-        newSegments[segIndex].speaker = newSpeakerId;
-        console.log('Updated segment', segIndex, 'speaker to', newSpeakerId);
+      // Check how this segment relates to the clip
+      if (segmentEndIndex < clip.startWordIndex || segmentStartIndex > clip.endWordIndex) {
+        // Segment is completely outside clip - keep as is
+        newSegments.push({ ...segment });
+      } else if (segmentStartIndex >= clip.startWordIndex && segmentEndIndex <= clip.endWordIndex) {
+        // Segment is completely inside clip - update speaker
+        newSegments.push({ ...segment, speaker: newSpeakerId });
+      } else {
+        // Segment overlaps with clip - need to split
+        
+        // Split the segment at clip boundaries
+        const words = segment.words || [];
+        
+        // Part before clip
+        if (segmentStartIndex < clip.startWordIndex) {
+          const beforeWords = words.slice(0, clip.startWordIndex - segmentStartIndex);
+          if (beforeWords.length > 0) {
+            newSegments.push({
+              ...segment,
+              words: beforeWords,
+              text: beforeWords.map(w => w.word).join(' '),
+              end: beforeWords[beforeWords.length - 1]?.end || segment.end
+            });
+          }
+        }
+        
+        // Part inside clip (update speaker)
+        const clipStartInSegment = Math.max(0, clip.startWordIndex - segmentStartIndex);
+        const clipEndInSegment = Math.min(words.length - 1, clip.endWordIndex - segmentStartIndex);
+        
+        if (clipStartInSegment <= clipEndInSegment) {
+          const clipWords = words.slice(clipStartInSegment, clipEndInSegment + 1);
+          if (clipWords.length > 0) {
+            newSegments.push({
+              ...segment,
+              speaker: newSpeakerId,
+              words: clipWords,
+              text: clipWords.map(w => w.word).join(' '),
+              start: clipWords[0]?.start || segment.start,
+              end: clipWords[clipWords.length - 1]?.end || segment.end
+            });
+          }
+        }
+        
+        // Part after clip
+        if (segmentEndIndex > clip.endWordIndex) {
+          const afterWords = words.slice(clip.endWordIndex - segmentStartIndex + 1);
+          if (afterWords.length > 0) {
+            newSegments.push({
+              ...segment,
+              words: afterWords,
+              text: afterWords.map(w => w.word).join(' '),
+              start: afterWords[0]?.start || segment.start
+            });
+          }
+        }
       }
       
       runningWordIndex += segmentWordCount;
@@ -248,27 +292,17 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
   // Handle paragraph break / clip creation
   const handleCreateClip = useCallback((clip: Clip, wordIndex: number) => {
     const globalWordIndex = getGlobalWordIndex(clip.id, wordIndex);
-    console.log('Creating new clip at global word index:', globalWordIndex);
     
     if (globalWordIndex >= 0) {
-      const success = createNewClip(globalWordIndex);
-      if (success) {
-        console.log('Successfully created new clip');
-      }
+      createNewClip(globalWordIndex);
     }
   }, [getGlobalWordIndex, createNewClip]);
 
   // Handle merge with previous clip
   const handleMergeWithAbove = useCallback((clipId: string) => {
-    console.log('Merging clip with above:', clipId);
     
     if (mergeClipWithAbove) {
-      const success = mergeClipWithAbove(clipId);
-      if (success) {
-        console.log('Successfully merged clips');
-      } else {
-        console.log('Failed to merge clips');
-      }
+      mergeClipWithAbove(clipId);
     }
   }, [mergeClipWithAbove]);
   
@@ -373,48 +407,33 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
     const speakers: Array<{id: string, name: string}> = [];
     
     // Add all known speakers from globalSpeakers
-    if (projectState.globalSpeakers) {
+    if (projectState.globalSpeakers && Object.keys(projectState.globalSpeakers).length > 0) {
       Object.entries(projectState.globalSpeakers).forEach(([id, name]) => {
         speakers.push({ id, name });
       });
-    }
-    
-    // If no speakers found, add the current speakers from clips as fallback
-    if (speakers.length === 0) {
+    } else {
+      // If no globalSpeakers, create from unique clip speakers
       const uniqueSpeakers = new Set<string>();
       clips.forEach(clip => {
         if (clip.speaker && !uniqueSpeakers.has(clip.speaker)) {
           uniqueSpeakers.add(clip.speaker);
           speakers.push({ 
             id: clip.speaker, 
-            name: projectState.globalSpeakers?.[clip.speaker] || clip.speaker 
+            name: clip.speaker // Use speaker ID as display name when no mapping exists
           });
         }
       });
     }
     
-    console.log('Available speakers for dropdown:', speakers);
     return speakers;
   }, [projectState.globalSpeakers, clips]);
 
-  console.log('=== ClipBasedTranscript Debug ===');
-  console.log('Segments:', segments.length, segments.slice(0, 2));
-  console.log('Clips from useClips:', clips.length, clips);
-  console.log('Selected clip ID:', selectedClipId);
-  console.log('Speaker names:', projectState.globalSpeakers);
-  console.log('Available speakers for dropdown:', availableSpeakers);
-  console.log('===============================');
   
-  console.log('🎨 === RENDERING TRANSCRIPT ===');
-  console.log('Total clips to render:', clips.length);
-  console.log('Clips details:', clips.map(c => ({ id: c.id, type: c.type, wordsLength: c.words.length, startWordIndex: c.startWordIndex, endWordIndex: c.endWordIndex })));
-  console.log('🎨 ==============================');
 
   return (
     <main className="flex-1 p-8 bg-white font-transcript overflow-y-auto" ref={transcriptRef}>
       <div className="max-w-4xl mx-auto">
         {clips.map((clip, clipIndex) => {
-          console.log(`🎨 Rendering clip ${clipIndex + 1}/${clips.length}:`, { id: clip.id, type: clip.type, words: clip.words.length });
           return (
           <div 
             key={clip.id} 
@@ -487,16 +506,9 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
               contentEditable={mode === 'edit' && !editingWord.clipId && !editingSpeaker}
               suppressContentEditableWarning={true}
               onKeyDown={(e) => {
-                console.log('=== KeyDown Event ===');
-                console.log('Key pressed:', e.key);
-                console.log('Clip ID:', clip.id);
-                console.log('Event target:', e.target);
-                console.log('contentEditable enabled:', mode === 'edit' && !editingWord.clipId && !editingSpeaker);
                 
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  console.log('🚀 ENTER KEY PRESSED - Creating clip');
-                  console.log('Current clip words:', clip.words.length);
                   
                   // Get actual cursor position within the clip
                   const selection = window.getSelection();
@@ -504,21 +516,16 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
                   
                   if (selection && selection.rangeCount > 0) {
                     const range = selection.getRangeAt(0);
-                    console.log('Selection range:', range);
                     
                     // Find which word the cursor is positioned at
                     let wordIndex = 0;
                     const container = range.startContainer;
                     const offset = range.startOffset;
                     
-                    console.log('Cursor container:', container);
-                    console.log('Cursor offset:', offset);
                     
                     // If cursor is in a text node, find the corresponding word
                     if (container.nodeType === Node.TEXT_NODE) {
                       const textContent = container.textContent || '';
-                      console.log('Text content at cursor:', textContent);
-                      console.log('Text before cursor:', textContent.substring(0, offset));
                       
                       // Count words before the cursor position
                       const textBeforeCursor = textContent.substring(0, offset);
@@ -552,20 +559,16 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
                       }
                       
                       splitPosition = totalWordsBeforeThisNode + wordsBeforeCursor.length;
-                      console.log('Calculated split position:', splitPosition, 'out of', clip.words.length);
                       
                       // Ensure split position is within bounds
                       splitPosition = Math.max(0, Math.min(splitPosition, clip.words.length - 1));
                     }
                   }
                   
-                  console.log('Split position:', splitPosition);
                   
                   // Find cursor position and create clip
-                  const result = handleCreateClip(clip, splitPosition);
-                  console.log('Create clip result:', result);
+                  handleCreateClip(clip, splitPosition);
                 }
-                console.log('===================');
               }}
             >
               {clip.words.map((word, wordIndex) => {

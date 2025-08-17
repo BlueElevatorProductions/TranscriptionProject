@@ -190,7 +190,9 @@ export class ProjectFileManager {
   }
 
   private isVersionCompatible(version: string): boolean {
-    return version === this.version; // For now, exact match
+    // Support both "1.0" and "1.0.0" formats
+    const supportedVersions = ['1.0', '1.0.0'];
+    return supportedVersions.includes(version);
   }
 }
 

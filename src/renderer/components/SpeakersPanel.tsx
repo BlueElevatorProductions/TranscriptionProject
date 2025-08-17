@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 export type Speaker = { id: string; name: string };
 
@@ -9,27 +9,35 @@ export type SpeakersPanelProps = {
 };
 
 const SpeakersPanel: React.FC<SpeakersPanelProps> = ({ initial, onChange, onClose }) => {
-  console.log('SpeakersPanel - Received initial speakers:', initial);
   const [speakers, setSpeakers] = useState<Speaker[]>(initial || []);
+  const hasLocalChanges = useRef(false);
   
-  // Update local state when initial prop changes
+  // Update local state when initial prop changes, but only if we don't have uncommitted local changes
   useEffect(() => {
-    console.log('SpeakersPanel - Initial speakers changed:', initial);
-    setSpeakers(initial || []);
+    const newSpeakers = initial || [];
+    
+    // Don't overwrite local changes that haven't been committed yet
+    if (!hasLocalChanges.current) {
+      setSpeakers(newSpeakers);
+    }
   }, [initial]);
 
   const commit = (next: Speaker[]) => {
     setSpeakers(next);
     onChange?.(next);
+    hasLocalChanges.current = false; // Clear the flag after committing
   };
 
   const update = (id: string, name: string) => {
-    commit(speakers.map(s => (s.id === id ? { ...s, name } : s)));
+    hasLocalChanges.current = true; // Mark that we have local changes
+    const updatedSpeakers = speakers.map(s => (s.id === id ? { ...s, name } : s));
+    setSpeakers(updatedSpeakers); // Update local state immediately
+    onChange?.(updatedSpeakers); // Also commit immediately
+    hasLocalChanges.current = false; // Clear flag since we committed
   };
 
   // Add a new speaker with a proper SPEAKER_XX ID format
   const add = () => {
-    console.log('SpeakersPanel - Add button clicked, current speakers:', speakers);
     
     // Find the next available SPEAKER_XX ID
     const existingNumbers = speakers
@@ -47,13 +55,10 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({ initial, onChange, onClos
       name: `Speaker ${nextNumber + 1}`
     };
     
-    console.log('SpeakersPanel - Adding new speaker:', newSpeaker);
     const updatedSpeakers = [...speakers, newSpeaker];
     commit(updatedSpeakers);
-    console.log('SpeakersPanel - After commit, speakers:', updatedSpeakers);
   };
 
-  console.log('SpeakersPanel - Rendering with speakers:', speakers, speakers.length);
   
   return (
     <div>
@@ -67,7 +72,6 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({ initial, onChange, onClos
           </div>
         )}
         {speakers.map((s, i) => {
-          console.log('SpeakersPanel - Rendering speaker:', s, i);
           return (
           <div key={s.id} className="bg-surface border border-border rounded-lg p-3 flex items-center gap-3">
             <span className="text-sm opacity-70 min-w-[5.5rem]">Speaker {i + 1}:</span>
