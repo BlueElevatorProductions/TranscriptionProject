@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Slider from '@radix-ui/react-slider';
-import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette } from 'lucide-react';
 import { useAudio, useProject, useSelectedJob } from '../../contexts';
 import { Segment, SharedAudioState } from '../../types';
 import SecondaryPanel from '../SecondaryPanel';
@@ -9,9 +9,10 @@ import SpeakersPanel, { Speaker } from '../SpeakersPanel';
 import ClipBasedTranscript from './ClipBasedTranscript';
 import ClipsPanel from '../shared/ClipsPanel';
 import FontsPanel, { FontSettings } from '../shared/FontsPanel';
-import { useClips } from '../TranscriptEdit/useClips';
+import { usePersistedClips } from '../TranscriptEdit/usePersistedClips';
 import { GlassAudioPlayer } from './GlassAudioPlayer';
 import ApiSettings from '../Settings/ApiSettings';
+import ColorSettings from '../Settings/ColorSettings';
 
 interface NewUIShellProps {
   // Any props from parent component
@@ -29,12 +30,14 @@ export const EnhancedSidebar: React.FC<{
   onOpenClips: () => void;
   onOpenPlayback: () => void;
   onOpenApiSettings: () => void;
-}> = ({ mode, onModeChange, onNewProject, onOpenProject, onSaveProject, onOpenFonts, onOpenSpeakers, onOpenClips, onOpenPlayback, onOpenApiSettings }) => {
+  onOpenColorSettings: () => void;
+  currentColor: string;
+}> = ({ mode, onModeChange, onNewProject, onOpenProject, onSaveProject, onOpenFonts, onOpenSpeakers, onOpenClips, onOpenPlayback, onOpenApiSettings, onOpenColorSettings, currentColor }) => {
   return (
     <aside 
-      className="bg-green-900 text-white font-arial w-64 h-full flex flex-col" 
+      className="text-white font-arial w-64 h-full flex flex-col" 
       style={{ 
-        backgroundColor: '#003223',
+        backgroundColor: 'transparent',
         width: '256px',
         height: '100vh',
         display: 'flex',
@@ -87,6 +90,10 @@ export const EnhancedSidebar: React.FC<{
                 <Save size={16} />
                 Save
               </button>
+            </div>
+            
+            <div className="space-y-2">
+              {/* Fonts Panel Button */}
               <button
                 onClick={onOpenFonts}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
@@ -94,9 +101,7 @@ export const EnhancedSidebar: React.FC<{
                 <Type size={16} />
                 Fonts
               </button>
-            </div>
-            
-            <div className="space-y-3">
+              
               {/* Speakers Panel Button */}
               <button
                 onClick={onOpenSpeakers}
@@ -106,16 +111,14 @@ export const EnhancedSidebar: React.FC<{
                 Speakers
               </button>
               
-              {/* Clips Panel Button (only in edit mode) */}
-              {mode === 'edit' && (
-                <button
-                  onClick={onOpenClips}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
-                >
-                  <Scissors size={16} />
-                  Clips
-                </button>
-              )}
+              {/* Clips Panel Button */}
+              <button
+                onClick={onOpenClips}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
+              >
+                <Scissors size={16} />
+                Clips
+              </button>
             </div>
           </div>
           
@@ -147,21 +150,18 @@ export const EnhancedSidebar: React.FC<{
                 <Settings size={16} />
                 API Keys
               </button>
+              <button
+                onClick={onOpenColorSettings}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
+              >
+                <Palette size={16} />
+                Color
+              </button>
             </div>
             <p className="text-xs opacity-60 mt-2">
-              Configure transcription service API keys.
+              Configure app settings and appearance.
             </p>
           </div>
-          
-          {/* Clips Panel (if in edit mode) */}
-          {mode === 'edit' && (
-            <div>
-              <h3 className="text-sm font-semibold mb-3 opacity-70">CLIPS</h3>
-              <p className="text-xs opacity-60">
-                Select text to create clips for export.
-              </p>
-            </div>
-          )}
         </div>
       </Tabs.Root>
     </aside>
@@ -321,7 +321,7 @@ export const EnhancedTranscript: React.FC<{
     <main className="flex-1 p-8 bg-white font-transcript overflow-y-auto" ref={transcriptRef}>
       <div className="max-w-4xl mx-auto">
         {segments.map((segment, segIndex) => (
-          <div key={segment.id} className="mb-6">
+          <div key={`segment-${segIndex}-${segment.id}`} className="mb-6">
             {/* Speaker label */}
             {segment.speaker && (
               <div className="flex items-center gap-2 mb-2">
@@ -350,7 +350,7 @@ export const EnhancedTranscript: React.FC<{
                 
                 return (
                   <span
-                    key={`${segment.id}-${wordIndex}`}
+                    key={`segment-${segIndex}-word-${wordIndex}`}
                     className={`
                       cursor-pointer hover:bg-blue-100 transition-colors
                       ${isActive ? 'bg-blue-500 text-white px-1 rounded' : ''}
@@ -513,22 +513,20 @@ export const EnhancedAudioPlayer: React.FC = () => {
 // Main Shell Component
 const NewUIShell: React.FC<NewUIShellProps> = () => {
   const [mode, setMode] = useState<string>('listen');
-  const [speakersPanelOpen, setSpeakersPanelOpen] = useState(false);
-  const [clipsPanelOpen, setClipsPanelOpen] = useState(false);
-  const [fontsPanelOpen, setFontsPanelOpen] = useState(false);
-  const [playbackPanelOpen, setPlaybackPanelOpen] = useState(false);
-  const [apiSettingsPanelOpen, setApiSettingsPanelOpen] = useState(false);
+  // Single state to track which panel is open (only one at a time)
+  const [openPanel, setOpenPanel] = useState<string | null>(null);
   const [currentApiKeys, setCurrentApiKeys] = useState<{ [service: string]: string }>({});
+  const [currentColor, setCurrentColor] = useState<string>('#003223'); // Default green
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isAudioReady, setIsAudioReady] = useState(false);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
   const isSeekingRef = useRef(false);
   
-  // Font settings state
+  // Font settings state - load from project or use defaults
   const [fontSettings, setFontSettings] = useState<FontSettings>({
     fontFamily: 'Avenir',
-    fontSize: 35
+    fontSize: 18
   });
   
   // Get contexts
@@ -536,7 +534,20 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   const { selectedJob } = useSelectedJob();
   const { state: audioState, actions: audioActions } = useAudio();
   
-  // Get segments for clips hook
+  // Update font settings when project data changes
+  useEffect(() => {
+    if (projectState.projectData?.fontSettings) {
+      setFontSettings(projectState.projectData.fontSettings);
+    } else {
+      // Use defaults for new projects
+      setFontSettings({
+        fontFamily: 'Avenir',
+        fontSize: 18
+      });
+    }
+  }, [projectState.projectData]);
+  
+  // Get segments for clips hook (only used for initial generation)
   const segments = React.useMemo(() => {
     if (selectedJob?.result?.segments) {
       return selectedJob.result.segments;
@@ -546,11 +557,18 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     return [];
   }, [selectedJob, projectState.projectData]);
   
-  // Initialize clips hook
-  const clipsHook = useClips({
-    segments,
+  // Get persisted clips from project data
+  const persistedClips = React.useMemo(() => {
+    return projectState.projectData?.clips?.clips || [];
+  }, [projectState.projectData]);
+  
+  // Initialize clips hook with persisted clips
+  const clipsHook = usePersistedClips({
+    initialClips: persistedClips,
+    segments, // Used only if no persisted clips exist
     speakerNames: projectState.globalSpeakers,
-    setSpeakerNames: (speakers) => projectActions.updateSpeakers(speakers)
+    setSpeakerNames: (speakers) => projectActions.updateSpeakers(speakers),
+    onClipsChange: (updatedClips) => projectActions.updateClips(updatedClips)
   });
   
   
@@ -718,7 +736,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     }
   }, [audioState.volume, audioState.playbackSpeed]);
   
-  // Load API keys on component mount
+  // Load API keys and color preference on component mount
   useEffect(() => {
     const loadApiKeys = async () => {
       try {
@@ -730,7 +748,20 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         console.error('Failed to load API keys:', error);
       }
     };
+    
+    const loadColorPreference = () => {
+      try {
+        const savedColor = localStorage.getItem('app-color-theme');
+        if (savedColor) {
+          setCurrentColor(savedColor);
+        }
+      } catch (error) {
+        console.error('Failed to load color preference:', error);
+      }
+    };
+    
     loadApiKeys();
+    loadColorPreference();
   }, []);
   
   // API Keys handlers
@@ -739,7 +770,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
       if (window.electronAPI?.saveApiKeys) {
         await window.electronAPI.saveApiKeys(apiKeys);
         setCurrentApiKeys(apiKeys);
-        setApiSettingsPanelOpen(false);
+        setOpenPanel(null);
       }
     } catch (error) {
       console.error('Failed to save API keys:', error);
@@ -747,7 +778,19 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   };
   
   const handleApiKeyCancel = () => {
-    setApiSettingsPanelOpen(false);
+    setOpenPanel(null);
+  };
+  
+  // Color settings handlers
+  const handleColorChange = (color: string) => {
+    setCurrentColor(color);
+    
+    // Save to localStorage for persistence across sessions
+    try {
+      localStorage.setItem('app-color-theme', color);
+    } catch (error) {
+      console.error('Failed to save color preference:', error);
+    }
   };
   
   // Extract speakers from segments AND globalSpeakers
@@ -831,12 +874,35 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     }
   };
 
+  // Helper function to toggle panels with smooth transition
+  const togglePanel = (panelName: string) => {
+    if (openPanel === panelName) {
+      // Close the current panel
+      setOpenPanel(null);
+    } else {
+      // Close current panel first, then open new one with a slight delay
+      if (openPanel) {
+        setOpenPanel(null);
+        setTimeout(() => setOpenPanel(panelName), 150);
+      } else {
+        setOpenPanel(panelName);
+      }
+    }
+  };
+
   const handleOpenFonts = () => {
-    setFontsPanelOpen(true);
+    togglePanel('fonts');
   };
 
   const handleFontSettingsChange = (newSettings: FontSettings) => {
     setFontSettings(newSettings);
+    
+    // Save font settings to project data
+    if (projectState.projectData) {
+      projectActions.updateProjectData({
+        fontSettings: newSettings
+      });
+    }
   };
   
   // Handle keyboard shortcuts
@@ -868,7 +934,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     <div 
       className="flex h-screen bg-bg" 
       style={{ 
-        backgroundColor: '#003223', 
+        backgroundColor: currentColor, 
         height: '100vh',
         display: 'flex',
         fontFamily: 'Arial, sans-serif'
@@ -880,74 +946,114 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         onNewProject={handleNewProject}
         onOpenProject={handleOpenProject}
         onSaveProject={handleSaveProject}
-        onOpenFonts={() => setFontsPanelOpen(!fontsPanelOpen)}
-        onOpenSpeakers={() => setSpeakersPanelOpen(!speakersPanelOpen)}
-        onOpenClips={() => setClipsPanelOpen(!clipsPanelOpen)}
-        onOpenPlayback={() => setPlaybackPanelOpen(!playbackPanelOpen)}
-        onOpenApiSettings={() => setApiSettingsPanelOpen(!apiSettingsPanelOpen)}
+        onOpenFonts={() => togglePanel('fonts')}
+        onOpenSpeakers={() => togglePanel('speakers')}
+        onOpenClips={() => togglePanel('clips')}
+        onOpenPlayback={() => togglePanel('playback')}
+        onOpenApiSettings={() => togglePanel('apiSettings')}
+        onOpenColorSettings={() => togglePanel('colorSettings')}
+        currentColor={currentColor}
       />
       
-      {/* Secondary Panel */}
+      {/* Speakers Panel */}
       <SecondaryPanel
-        open={speakersPanelOpen}
+        open={openPanel === 'speakers'}
         title="Speakers"
-        onClose={() => setSpeakersPanelOpen(false)}
+        onClose={() => setOpenPanel(null)}
         widthPx={340}
+        backgroundColor={currentColor}
       >
         <SpeakersPanel
           initial={speakers}
           onChange={handleSpeakersChange}
-          onClose={() => setSpeakersPanelOpen(false)}
+          onClose={() => setOpenPanel(null)}
         />
       </SecondaryPanel>
       
       {/* Clips Panel */}
       <SecondaryPanel
-        open={clipsPanelOpen}
+        open={openPanel === 'clips'}
         title="Clips"
-        onClose={() => setClipsPanelOpen(false)}
+        onClose={() => setOpenPanel(null)}
         widthPx={400}
+        backgroundColor={currentColor}
       >
         <ClipsPanel
           clips={clipsHook.clips}
           selectedClipId={clipsHook.selectedClipId}
-          onClipSelect={clipsHook.selectClip}
+          onClipSelect={(clipId) => {
+            // Select the clip
+            clipsHook.selectClip(clipId);
+            
+            // Find the clip and scroll transcript to its position
+            const clip = clipsHook.clips.find(c => c.id === clipId);
+            if (clip) {
+              // Scroll to the clip in the transcript
+              // Using a timeout to ensure DOM is updated first
+              setTimeout(() => {
+                const clipElement = document.querySelector(`[data-clip-id="${clipId}"]`);
+                if (clipElement) {
+                  clipElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }, 100);
+            }
+          }}
           onClipDelete={(clipId) => {
             // TODO: Implement clip deletion
           }}
           onClipPlay={(clip) => {
+            // Always jump to clip start and play/continue playing
             audioActions.seek(clip.startTime);
-            audioActions.play();
+            if (!audioState.isPlaying) {
+              audioActions.play();
+            }
           }}
-          onClose={() => setClipsPanelOpen(false)}
+          onClose={() => setOpenPanel(null)}
         />
       </SecondaryPanel>
       
       {/* Fonts Panel */}
       <SecondaryPanel
-        open={fontsPanelOpen}
+        open={openPanel === 'fonts'}
         title="Fonts"
-        onClose={() => setFontsPanelOpen(false)}
+        onClose={() => setOpenPanel(null)}
         widthPx={320}
+        backgroundColor={currentColor}
       >
         <FontsPanel
           initial={fontSettings}
           onChange={handleFontSettingsChange}
-          onClose={() => setFontsPanelOpen(false)}
+          onClose={() => setOpenPanel(null)}
         />
       </SecondaryPanel>
       
       {/* API Settings Panel */}
       <SecondaryPanel
-        open={apiSettingsPanelOpen}
+        open={openPanel === 'apiSettings'}
         title="API Settings"
-        onClose={() => setApiSettingsPanelOpen(false)}
+        onClose={() => setOpenPanel(null)}
         widthPx={500}
+        backgroundColor={currentColor}
       >
         <ApiSettings
           currentKeys={currentApiKeys}
           onSave={handleApiKeySave}
           onCancel={handleApiKeyCancel}
+        />
+      </SecondaryPanel>
+      
+      {/* Color Settings Panel */}
+      <SecondaryPanel
+        open={openPanel === 'colorSettings'}
+        title="Color Settings"
+        onClose={() => setOpenPanel(null)}
+        widthPx={360}
+        backgroundColor={currentColor}
+      >
+        <ColorSettings
+          currentColor={currentColor}
+          onColorChange={handleColorChange}
+          onClose={() => setOpenPanel(null)}
         />
       </SecondaryPanel>
       
@@ -970,7 +1076,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         
         {/* Glass Audio Player - positioned within transcript area */}
         <GlassAudioPlayer
-        isVisible={playbackPanelOpen}
+        isVisible={openPanel === 'playback'}
         isPlaying={audioState.isPlaying}
         currentTime={audioState.currentTime}
         duration={audioState.duration}
@@ -1039,7 +1145,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         }}
         onVolume={(volume) => audioActions.updateAudioState({ volume })}
         onSpeedChange={(speed) => audioActions.updateAudioState({ playbackSpeed: speed })}
-        onClose={() => setPlaybackPanelOpen(false)}
+        onClose={() => setOpenPanel(null)}
       />
       
       {/* Hidden audio element for actual playback */}

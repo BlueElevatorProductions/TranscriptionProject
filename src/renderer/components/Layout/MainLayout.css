@@ -1,0 +1,173 @@
+/**
+ * MainLayout.css - CSS Grid-based layout system
+ * 
+ * Uses CSS custom properties for dynamic sizing
+ * Responsive design with minimum width constraints
+ */
+
+.main-layout {
+  /* CSS Grid Layout */
+  display: grid;
+  width: 100%;
+  height: 100vh;
+  min-width: 1200px; /* Increased to ensure panels always visible */
+  
+  /* Blue border around entire app */
+  border: 8px solid #5ba8c7;
+  box-sizing: border-box;
+  
+  /* Grid template - dynamic based on panels visibility */
+  grid-template-areas:
+    "header header"
+    "transcript panels"
+    "audio audio";
+  
+  /* Grid sizing - dynamic columns based on panels visibility */
+  grid-template-columns: 1fr var(--panels-width);
+  grid-template-rows: 
+    auto /* header - size to content */
+    1fr  /* transcript - fill remaining space */
+    var(--audio-height); /* audio - dynamic height */
+  
+  /* Visual styling - NO background on grid container */
+  background: transparent;
+  color: var(--text-color, #333);
+  font-family: var(--font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif);
+  
+  /* Smooth transitions for layout changes */
+  transition: grid-template-columns 0.3s ease-out,
+              grid-template-rows 0.3s ease-out;
+}
+
+/* Layout when panels are hidden */
+.main-layout[data-panels-visible="false"] {
+  grid-template-areas:
+    "header"
+    "transcript"
+    "audio";
+  
+  grid-template-columns: 1fr;
+}
+
+/* Layout when audio is hidden */
+.main-layout[data-audio-visible="false"] {
+  grid-template-areas:
+    "header header"
+    "transcript panels";
+  
+  grid-template-rows: 
+    auto /* header */
+    1fr; /* transcript fills remaining */
+}
+
+/* Layout when both audio is hidden AND panels are hidden */
+.main-layout[data-audio-visible="false"][data-panels-visible="false"] {
+  grid-template-areas:
+    "header"
+    "transcript";
+  
+  grid-template-columns: 1fr;
+}
+
+/* Legacy layout fallback */
+.legacy-layout {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Responsive behavior */
+@media (max-width: 1200px) {
+  .main-layout {
+    min-width: 600px;
+  }
+  
+  .main-layout {
+    --panels-width: 250px;
+  }
+}
+
+/* Removed responsive breakpoint - layout stays consistent at all sizes */
+
+/* Focus management for keyboard navigation */
+.main-layout:focus-within {
+  outline: none;
+}
+
+/* Region-specific styling */
+.header-region {
+  grid-area: header;
+  background: #a8d5e5; /* Light cyan background matching viewport */
+  z-index: 100;
+}
+
+.transcript-region {
+  grid-area: transcript;
+  overflow: hidden;
+  background: #ffffff; /* Pure white as in mockup */
+  position: relative;
+}
+
+.panels-region {
+  grid-area: panels;
+  background: #8fb3c7; /* Medium blue-gray matching mockup */
+  overflow: hidden;
+  position: relative;
+  width: var(--panels-width);
+  transition: width 0.3s ease-out;
+}
+
+.audio-region {
+  grid-area: audio;
+  /* Background defined in AudioRegion.css */
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+}
+
+/* Hide panels when not visible by collapsing width */
+.main-layout[data-panels-visible="false"] .panels-region {
+  width: 0;
+  overflow: hidden;
+  display: none;
+}
+
+/* Animation classes for smooth transitions */
+.layout-transition-enter {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.layout-transition-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.layout-transition-exit {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.layout-transition-exit-active {
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+/* Print styles */
+@media print {
+  .main-layout {
+    height: auto;
+    grid-template-areas: "transcript";
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+  
+  .header-region,
+  .panels-region,
+  .audio-region {
+    display: none !important;
+  }
+}

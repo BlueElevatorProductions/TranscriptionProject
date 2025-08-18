@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useReducer, ReactNode, useCallback } from 'react';
-import { ProjectState, ProjectAction, ProjectData, Segment, UseProjectReturn } from '../types';
+import { ProjectState, ProjectAction, ProjectData, Segment, UseProjectReturn, Clip } from '../types';
 
 // ==================== Initial State ====================
 
@@ -143,6 +143,33 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
       };
     }
 
+    case 'UPDATE_CLIPS': {
+      const newClips = action.payload;
+      console.log('ProjectContext - Updating clips:', newClips.length, 'clips');
+
+      let updatedProjectData = state.projectData;
+      if (updatedProjectData) {
+        updatedProjectData = {
+          ...updatedProjectData,
+          clips: {
+            ...updatedProjectData.clips,
+            clips: newClips,
+            version: '2.0.0', // New version to indicate clip-based architecture
+          },
+          project: {
+            ...updatedProjectData.project,
+            lastModified: new Date().toISOString(),
+          },
+        };
+      }
+
+      return {
+        ...state,
+        projectData: updatedProjectData,
+        hasUnsavedChanges: true,
+      };
+    }
+
     case 'SET_PROJECT_PATH':
       return {
         ...state,
@@ -230,6 +257,10 @@ export const useProject = (): UseProjectReturn => {
 
     updateSegments: useCallback((segments: Segment[]) => {
       dispatch({ type: 'UPDATE_SEGMENTS', payload: segments });
+    }, [dispatch]),
+
+    updateClips: useCallback((clips: Clip[]) => {
+      dispatch({ type: 'UPDATE_CLIPS', payload: clips });
     }, [dispatch]),
 
     setUnsavedChanges: useCallback((hasChanges: boolean) => {

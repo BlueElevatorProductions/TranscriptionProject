@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useProject, useAudio, useSelectedJob } from '../../contexts';
-import { Segment } from '../../types';
-import ContextMenu from '../TranscriptEdit/ContextMenu';
-import { useClips, Clip } from '../TranscriptEdit/useClips';
+import { Segment, Clip } from '../../types';
+import ModernContextMenu, { createContextMenuItem } from '../TranscriptEdit/ModernContextMenu';
+import { useClips } from '../TranscriptEdit/useClips';
 import { FontSettings } from '../shared/FontsPanel';
 
 interface ClipBasedTranscriptProps {
@@ -14,6 +14,9 @@ interface ClipBasedTranscriptProps {
     findClipByWordIndex: (wordIndex: number) => Clip | null;
     selectClip: (clipId: string) => void;
     createNewClip: (splitWordIndex: number) => boolean;
+    splitClip?: (clipId: string, splitAtWordIndex: number) => void;
+    updateClipWord?: (clipId: string, wordIndex: number, newWord: string) => void;
+    updateClipSpeaker?: (clipId: string, newSpeaker: string) => void;
     mergeClipWithAbove?: (clipId: string) => boolean;
     addNewSpeakerLabel: (wordIndex: number, speakerName: string) => boolean;
     getAdjustedPlaybackTime?: (deletedWordIds: Set<string>, targetTime: number) => number;
@@ -69,6 +72,9 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
     findClipByWordIndex,
     selectClip,
     createNewClip,
+    splitClip,
+    updateClipWord,
+    updateClipSpeaker,
     mergeClipWithAbove,
     addNewSpeakerLabel,
     getAdjustedPlaybackTime,
@@ -112,31 +118,37 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
   // Handle word edit save
   const handleWordEditSave = useCallback(() => {
     if (editingWord.clipId && editingWord.wordIndex !== null && editingWord.text.trim()) {
-      const globalWordIndex = getGlobalWordIndex(editingWord.clipId, editingWord.wordIndex);
-      if (globalWordIndex >= 0) {
-        // Find the actual segment and word to update
-        let runningIndex = 0;
-        const newSegments = [...segments];
-        
-        for (let segIndex = 0; segIndex < newSegments.length; segIndex++) {
-          const segment = newSegments[segIndex];
-          if (segment.words) {
-            for (let wordIdx = 0; wordIdx < segment.words.length; wordIdx++) {
-              if (runningIndex === globalWordIndex) {
-                newSegments[segIndex].words[wordIdx].word = editingWord.text.trim();
-                projectActions.updateSegments(newSegments);
-                break;
+      if (updateClipWord) {
+        // Use the new clips-first approach
+        updateClipWord(editingWord.clipId, editingWord.wordIndex, editingWord.text.trim());
+      } else {
+        // Fallback to old segments approach for compatibility
+        const globalWordIndex = getGlobalWordIndex(editingWord.clipId, editingWord.wordIndex);
+        if (globalWordIndex >= 0) {
+          // Find the actual segment and word to update
+          let runningIndex = 0;
+          const newSegments = [...segments];
+          
+          for (let segIndex = 0; segIndex < newSegments.length; segIndex++) {
+            const segment = newSegments[segIndex];
+            if (segment.words) {
+              for (let wordIdx = 0; wordIdx < segment.words.length; wordIdx++) {
+                if (runningIndex === globalWordIndex) {
+                  newSegments[segIndex].words[wordIdx].word = editingWord.text.trim();
+                  projectActions.updateSegments(newSegments);
+                  break;
+                }
+                runningIndex++;
               }
+            } else {
               runningIndex++;
             }
-          } else {
-            runningIndex++;
           }
         }
       }
     }
     setEditingWord({ clipId: null, wordIndex: null, text: '' });
-  }, [editingWord, segments, projectActions, getGlobalWordIndex]);
+  }, [editingWord, updateClipWord, segments, projectActions, getGlobalWordIndex]);
   
   // Handle word right-click for context menu
   const handleWordRightClick = useCallback((
@@ -191,90 +203,26 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
     setEditingSpeaker(null); // Close any text editing
   }, []);
 
-  // Handle speaker change for a specific clip
+  // Handle speaker change for a specific clip - NEW APPROACH: use the hook's method
   const handleSpeakerChange = useCallback((clipId: string, newSpeakerId: string) => {
-    // Find the clip and update its speaker in the underlying segments
-    const clip = clips.find(c => c.id === clipId);
-    if (!clip) {
-      return;
-    }
-
-    // Instead of trying to find segments that fit within clip boundaries,
-    // we need to split/merge segments to match the clip boundaries exactly
-    const newSegments: any[] = [];
-    let runningWordIndex = 0;
+    console.log('handleSpeakerChange called', { clipId, newSpeakerId, hasUpdateClipSpeaker: !!updateClipSpeaker });
     
-    for (let segIndex = 0; segIndex < segments.length; segIndex++) {
-      const segment = segments[segIndex];
-      const segmentWordCount = segment.words?.length || 1;
-      const segmentStartIndex = runningWordIndex;
-      const segmentEndIndex = runningWordIndex + segmentWordCount - 1;
-      
-      // Check how this segment relates to the clip
-      if (segmentEndIndex < clip.startWordIndex || segmentStartIndex > clip.endWordIndex) {
-        // Segment is completely outside clip - keep as is
-        newSegments.push({ ...segment });
-      } else if (segmentStartIndex >= clip.startWordIndex && segmentEndIndex <= clip.endWordIndex) {
-        // Segment is completely inside clip - update speaker
-        newSegments.push({ ...segment, speaker: newSpeakerId });
-      } else {
-        // Segment overlaps with clip - need to split
-        
-        // Split the segment at clip boundaries
-        const words = segment.words || [];
-        
-        // Part before clip
-        if (segmentStartIndex < clip.startWordIndex) {
-          const beforeWords = words.slice(0, clip.startWordIndex - segmentStartIndex);
-          if (beforeWords.length > 0) {
-            newSegments.push({
-              ...segment,
-              words: beforeWords,
-              text: beforeWords.map(w => w.word).join(' '),
-              end: beforeWords[beforeWords.length - 1]?.end || segment.end
-            });
-          }
-        }
-        
-        // Part inside clip (update speaker)
-        const clipStartInSegment = Math.max(0, clip.startWordIndex - segmentStartIndex);
-        const clipEndInSegment = Math.min(words.length - 1, clip.endWordIndex - segmentStartIndex);
-        
-        if (clipStartInSegment <= clipEndInSegment) {
-          const clipWords = words.slice(clipStartInSegment, clipEndInSegment + 1);
-          if (clipWords.length > 0) {
-            newSegments.push({
-              ...segment,
-              speaker: newSpeakerId,
-              words: clipWords,
-              text: clipWords.map(w => w.word).join(' '),
-              start: clipWords[0]?.start || segment.start,
-              end: clipWords[clipWords.length - 1]?.end || segment.end
-            });
-          }
-        }
-        
-        // Part after clip
-        if (segmentEndIndex > clip.endWordIndex) {
-          const afterWords = words.slice(clip.endWordIndex - segmentStartIndex + 1);
-          if (afterWords.length > 0) {
-            newSegments.push({
-              ...segment,
-              words: afterWords,
-              text: afterWords.map(w => w.word).join(' '),
-              start: afterWords[0]?.start || segment.start
-            });
-          }
-        }
-      }
-      
-      runningWordIndex += segmentWordCount;
+    if (updateClipSpeaker) {
+      // Use the hook's updateClipSpeaker method which handles persistence
+      console.log('Using updateClipSpeaker method');
+      updateClipSpeaker(clipId, newSpeakerId);
+    } else {
+      // Fallback for old clip system
+      console.log('Using fallback method');
+      const updatedClips = clips.map(clip => 
+        clip.id === clipId 
+          ? { ...clip, speaker: newSpeakerId, modifiedAt: Date.now() }
+          : clip
+      );
+      projectActions.updateClips(updatedClips);
     }
-    
-    // Update the project state with new segments
-    projectActions.updateSegments(newSegments);
     setSpeakerDropdownOpen(null);
-  }, [clips, segments, projectActions]);
+  }, [updateClipSpeaker, clips, projectActions]);
   
   // Handle speaker edit save
   const handleSpeakerEditSave = useCallback(() => {
@@ -291,12 +239,19 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
   
   // Handle paragraph break / clip creation
   const handleCreateClip = useCallback((clip: Clip, wordIndex: number) => {
-    const globalWordIndex = getGlobalWordIndex(clip.id, wordIndex);
-    
-    if (globalWordIndex >= 0) {
-      createNewClip(globalWordIndex);
+    // With persisted clips, we use splitClip which takes clipId and the global word index to split at
+    if (splitClip) {
+      // The wordIndex here is local to the clip, so we need to convert to global
+      const globalWordIndex = clip.startWordIndex + wordIndex;
+      splitClip(clip.id, globalWordIndex);
+    } else {
+      // Fallback to old method for compatibility
+      const globalWordIndex = getGlobalWordIndex(clip.id, wordIndex);
+      if (globalWordIndex >= 0) {
+        createNewClip(globalWordIndex);
+      }
     }
-  }, [getGlobalWordIndex, createNewClip]);
+  }, [getGlobalWordIndex, createNewClip, splitClip]);
 
   // Handle merge with previous clip
   const handleMergeWithAbove = useCallback((clipId: string) => {
@@ -314,22 +269,20 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
     const wordId = getWordId(clips.find(c => c.id === wordData.clipId)!, wordData.wordIndex);
     const isDeleted = deletedWords.has(wordId);
     
-    return [
-      {
-        label: "Edit Word",
-        icon: "✏️",
-        action: () => {
+    const items = [
+      createContextMenuItem(
+        "Edit Word",
+        () => {
           const clip = clips.find(c => c.id === wordData.clipId);
           if (clip) {
             handleWordDoubleClick(clip, wordData.wordIndex);
           }
-          setContextMenu({ visible: false, x: 0, y: 0 });
-        }
-      },
-      {
-        label: isDeleted ? "Restore Word" : "Delete Word",
-        icon: isDeleted ? "↩️" : "🗑️",
-        action: () => {
+        },
+        'edit'
+      ),
+      createContextMenuItem(
+        isDeleted ? "Restore Word" : "Delete Word",
+        () => {
           const clip = clips.find(c => c.id === wordData.clipId);
           if (clip) {
             if (isDeleted) {
@@ -338,22 +291,23 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
               handleWordDelete(clip, wordData.wordIndex);
             }
           }
-          setContextMenu({ visible: false, x: 0, y: 0 });
-        }
-      },
+        },
+        isDeleted ? 'restore' : 'delete'
+      ),
       { label: "", isSeparator: true },
-      {
-        label: "Create Clip Here",
-        icon: "✂️",
-        action: () => {
+      createContextMenuItem(
+        "Split Clip Here",
+        () => {
           const clip = clips.find(c => c.id === wordData.clipId);
           if (clip) {
             handleCreateClip(clip, wordData.wordIndex);
           }
-          setContextMenu({ visible: false, x: 0, y: 0 });
-        }
-      }
+        },
+        'split'
+      )
     ];
+    
+    return items;
   }, [contextMenu.wordData, clips, deletedWords, getWordId, handleWordDoubleClick, handleWordDelete, handleWordRestore, handleCreateClip]);
   
   // Handle keyboard events
@@ -437,6 +391,7 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
           return (
           <div 
             key={clip.id} 
+            data-clip-id={clip.id}
             className={`mb-12 p-6 border-l-4 rounded-r-lg shadow-sm ${selectedClipId === clip.id ? 'border-blue-500 bg-blue-50' : 'border-gray-300'} ${clip.type === 'user-created' ? 'bg-green-50 border-green-400' : 'bg-white'}`}
             onClick={() => selectClip(clip.id)}
           >
@@ -508,6 +463,12 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
               onKeyDown={(e) => {
                 
                 if (e.key === 'Enter') {
+                  // If we're currently editing a word, don't split the clip
+                  if (editingWord.clipId === clip.id) {
+                    // Let the word edit handler take care of this
+                    return;
+                  }
+                  
                   e.preventDefault();
                   
                   // Get actual cursor position within the clip
@@ -618,7 +579,7 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({ mode, 
       </div>
       
       {/* Context Menu */}
-      <ContextMenu
+      <ModernContextMenu
         x={contextMenu.x}
         y={contextMenu.y}
         items={contextMenuItems}

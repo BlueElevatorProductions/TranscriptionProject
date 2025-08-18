@@ -62,34 +62,31 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({ initial, onChange, onClos
   
   return (
     <div>
-      <p className="text-sm text-text-muted mb-3">
+      <p className="text-sm text-white opacity-80 mb-3">
         Edit speaker names. Changes apply immediately.
       </p>
       <div className="space-y-3">
         {speakers.length === 0 && (
-          <div className="text-sm text-gray-500 p-4 text-center">
+          <div className="text-sm text-white opacity-60 p-4 text-center">
             No speakers found. Click "Add speaker" to create one.
           </div>
         )}
         {speakers.map((s, i) => {
           return (
-          <div key={s.id} className="bg-surface border border-border rounded-lg p-3 flex items-center gap-3">
-            <span className="text-sm opacity-70 min-w-[5.5rem]">Speaker {i + 1}:</span>
+          <div key={s.id} className="bg-white bg-opacity-10 border border-white border-opacity-20 rounded-lg p-3 flex items-center gap-3">
+            <span className="text-sm text-white opacity-70 min-w-[5.5rem]">Speaker {i + 1}:</span>
             <input
               value={s.name}
               onChange={(e) => update(s.id, e.target.value)}
-              className="flex-1 rounded-md border border-border bg-surface px-2 py-1"
+              className="flex-1 rounded-md border border-white border-opacity-20 bg-white bg-opacity-10 text-white px-2 py-1 placeholder-white placeholder-opacity-50"
             />
           </div>
           );
         })}
       </div>
       <div className="flex items-center gap-2 mt-4">
-        <button className="rounded px-3 py-1.5 bg-accent text-white" onClick={add}>
+        <button className="rounded px-3 py-1.5 bg-white bg-opacity-20 text-white hover:bg-opacity-30" onClick={add}>
           Add speaker
-        </button>
-        <button className="rounded px-3 py-1.5 hover:bg-hover-bg" onClick={onClose}>
-          Done
         </button>
       </div>
     </div>

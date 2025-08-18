@@ -112,13 +112,17 @@ export interface ClipData {
 
 export interface Clip {
   id: string;
-  name: string;
+  speaker: string;
   startTime: number;
   endTime: number;
-  segments: number[];
-  speakerId?: string;
-  created: string;
-  notes?: string;
+  startWordIndex: number;
+  endWordIndex: number;
+  words: Word[];
+  type: 'speaker-change' | 'paragraph-break' | 'user-created';
+  text: string;
+  duration: number;
+  createdAt: number;
+  modifiedAt: number;
 }
 
 export interface ClipSettings {
@@ -140,6 +144,11 @@ export interface ProjectData {
       processingTime: number;
       editCount: number;
     };
+  };
+  originalTranscription?: {
+    version: string;
+    segments: Segment[];
+    speakers: { [key: string]: string };
   };
   speakers: SpeakerData;
   clips: ClipData;
@@ -215,6 +224,7 @@ export type ProjectAction =
   | { type: 'SET_UNSAVED_CHANGES'; payload: boolean }
   | { type: 'UPDATE_SPEAKERS'; payload: { [key: string]: string } }
   | { type: 'UPDATE_SEGMENTS'; payload: Segment[] }
+  | { type: 'UPDATE_CLIPS'; payload: Clip[] }
   | { type: 'SET_PROJECT_PATH'; payload: string | null }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
@@ -339,6 +349,7 @@ export interface UseProjectReturn {
     updateProjectData: (updates: Partial<ProjectData>) => void;
     updateSpeakers: (speakers: { [key: string]: string }) => void;
     updateSegments: (segments: Segment[]) => void;
+    updateClips: (clips: Clip[]) => void;
     setUnsavedChanges: (hasChanges: boolean) => void;
     setProjectPath: (path: string | null) => void;
     saveProject: () => Promise<void>;

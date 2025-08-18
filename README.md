@@ -32,11 +32,12 @@ TranscriptionProject is a desktop application designed for content creators, jou
 - **Timeline Scrubbing**: Visual progress bar with click-to-seek
 
 ### Professional Editing
-- **Word-Level Editing**: Click to edit individual words or segments
+- **Word-Level Editing**: Double-click individual words to correct transcription errors with persistent saving
 - **Dynamic Clip System**: Visual boundaries for organizing transcript content
 - **Speaker Management**: Assign and manage speaker names with automatic segment splitting
 - **Real-time Speaker Changes**: Change speakers within clips with automatic segment reconstruction
-- **Context Menus**: Right-click for editing options and word operations
+- **Context Menus**: Right-click for editing options (Edit Word, Delete Word, Split Clip Here)
+- **Clip Splitting**: Press Enter at cursor position to create new clip boundaries
 - **Font Controls**: Customize transcript display with font panel
 
 ### Project Management
@@ -248,44 +249,133 @@ ZIP archives containing:
 
 ## Core Systems
 
-### Clip and Speaker Management System
+### Clip-Based Architecture (November 2024 Update)
 
-The application uses a unified system where **clips** and **segments** represent the same conceptual unit - a portion of the transcript with a specific speaker and time range.
+The application has been completely redesigned with **clips as the primary data structure**. This new architecture provides better user experience and data persistence.
 
-#### How It Works
-- **Segments**: Core transcript data from transcription services (OpenAI, AssemblyAI, etc.)
-- **Clips**: Visual editing boundaries created by users for organizing content
-- **Dynamic Segmentation**: When speakers are changed within clips, segments are automatically split/merged to maintain data consistency
+#### Core Concepts
 
-#### Speaker Assignment Process
-1. **Initial State**: Transcription services provide segments with speaker detection
-2. **Clip Creation**: Users can split transcript into clips at any word boundary
-3. **Speaker Changes**: When a speaker is changed for a clip:
-   - System finds all segments that overlap with the clip boundary
-   - Overlapping segments are split at exact clip boundaries
-   - The portion within the clip gets the new speaker assignment
-   - Adjacent portions retain their original speakers
-4. **Real-time Updates**: UI immediately reflects changes without page refresh
+**Clips**: The primary data structure containing:
+- Word-level timestamps and text
+- Speaker assignments
+- Clip boundaries (start/end times and word indices)
+- User-created metadata (creation time, modifications)
+
+**Segments**: Archived initial transcription data from cloud services, kept for potential "reset to original" feature
+
+#### Data Flow Architecture
+
+```
+1. Transcription Complete → Initial Segments Generated
+2. Segments → Generate Clips → Save Clips as Primary Data
+3. User Edits → Update Clips → Save Clips to Project
+4. Segments Archived (not modified after initial generation)
+```
+
+#### How Clips Work
+
+1. **Initial Generation**: When transcription completes:
+   - Segments from cloud service → Generate clips based on speaker changes
+   - Clips become the "source of truth"
+   - Original segments archived in `project.originalTranscription`
+
+2. **User Editing**:
+   - **Edit Words**: Double-click any word to correct transcription errors, press Enter to save
+   - **Split Clips**: Press Enter at cursor position to create new clip boundary
+   - **Change Speakers**: Select from dropdown - updates clip directly
+   - **Merge Clips**: Combine adjacent clips into single clip
+   - **Context Menu Actions**: Right-click words for Edit, Delete, or Split operations
+   - All changes persist immediately to project file
+
+3. **Data Persistence**:
+   - Clips saved in `project.clips.clips` array
+   - No more segment manipulation or synchronization issues
+   - Speaker changes are instant and permanent
 
 #### Key Components
-- **`useClips.ts`**: Generates clip boundaries from segments and user splits
-- **`ClipBasedTranscript.tsx`**: Handles speaker dropdown interactions and segment splitting
-- **`ProjectContext.tsx`**: Manages speaker mappings and segment updates
 
-#### Important Design Principles
-- **No Orphaned Changes**: All speaker changes must result in valid segment updates
-- **Boundary Consistency**: Clip boundaries always align with word-level timestamps
-- **Data Integrity**: Original transcription data is preserved through transformations
-- **ID-based Speakers**: Speaker assignments use consistent IDs (SPEAKER_00, SPEAKER_01) with display name mappings
+- **`usePersistedClips.ts`**: New hook managing clips as primary data with editing methods:
+  - `updateClipWord()`: Edit individual words with persistent saving
+  - `updateClipSpeaker()`: Change clip speaker assignments
+  - `splitClip()`: Create new clips at word boundaries
+  - `mergeClips()`: Combine adjacent clips
+- **`ClipBasedTranscript.tsx`**: UI component for clip editing and display
+- **`ProjectContext.tsx`**: Handles clip persistence via `updateClips()` action
+- **`NewUIShell.tsx`**: Coordinates between persisted clips and UI
 
-## Recent Updates (August 2025)
+#### Architectural Benefits
 
-### ✅ Speaker Management System Overhaul (Latest)
-- **Fixed Speaker Dropdown Issues**: Resolved issue where speaker changes weren't persisting
-- **Implemented Segment Splitting**: When speakers are changed within clips, segments are now properly split at word boundaries
-- **Unified Clip/Segment Architecture**: Eliminated confusion between clips and segments - they now work as a unified system
-- **Real-time Speaker Updates**: Speaker changes now immediately reflect in the UI without requiring app restart
-- **Console Logging Cleanup**: Removed excessive console.log statements while preserving error handling
+- **✅ Data Integrity**: No more lost user edits when changing speakers
+- **✅ Performance**: No constant regeneration of clips from segments
+- **✅ Simplicity**: Single source of truth eliminates sync issues
+- **✅ User Experience**: Instant feedback for all editing operations
+- **✅ Persistence**: All user changes saved immediately
+
+#### Migration from Old Architecture
+
+Projects created before this update will:
+1. Load with segments as primary data (fallback mode)
+2. Generate clips from segments on first load
+3. Save clips as new primary data structure
+4. Archive segments for potential reset feature
+
+### Word-Level Editing System
+
+The application provides comprehensive word-level editing capabilities for correcting transcription errors:
+
+#### **Double-Click Word Editing**
+1. **Activate Edit Mode**: Double-click any word in Edit mode to enter inline editing
+2. **Make Corrections**: Type the corrected word to fix transcription service errors
+3. **Save Changes**: Press Enter to save - word updates immediately in clips and project file
+4. **Cancel Editing**: Press Escape to cancel without saving changes
+
+#### **Context Menu Operations** 
+Right-click any word for additional editing options:
+- **Edit Word**: Same as double-click - enters inline editing mode
+- **Delete Word**: Marks word as deleted with strikethrough (can be restored)
+- **Split Clip Here**: Creates new clip boundary at the selected word
+
+#### **Technical Implementation**
+- **Clips-First Architecture**: Word edits update `clip.words[]` array directly
+- **Real-time Persistence**: Changes save immediately via `updateClipWord()` method
+- **Dual Updates**: Updates both individual word object and clip's text field
+- **Project File Integration**: All edits persist to `.transcript` ZIP file automatically
+
+#### **Data Flow for Word Editing**
+```
+User Double-Clicks Word → Inline Edit Mode → User Types Correction → 
+Press Enter → updateClipWord() → Update Clip Data → onClipsChange() → 
+Save to Project File → UI Updates
+```
+
+This system ensures transcription service errors can be permanently corrected with immediate visual feedback and persistent storage.
+
+## Recent Updates (November 2024)
+
+### ✅ Complete Architectural Overhaul - Clips as Primary Data (Latest)
+- **Clips-First Architecture**: Completely redesigned data flow with clips as primary data structure
+- **Eliminated Segment Sync Issues**: No more lost edits when changing speakers - clips persist all changes
+- **Enhanced Word Editing**: Double-click words to correct transcription errors with persistent saving to project files
+- **Context Menu System**: Professional right-click menu with Edit Word, Delete Word, Split Clip Here options
+- **Enhanced Split Functionality**: Press Enter to split clips at cursor position with perfect word-level precision
+- **Instant Speaker Changes**: Speaker dropdown changes update clips directly with immediate persistence
+- **Improved Performance**: No more constant regeneration of clips from segments
+- **Better User Experience**: All editing operations now provide instant feedback
+- **Data Migration Support**: Existing projects automatically migrate to new clip-based architecture
+
+### ✅ UI/UX Design System Implementation  
+- **Color Theming**: Added persistent color themes (Green/Blue) with localStorage storage
+- **Panel Animation Fixes**: Resolved green color flashes during panel transitions
+- **Improved Panel Behavior**: One-panel-at-a-time with smooth 150ms transitions
+- **Font System Enhancement**: Default font size changed to 18px with persistent project-level storage
+- **Sidebar Spacing**: Fixed gap between Fonts and Speakers buttons
+- **Clips Panel Optimization**: Removed editing features, expanded viewable area, added click-to-scroll functionality
+
+### ✅ Architecture Debugging and Optimization
+- **React Key Warnings Fixed**: Resolved duplicate key issues causing rendering inconsistencies  
+- **Multiple Update Prevention**: Fixed excessive clip update calls during initialization
+- **Console Cleanup**: Removed debug logging while preserving error handling
+- **Type Safety Improvements**: Enhanced TypeScript definitions for new clip architecture
 
 ### ✅ API Key Integration & Transcription Workflow
 - **Settings Panel Integration**: Added Settings section to sidebar with API Keys management
@@ -309,14 +399,20 @@ The application uses a unified system where **clips** and **segments** represent
 - **Hot Reload Support**: Improved development workflow with better hot reloading
 
 ### 🎯 Production Ready Features
-The transcription workflow is now fully functional end-to-end:
+The transcription workflow is now fully functional with clips-first architecture:
 1. ✅ API key storage and encryption
 2. ✅ Audio file import and validation  
-3. ✅ Cloud transcription service integration
-4. ✅ Real-time progress tracking
-5. ✅ Transcript display and editing
-6. ✅ Advanced speaker management with automatic segment splitting
-7. ✅ Error handling and recovery
+3. ✅ Cloud transcription service integration (OpenAI, AssemblyAI, Rev.ai)
+4. ✅ Real-time progress tracking with glass morphism UI
+5. ✅ **Clip-based transcript editing** with instant persistence
+6. ✅ **Word-level editing** with double-click correction and persistent saving
+7. ✅ **Professional context menu** with Edit, Delete, Split operations
+8. ✅ **Advanced speaker management** with dropdown selection
+9. ✅ **Interactive clip splitting** with Enter key at cursor position
+10. ✅ **Persistent color theming** (Green/Blue themes)
+11. ✅ **Professional font controls** with project-level storage
+12. ✅ **Comprehensive error handling** and recovery
+13. ✅ **Project file management** with ZIP-based .transcript files
 
 ## Scripts
 
