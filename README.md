@@ -91,9 +91,12 @@ TranscriptionProject is a desktop application designed for content creators, jou
 │ ├── main.ts                    # App entry & window mgmt    │
 │ ├── preload.ts                 # Secure IPC bridge         │
 │ └── services/                                               │
-│     ├── SimpleCloudTranscriptionService.ts                 │
-│     ├── ProjectFileService.ts                              │
-│     └── ProjectPackageService.ts                           │
+│     ├── SimpleCloudTranscriptionService.ts  # Cloud APIs  │
+│     ├── ProjectFileService.ts               # File I/O     │
+│     ├── ProjectPackageService.ts            # ZIP handling │
+│     ├── AudioAnalyzer.ts                   # Audio analysis│
+│     ├── AudioConverter.ts                  # FLAC conversion│
+│     └── UserPreferences.ts                 # Settings mgmt │
 ├─────────────────────────────────────────────────────────────┤
 │ Renderer Process (src/renderer/)                           │
 │ ├── App.tsx                    # Main app component        │
@@ -108,8 +111,11 @@ TranscriptionProject is a desktop application designed for content creators, jou
 │ │   ├── ui/                                                │
 │ │   │   └── NewUIShell.tsx     # Main interface shell     │
 │ │   ├── shared/                # Reusable components       │
-│ │   ├── ImportDialog/          # File import workflows     │
+│ │   ├── ImportDialog/          # Enhanced import system    │
+│ │   │   └── EnhancedImportDialog.tsx # Smart audio import │
 │ │   ├── NewProject/            # Project creation          │
+│ │   ├── Settings/              # User preferences          │
+│ │   │   └── ImportSettings.tsx # Import defaults          │
 │ │   ├── Notifications/         # Toast system              │
 │ │   └── TranscriptEdit/        # Editing components        │
 │ ├── hooks/                     # Custom React hooks        │
@@ -120,12 +126,14 @@ TranscriptionProject is a desktop application designed for content creators, jou
 
 ## Data Flow
 
-1. **Project Creation**: User creates new project → Project context initialized
-2. **Audio Import**: File selected → Sent to main process → Cloud transcription service
-3. **Transcription**: Progress updates via IPC → UI shows real-time status
-4. **Results**: Completed transcript → Project context → UI rendering
-5. **Editing**: User interactions → Context updates → Real-time UI updates
-6. **Saving**: Project data → ZIP packaging → File system storage
+1. **Project Creation**: User creates new project → Project context initialized → Save location selected
+2. **Audio Import**: Enhanced import dialog analyzes file → Smart recommendations → User preferences applied
+3. **Audio Processing**: File converted to FLAC if needed → Embedded in project ZIP → Metadata stored
+4. **Transcription**: Selected method (Local/Cloud) → Progress updates via IPC → Glass overlay shows status
+5. **Auto-Save**: Transcript complete → Project automatically saves to user location
+6. **Results**: Completed transcript → Clips generated → Project context → UI rendering
+7. **Editing**: User interactions → Clips updated → Real-time UI updates → Persistent storage
+8. **Professional Workflow**: Embedded FLAC audio → Portable projects → Professional mixing support
 
 ## Core Components
 
@@ -149,9 +157,22 @@ The main interface component featuring:
 - **Auto-save**: Automatic saving with change detection
 - **Import/Export**: Multiple audio format support
 
+### Enhanced Import System 
+```
+Audio File → AudioAnalyzer → Smart Recommendations → User Choice → 
+AudioConverter → FLAC Embedding → Project ZIP → Auto-Save
+```
+
+Key Components:
+- **AudioAnalyzer.ts**: Uses ffprobe to detect format, quality, sample rate, and provide recommendations
+- **AudioConverter.ts**: Professional FLAC conversion with progress tracking and high-quality resampling
+- **EnhancedImportDialog.tsx**: Smart UI that shows/hides options based on audio analysis
+- **UserPreferencesService.ts**: Encrypted storage of user defaults for consistent workflow
+
 ### Transcription Pipeline
 ```
-Audio File → Cloud Service → Word Timestamps → Speaker Detection → UI Display
+Enhanced Import → Audio Embedding → Transcription Method Selection → 
+Cloud/Local Processing → Progress Tracking → Auto-Save → Clips Generation
 ```
 
 ## Getting Started
@@ -204,26 +225,32 @@ npm run build
 
 ### Quick Start Guide
 
-1. **Launch the app**: Run `~/start-transcription-robust.sh` or use npm scripts
-2. **Create a new project**: Click "New" in the sidebar and name your project
-3. **Configure API keys**: Go to Settings > API Keys and add your cloud service credentials
-4. **Import audio**: Click the import button, select your audio file
-5. **Choose transcription service**: Select "cloud-openai" or your preferred service
-6. **Watch the magic**: The glass progress overlay will show real-time transcription progress
-7. **Edit and export**: Use the transcript editor to refine your text and export results
+1. **Launch the app**: Run `npm run start-dev` or use the provided launch script
+2. **Create a new project**: Click "New" in the sidebar, name your project, and choose save location
+3. **Configure API keys** (for cloud transcription): Go to Settings > API Keys and add your OpenAI credentials
+4. **Set preferences** (optional): Visit Settings > Import to configure default transcription and audio preferences
+5. **Import audio**: Click import button and select your audio file
+6. **Choose transcription method**: Select "Cloud Processing" (recommended) or "Local Processing" 
+7. **Smart import**: The enhanced import dialog analyzes your audio and provides intelligent recommendations
+8. **Watch progress**: Beautiful glass overlay shows real-time transcription progress with provider info
+9. **Auto-save**: Project automatically saves to your chosen location when transcription completes
+10. **Edit transcript**: Use professional editing tools - double-click words to correct, split clips with Enter, manage speakers
+11. **Professional workflow**: Projects include embedded FLAC audio for portability and professional use
 
 ## File Structure
 
 ### Project Files (.transcript)
 ZIP archives containing:
-- `project.json`: Project metadata and settings
+- `project.json`: Project metadata, settings, and embedded audio information
 - `transcription.json`: Complete transcript with word timestamps
-- `metadata/speakers.json`: Speaker names and mappings
-- `metadata/clips.json`: Audio clip definitions
-- (Optional) `audio/`: Original audio files
+- `metadata/speakers.json`: Speaker names and mappings  
+- `metadata/clips.json`: Audio clip definitions and boundaries
+- `audio/`: Embedded audio files (FLAC compressed for professional quality)
+- `audioMetadata.json`: Original audio file information and conversion details
 
 ### Configuration
-- API keys: `~/.config/TranscriptionProject/api-keys.enc`
+- API keys: `~/.config/TranscriptionProject/api-keys.enc` (AES-256 encrypted)
+- User preferences: `~/.config/TranscriptionProject/import-preferences.enc` (encrypted import defaults)
 - Recent projects: Managed by Electron's userData directory
 
 ## Development Guidelines
@@ -349,6 +376,52 @@ Save to Project File → UI Updates
 ```
 
 This system ensures transcription service errors can be permanently corrected with immediate visual feedback and persistent storage.
+
+## Recent Updates (December 2024 - Latest)
+
+### ✅ Professional Audio Import System & Streamlined Transcription Workflow
+- **Enhanced Import Dialog**: Beautiful, compact import dialog with smart audio analysis
+  - Real-time file analysis with format detection and quality assessment  
+  - Smart conversion recommendations based on audio characteristics
+  - FLAC lossless compression with 30-50% size reduction
+  - Professional sample rate and bit depth support (up to 32-bit/192kHz)
+  - Conditional controls that hide unnecessary options for lossy formats (MP3, etc.)
+- **Streamlined Transcription Selection**: Simple Local vs Cloud toggle with smart defaults
+  - Local processing uses 'base' model (good speed/accuracy balance)
+  - Cloud processing uses OpenAI Whisper API (fastest, highest quality)
+  - No more complex transcription dialogs - just one smart choice
+- **User Preferences System**: Persistent settings with AES-256 encrypted storage
+  - Import Settings panel in sidebar for default preferences
+  - Default transcription method, audio format, sample rate, and bit depth
+  - Smart defaults that adapt to user workflow patterns
+- **Professional Audio Embedding**: ZIP-based project files with embedded audio
+  - Audio files converted to FLAC and embedded in .transcript files
+  - Portable projects that contain all audio and metadata
+  - Support for professional audio workflows and mixing environments
+- **Auto-Save Integration**: Projects automatically save after transcription completes
+  - No more lost work - projects save to user-selected location immediately
+  - Embedded audio is preserved with full quality for professional use
+- **Smart Audio Analysis**: Intelligent recommendations based on file characteristics
+  - Detects lossy vs lossless formats and recommends appropriate conversion
+  - Provides file size estimates and quality impact assessments
+  - Prevents unnecessary conversion of compressed audio formats
+
+### ✅ Enhanced User Interface & Experience
+- **Compact Import Dialog**: Redesigned to fit on all screen sizes
+  - Reduced from max-width 2xl to xl with responsive height
+  - Smaller text, icons, and spacing throughout
+  - Scrollable content for smaller displays
+- **Improved Settings Organization**: Consolidated settings with clear categorization
+  - Import settings for transcription and audio preferences  
+  - API keys for cloud service authentication
+  - Color themes for interface personalization
+- **Professional Terminology**: Removed confusing audio terminology
+  - Changed "Normalize future imports" to "Apply these settings to future imports"
+  - Clear, non-technical language throughout import workflow
+- **Smart Storage Format Options**: Simplified choices without redundancy
+  - "Keep Original" - preserves source format without conversion
+  - "Convert to FLAC" - lossless compression with size benefits
+  - Removed confusing third option that served same purpose
 
 ## Recent Updates (November 2024)
 

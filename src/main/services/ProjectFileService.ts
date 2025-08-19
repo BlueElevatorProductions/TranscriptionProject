@@ -3,6 +3,23 @@ import * as path from 'path';
 import JSZip from 'jszip';
 import { app } from 'electron';
 import * as crypto from 'crypto';
+import { pipeline } from 'stream/promises';
+
+interface AudioMetadata {
+  originalPath: string;
+  originalName: string;
+  originalFormat: string;
+  originalSampleRate: number;
+  originalBitDepth?: number;
+  originalSize: number;
+  embeddedFormat: string;
+  embeddedSize: number;
+  duration: number;
+  channels: number;
+  compressionRatio: number;
+  wasConverted: boolean;
+  conversionMethod?: string;
+}
 
 interface ProjectData {
   project: any;
@@ -11,21 +28,30 @@ interface ProjectData {
   clips: any;
   history?: any;
   preferences?: any;
+  audioMetadata?: AudioMetadata;
 }
 
 export class ProjectFileService {
   private static readonly CURRENT_VERSION = '1.0';
   private static readonly SUPPORTED_VERSIONS = ['1.0', '1.0.0'];
 
-  static async saveProject(projectData: ProjectData, filePath: string): Promise<void> {
+  static async saveProject(
+    projectData: ProjectData, 
+    filePath: string,
+    onProgress?: (percent: number, status: string) => void
+  ): Promise<void> {
     try {
+      onProgress?.(0, 'Initializing project save...');
+      
       const zip = new JSZip();
       
       // Add main project file
       zip.file('project.json', JSON.stringify(projectData.project, null, 2));
+      onProgress?.(5, 'Saving project metadata...');
       
       // Add transcription data
       zip.file('transcription.json', JSON.stringify(projectData.transcription, null, 2));
+      onProgress?.(10, 'Saving transcription data...');
       
       // Add metadata files
       const metadataFolder = zip.folder('metadata');
@@ -40,42 +66,95 @@ export class ProjectFileService {
         if (projectData.preferences) {
           metadataFolder.file('preferences.json', JSON.stringify(projectData.preferences, null, 2));
         }
-      }
-      
-      // TEMPORARILY DISABLE AUDIO EMBEDDING TO PREVENT CRASHES
-      console.log('Audio embedding temporarily disabled for stability testing');
-      
-      // Save audio reference instead of embedding the file
-      const audioFolder = zip.folder('audio');
-      if (audioFolder && projectData.project.audio?.originalFile) {
-        try {
-          const audioRef = {
-            originalPath: projectData.project.audio.originalFile,
-            originalName: projectData.project.audio.originalName,
-            note: "Audio embedding temporarily disabled for crash diagnosis. Audio file path preserved for reference."
-          };
-          audioFolder.file('audio_reference.json', JSON.stringify(audioRef, null, 2));
-          console.log('Audio reference saved (embedding disabled for testing)');
-        } catch (audioError: any) {
-          console.warn('Could not save audio reference:', audioError.message);
+        
+        // Save audio metadata if available
+        if (projectData.audioMetadata) {
+          metadataFolder.file('audio.json', JSON.stringify(projectData.audioMetadata, null, 2));
         }
       }
+      onProgress?.(15, 'Saving metadata files...');
       
-      // Generate zip file with optimized settings for large files
-      console.log('Generating ZIP package with memory optimization...');
+      // Embed audio file if available
+      const audioFolder = zip.folder('audio');
+      if (audioFolder && projectData.project.audio?.embeddedPath) {
+        try {
+          onProgress?.(20, 'Embedding audio file...');
+          console.log('Embedding audio file:', projectData.project.audio.embeddedPath);
+          
+          // Check if embedded audio file exists
+          if (!fs.existsSync(projectData.project.audio.embeddedPath)) {
+            throw new Error(`Audio file not found: ${projectData.project.audio.embeddedPath}`);
+          }
+          
+          const audioStats = fs.statSync(projectData.project.audio.embeddedPath);
+          const audioFormat = projectData.audioMetadata?.embeddedFormat || 'flac';
+          
+          // Determine audio file name based on format
+          const audioFileName = `audio.${audioFormat}`;
+          
+          console.log(`Embedding ${audioFileName} (${this.formatBytes(audioStats.size)})`);
+          
+          // Read audio file into buffer
+          // For very large files, we could implement chunked reading, but for now use direct buffer approach
+          console.log('Loading audio file into memory...');
+          const audioBuffer = await fs.promises.readFile(projectData.project.audio.embeddedPath);
+          
+          // Add to ZIP without additional compression (FLAC is already compressed)
+          audioFolder.file(audioFileName, audioBuffer, {
+            compression: 'STORE' // No compression since FLAC is already compressed
+          });
+          
+          onProgress?.(70, 'Audio file embedded successfully');
+          console.log('Audio file embedded successfully');
+          
+        } catch (audioError: any) {
+          console.error('Failed to embed audio file:', audioError);
+          // Don't fail the entire save operation, just warn
+          console.warn('Project will be saved without embedded audio');
+          
+          // Save audio reference as fallback
+          audioFolder.file('audio_reference.json', JSON.stringify({
+            originalPath: projectData.project.audio.originalFile || projectData.project.audio.embeddedPath,
+            originalName: projectData.project.audio.originalName,
+            error: audioError.message,
+            note: "Audio embedding failed. File reference preserved."
+          }, null, 2));
+        }
+      } else if (audioFolder && projectData.project.audio?.originalFile) {
+        // Fallback: save reference for external audio files
+        console.log('Saving audio reference (external file)');
+        audioFolder.file('audio_reference.json', JSON.stringify({
+          originalPath: projectData.project.audio.originalFile,
+          originalName: projectData.project.audio.originalName,
+          note: "External audio file reference. Audio not embedded in project."
+        }, null, 2));
+      }
+      
+      onProgress?.(80, 'Generating project package...');
+      
+      // Generate ZIP with progress tracking
+      console.log('Generating ZIP package...');
       const content = await zip.generateAsync({ 
         type: 'nodebuffer', 
         compression: 'DEFLATE',
         compressionOptions: { 
-          level: 1 // Lower compression level for speed and memory efficiency
-        },
-        streamFiles: true // Enable streaming for large files
+          level: 1 // Lower compression for speed since FLAC is already compressed
+        }
+      }, (metadata) => {
+        // Progress callback for ZIP generation
+        const zipProgress = 80 + (metadata.percent * 0.15); // Use 15% for ZIP generation
+        onProgress?.(Math.round(zipProgress), 'Compressing project files...');
       });
+      
+      onProgress?.(95, 'Writing project file...');
       
       // Write to disk
       await fs.promises.writeFile(filePath, content);
       
+      onProgress?.(100, 'Project saved successfully');
       console.log(`Project saved successfully to: ${filePath}`);
+      console.log(`Final file size: ${this.formatBytes(content.length)}`);
+      
     } catch (error: any) {
       console.error('Error saving project:', error);
       throw new Error(`Failed to save project: ${error.message}`);
@@ -84,6 +163,8 @@ export class ProjectFileService {
 
   static async loadProject(filePath: string): Promise<ProjectData> {
     try {
+      console.log(`Loading project from: ${filePath}`);
+      
       // Read zip file
       const zipData = await fs.promises.readFile(filePath);
       const zip = await JSZip.loadAsync(zipData);
@@ -98,6 +179,7 @@ export class ProjectFileService {
       const clipsJson = await zip.file('metadata/clips.json')?.async('text');
       const historyJson = await zip.file('metadata/history.json')?.async('text');
       const preferencesJson = await zip.file('metadata/preferences.json')?.async('text');
+      const audioMetadataJson = await zip.file('metadata/audio.json')?.async('text');
       
       if (!projectJson || !transcriptionJson) {
         throw new Error('Invalid project file: missing required data files');
@@ -119,7 +201,11 @@ export class ProjectFileService {
         projectData.preferences = JSON.parse(preferencesJson);
       }
       
-      // Extract audio files to temporary location
+      if (audioMetadataJson) {
+        projectData.audioMetadata = JSON.parse(audioMetadataJson);
+      }
+      
+      // Extract embedded audio to temporary location
       await this.extractAudioFiles(zip, projectData);
       
       console.log(`Project loaded successfully from: ${filePath}`);
@@ -154,38 +240,92 @@ export class ProjectFileService {
     await fs.promises.mkdir(tempDir, { recursive: true });
     
     // Look for audio files in the audio folder
-    const audioFiles = zip.folder('audio')?.files || {};
+    const audioFolder = zip.folder('audio');
+    if (!audioFolder) {
+      console.log('No audio folder found in project');
+      return;
+    }
     
+    // Check for embedded audio file
+    const audioFiles = audioFolder.files;
+    let extractedAudioPath: string | null = null;
+    
+    // Look for the main audio file (audio.flac, audio.mp3, etc.)
     for (const [fileName, file] of Object.entries(audioFiles)) {
       if (fileName.includes('/') && !fileName.endsWith('/')) {
-        // This is a file, not a folder
         const baseName = path.basename(fileName);
         
-        if (baseName.startsWith('original.')) {
+        // Check if this is the main audio file
+        if (baseName.startsWith('audio.') && baseName !== 'audio_reference.json') {
           try {
-            console.log('Extracting embedded audio file using streaming...');
+            console.log(`Extracting embedded audio file: ${baseName}`);
             
-            // Use streaming extraction for large files to avoid memory issues
+            // Use streaming extraction for large files
             const audioBuffer = await file.async('nodebuffer');
             const tempAudioPath = path.join(tempDir, baseName);
             
-            // Write in chunks to avoid memory spikes
+            // Write audio file to temp directory
             await fs.promises.writeFile(tempAudioPath, audioBuffer);
             
-            // Update project data with temporary path
-            if (!projectData.project.audio) {
-              projectData.project.audio = {};
-            }
-            projectData.project.audio.originalFile = tempAudioPath;
-            projectData.project.audio.tempDirectory = tempDir;
-            
+            extractedAudioPath = tempAudioPath;
             console.log(`Extracted audio file to: ${tempAudioPath}`);
-            break; // Use the first original audio file found
+            console.log(`Extracted file size: ${this.formatBytes(audioBuffer.length)}`);
+            
+            break; // Use the first audio file found
           } catch (audioError: any) {
             console.error('Could not extract audio file:', audioError);
-            // Try to continue without audio
           }
         }
+      }
+    }
+    
+    if (extractedAudioPath) {
+      // Update project data with temporary path
+      if (!projectData.project.audio) {
+        projectData.project.audio = {};
+      }
+      
+      projectData.project.audio.extractedPath = extractedAudioPath;
+      projectData.project.audio.tempDirectory = tempDir;
+      
+      // Keep original metadata if available
+      if (projectData.audioMetadata) {
+        projectData.project.audio.originalName = projectData.audioMetadata.originalName;
+        projectData.project.audio.originalFormat = projectData.audioMetadata.originalFormat;
+        projectData.project.audio.embeddedFormat = projectData.audioMetadata.embeddedFormat;
+        projectData.project.audio.duration = projectData.audioMetadata.duration;
+        projectData.project.audio.channels = projectData.audioMetadata.channels;
+      }
+      
+    } else {
+      // Check for audio reference (fallback for external files)
+      const audioRefFile = audioFolder.files['audio/audio_reference.json'];
+      if (audioRefFile) {
+        try {
+          const refData = JSON.parse(await audioRefFile.async('text'));
+          console.log('Found audio reference:', refData);
+          
+          // Check if the referenced file still exists
+          if (refData.originalPath && fs.existsSync(refData.originalPath)) {
+            projectData.project.audio = {
+              originalFile: refData.originalPath,
+              originalName: refData.originalName,
+              isExternal: true
+            };
+            console.log('Using external audio file:', refData.originalPath);
+          } else {
+            console.warn('Referenced audio file not found:', refData.originalPath);
+            projectData.project.audio = {
+              error: 'Audio file not found',
+              originalName: refData.originalName,
+              originalPath: refData.originalPath
+            };
+          }
+        } catch (error) {
+          console.error('Failed to parse audio reference:', error);
+        }
+      } else {
+        console.log('No audio files found in project');
       }
     }
   }
@@ -288,5 +428,20 @@ export class ProjectFileService {
       console.error('Project validation error:', error);
       return false;
     }
+  }
+  
+  /**
+   * Format bytes as human-readable text
+   */
+  private static formatBytes(bytes: number, decimals: number = 2): string {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   }
 }

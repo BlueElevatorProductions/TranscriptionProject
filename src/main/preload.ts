@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDebugLog: (callback: (message: string) => void) => {
     ipcRenderer.on('debug-log', (event, message) => callback(message));
   },
+  onAudioConversionProgress: (callback: (data: {percent: number; status: string}) => void) => {
+    ipcRenderer.on('audio-conversion-progress', (event, data) => callback(data));
+  },
 
   // Remove listeners
   removeAllListeners: (channel: string) => {
@@ -94,6 +97,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Directory selection for new projects
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
+  
+  // Audio analysis and conversion (new enhanced import system)
+  analyzeAudio: (filePath: string) => ipcRenderer.invoke('analyze-audio', filePath),
+  getAudioRecommendation: (analysis: any) => ipcRenderer.invoke('get-audio-recommendation', analysis),
+  getSmartProjectSettings: (analysis: any) => ipcRenderer.invoke('get-smart-project-settings', analysis),
+  convertAudio: (inputPath: string, options: any) => ipcRenderer.invoke('convert-audio', inputPath, options),
+  
+  // User preferences management
+  loadUserPreferences: () => ipcRenderer.invoke('load-user-preferences'),
+  saveUserPreferences: (preferences: any) => ipcRenderer.invoke('save-user-preferences', preferences),
+  resetUserPreferences: () => ipcRenderer.invoke('reset-user-preferences'),
+  getTranscriptionService: (preferences: any) => ipcRenderer.invoke('get-transcription-service', preferences),
 });
 
 console.log('Preload script loaded successfully, electronAPI exposed');
@@ -129,6 +144,18 @@ export interface ElectronAPI {
   saveProjectDialog: (defaultName?: string) => Promise<{canceled: boolean; filePath?: string}>;
   loadProject: (filePath: string) => Promise<any>;
   saveProject: (projectData: any, filePath: string) => Promise<{success: boolean}>;
+  
+  // Audio analysis and conversion (new enhanced import system)
+  analyzeAudio: (filePath: string) => Promise<any>;
+  getAudioRecommendation: (analysis: any) => Promise<any>;
+  getSmartProjectSettings: (analysis: any) => Promise<any>;
+  convertAudio: (inputPath: string, options: any) => Promise<any>;
+  
+  // User preferences management
+  loadUserPreferences: () => Promise<any>;
+  saveUserPreferences: (preferences: any) => Promise<{success: boolean}>;
+  resetUserPreferences: () => Promise<any>;
+  getTranscriptionService: (preferences: any) => Promise<string>;
 }
 
 declare global {

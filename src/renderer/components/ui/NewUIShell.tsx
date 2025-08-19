@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Slider from '@radix-ui/react-slider';
-import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette, Download } from 'lucide-react';
 import { useAudio, useProject, useSelectedJob } from '../../contexts';
 import { Segment, SharedAudioState } from '../../types';
 import SecondaryPanel from '../SecondaryPanel';
@@ -13,6 +13,7 @@ import { usePersistedClips } from '../TranscriptEdit/usePersistedClips';
 import { GlassAudioPlayer } from './GlassAudioPlayer';
 import ApiSettings from '../Settings/ApiSettings';
 import ColorSettings from '../Settings/ColorSettings';
+import ImportSettings from '../Settings/ImportSettings';
 
 interface NewUIShellProps {
   // Any props from parent component
@@ -31,8 +32,9 @@ export const EnhancedSidebar: React.FC<{
   onOpenPlayback: () => void;
   onOpenApiSettings: () => void;
   onOpenColorSettings: () => void;
+  onOpenImportSettings: () => void;
   currentColor: string;
-}> = ({ mode, onModeChange, onNewProject, onOpenProject, onSaveProject, onOpenFonts, onOpenSpeakers, onOpenClips, onOpenPlayback, onOpenApiSettings, onOpenColorSettings, currentColor }) => {
+}> = ({ mode, onModeChange, onNewProject, onOpenProject, onSaveProject, onOpenFonts, onOpenSpeakers, onOpenClips, onOpenPlayback, onOpenApiSettings, onOpenColorSettings, onOpenImportSettings, currentColor }) => {
   return (
     <aside 
       className="text-white font-arial w-64 h-full flex flex-col" 
@@ -144,6 +146,13 @@ export const EnhancedSidebar: React.FC<{
             <h3 className="text-sm font-semibold mb-3 opacity-70">SETTINGS</h3>
             <div className="space-y-2">
               <button
+                onClick={onOpenImportSettings}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
+              >
+                <Download size={16} />
+                Import
+              </button>
+              <button
                 onClick={onOpenApiSettings}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white hover:bg-opacity-10 rounded transition-colors"
               >
@@ -159,7 +168,7 @@ export const EnhancedSidebar: React.FC<{
               </button>
             </div>
             <p className="text-xs opacity-60 mt-2">
-              Configure app settings and appearance.
+              Configure import, API keys, and appearance.
             </p>
           </div>
         </div>
@@ -576,9 +585,27 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   const audioFilePath = React.useMemo(() => {
     if (selectedJob?.filePath) {
       return selectedJob.filePath;
-    } else if (projectState.projectData?.audio?.originalFile) {
+    } else if (projectState.projectData?.project?.audio) {
+      const audioData = projectState.projectData.project.audio;
+      
+      // Priority order:
+      // 1. Extracted embedded audio (new system)
+      // 2. Original external file (fallback)
+      if (audioData.extractedPath) {
+        console.log('Using extracted embedded audio:', audioData.extractedPath);
+        return audioData.extractedPath;
+      } else if (audioData.originalFile) {
+        console.log('Using external audio file:', audioData.originalFile);
+        return audioData.originalFile;
+      }
+    }
+    
+    // Legacy fallback
+    if (projectState.projectData?.audio?.originalFile) {
+      console.log('Using legacy audio path:', projectState.projectData.audio.originalFile);
       return projectState.projectData.audio.originalFile;
     }
+    
     return null;
   }, [selectedJob, projectState.projectData]);
   
@@ -952,6 +979,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         onOpenPlayback={() => togglePanel('playback')}
         onOpenApiSettings={() => togglePanel('apiSettings')}
         onOpenColorSettings={() => togglePanel('colorSettings')}
+        onOpenImportSettings={() => togglePanel('importSettings')}
         currentColor={currentColor}
       />
       
@@ -1053,6 +1081,23 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         <ColorSettings
           currentColor={currentColor}
           onColorChange={handleColorChange}
+          onClose={() => setOpenPanel(null)}
+        />
+      </SecondaryPanel>
+      
+      {/* Import Settings Panel */}
+      <SecondaryPanel
+        open={openPanel === 'importSettings'}
+        title="Import Settings"
+        onClose={() => setOpenPanel(null)}
+        widthPx={450}
+        backgroundColor={currentColor}
+      >
+        <ImportSettings
+          onSave={(preferences) => {
+            console.log('Import preferences saved:', preferences);
+          }}
+          onCancel={() => setOpenPanel(null)}
           onClose={() => setOpenPanel(null)}
         />
       </SecondaryPanel>

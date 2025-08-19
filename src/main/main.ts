@@ -8,6 +8,9 @@ import { SimpleCloudTranscriptionService } from './services/SimpleCloudTranscrip
 import { ProjectFileManager } from './services/ProjectFileManager';
 import { ProjectFileService } from './services/ProjectFileService';
 import { ProjectPackageService } from './services/ProjectPackageService';
+import AudioAnalyzer from './services/AudioAnalyzer';
+import AudioConverter from './services/AudioConverter';
+import UserPreferencesService from './services/UserPreferences';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -34,6 +37,9 @@ class App {
   private readonly encryptionKey: string;
   private readonly apiKeysPath: string;
   private readonly projectManager: ProjectFileManager;
+  private readonly audioAnalyzer: AudioAnalyzer;
+  private readonly audioConverter: AudioConverter;
+  private readonly userPreferences: UserPreferencesService;
 
   constructor() {
     // Initialize encryption key (derived from machine-specific info)
@@ -44,6 +50,11 @@ class App {
     
     // Initialize project manager
     this.projectManager = new ProjectFileManager();
+    
+    // Initialize audio services
+    this.audioAnalyzer = new AudioAnalyzer();
+    this.audioConverter = new AudioConverter();
+    this.userPreferences = new UserPreferencesService(this.encryptionKey);
     
     this.initialize();
   }
@@ -66,9 +77,17 @@ class App {
 
     // Quit when all windows are closed, except on macOS
     app.on('window-all-closed', () => {
+      // Clean up temp files and resources
+      this.audioConverter.cleanup().catch(console.error);
+      
       if (process.platform !== 'darwin') {
         app.quit();
       }
+    });
+    
+    app.on('before-quit', () => {
+      // Clean up resources before app quits
+      this.audioConverter.cleanup().catch(console.error);
     });
 
     // Security: Prevent new window creation
@@ -596,6 +615,126 @@ class App {
         ]
       });
       return result;
+    });
+
+    // Audio analysis handlers
+    ipcMain.handle('analyze-audio', async (event, filePath: string) => {
+      try {
+        console.log('Analyzing audio file:', filePath);
+        const analysis = await this.audioAnalyzer.analyze(filePath);
+        console.log('Audio analysis complete:', analysis);
+        return analysis;
+      } catch (error) {
+        console.error('Audio analysis failed:', error);
+        throw new Error(`Failed to analyze audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    ipcMain.handle('get-audio-recommendation', async (event, analysis: any) => {
+      try {
+        const recommendation = this.audioAnalyzer.generateRecommendation(analysis);
+        console.log('Generated recommendation:', recommendation);
+        return recommendation;
+      } catch (error) {
+        console.error('Failed to generate recommendation:', error);
+        throw new Error(`Failed to generate recommendation: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    ipcMain.handle('get-smart-project-settings', async (event, analysis: any) => {
+      try {
+        const settings = this.audioAnalyzer.determineProjectSettings(analysis);
+        console.log('Generated smart settings:', settings);
+        return settings;
+      } catch (error) {
+        console.error('Failed to generate smart settings:', error);
+        throw new Error(`Failed to generate settings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    ipcMain.handle('convert-audio', async (event, inputPath: string, options: any) => {
+      try {
+        console.log('Converting audio:', inputPath, options);
+        
+        // Progress callback to send updates to renderer
+        const onProgress = (percent: number, status: string) => {
+          this.mainWindow?.webContents.send('audio-conversion-progress', {
+            percent,
+            status
+          });
+        };
+
+        let result;
+        if (options.action === 'convert-to-flac') {
+          result = await this.audioConverter.convertToFLAC(inputPath, {
+            targetSampleRate: options.targetSampleRate,
+            targetBitDepth: options.targetBitDepth,
+            onProgress
+          });
+        } else if (options.action === 'resample') {
+          result = await this.audioConverter.resampleAudio(
+            inputPath,
+            options.targetSampleRate,
+            options.targetBitDepth,
+            'flac',
+            { onProgress }
+          );
+        } else {
+          // Keep original
+          result = await this.audioConverter.copyOriginal(inputPath);
+        }
+
+        console.log('Audio conversion complete:', result);
+        return result;
+      } catch (error) {
+        console.error('Audio conversion failed:', error);
+        throw new Error(`Failed to convert audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    // User preferences management
+    ipcMain.handle('load-user-preferences', async (event) => {
+      try {
+        const preferences = await this.userPreferences.loadPreferences();
+        console.log('Loaded user preferences:', preferences);
+        return preferences;
+      } catch (error) {
+        console.error('Failed to load user preferences:', error);
+        throw new Error(`Failed to load preferences: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    ipcMain.handle('save-user-preferences', async (event, preferences: any) => {
+      try {
+        await this.userPreferences.savePreferences(preferences);
+        console.log('Saved user preferences:', preferences);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to save user preferences:', error);
+        throw new Error(`Failed to save preferences: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    ipcMain.handle('reset-user-preferences', async (event) => {
+      try {
+        const defaultPreferences = await this.userPreferences.resetToDefaults();
+        console.log('Reset user preferences to defaults:', defaultPreferences);
+        return defaultPreferences;
+      } catch (error) {
+        console.error('Failed to reset user preferences:', error);
+        throw new Error(`Failed to reset preferences: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    ipcMain.handle('get-transcription-service', async (event, preferences: any) => {
+      try {
+        const service = this.userPreferences.getTranscriptionService(preferences);
+        console.log('Generated transcription service:', service);
+        return service;
+      } catch (error) {
+        console.error('Failed to get transcription service:', error);
+        throw new Error(`Failed to get transcription service: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     });
 
     // REMOVED - Duplicate handlers, using clean project:save and project:load instead

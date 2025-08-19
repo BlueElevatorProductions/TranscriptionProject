@@ -69,6 +69,7 @@ import {
 
 // Components
 import ImportDialog from './components/ImportDialog/ImportDialog';
+import EnhancedImportDialog from './components/ImportDialog/EnhancedImportDialog';
 import ProjectImportDialog from './components/ImportDialog/ProjectImportDialog';
 import NewProjectDialog from './components/NewProject/NewProjectDialog';
 import { GlassProgressOverlay } from './components/ui/GlassProgressOverlay';
@@ -86,7 +87,7 @@ const AppMain: React.FC = () => {
 
   // Context hooks
   const { state: transcriptionState, actions: transcriptionActions } = useTranscription();
-  const { actions: projectActions } = useProject();
+  const { state: projectState, actions: projectActions } = useProject();
   
   // Error handling
   const { handleTranscriptionError } = useTranscriptionErrorHandler();
@@ -181,7 +182,7 @@ const AppMain: React.FC = () => {
 
   // IPC event handlers for transcription
   useEffect(() => {
-    const handleTranscriptionComplete = (completedJob: any) => {
+    const handleTranscriptionComplete = async (completedJob: any) => {
       console.log('=== RENDERER: TRANSCRIPTION COMPLETE EVENT RECEIVED ===');
       console.log('Renderer: Received transcription-complete event with data:', {
         hasJob: !!completedJob,
@@ -216,6 +217,16 @@ const AppMain: React.FC = () => {
           
           transcriptionActions.selectJob(jobData);
           console.log('Renderer: Called selectJob action');
+          
+          // Auto-save the project after transcription completes
+          try {
+            await projectActions.saveProject();
+            console.log('Renderer: Project auto-saved after transcription completion');
+          } catch (saveError) {
+            console.error('Renderer: Failed to auto-save project after transcription:', saveError);
+            // Don't throw - transcription completed successfully, save is just a bonus
+          }
+          
           console.log('=== RENDERER: TRANSCRIPTION COMPLETION HANDLING DONE ===');
         } else {
           console.error('Renderer: Invalid completion data - missing ID or result:', {
@@ -355,11 +366,11 @@ const AppMain: React.FC = () => {
       )}
 
       {showImportDialog && (
-        <ImportDialog
+        <EnhancedImportDialog
           onClose={() => setShowImportDialog(false)}
-          onImport={async (filePath, transcriptionService) => {
+          onImport={async (filePath, audioSettings, transcriptionSettings) => {
             try {
-              console.log('Starting import:', { filePath, transcriptionService });
+              console.log('Starting enhanced import:', { filePath, audioSettings });
               setShowImportDialog(false);
               
               if (!filePath) {
@@ -368,36 +379,91 @@ const AppMain: React.FC = () => {
               
               // Extract filename from path
               const fileName = filePath.split('/').pop() || 'unknown_file';
-              console.log('Processing audio file:', fileName, 'with service:', transcriptionService);
+              console.log('Processing audio file:', fileName, 'with settings:', audioSettings);
               
-              // Start transcription using electronAPI
-              if (window.electronAPI?.startTranscription) {
-                console.log('Calling startTranscription with:', filePath, transcriptionService);
-                const result = await window.electronAPI.startTranscription(filePath, transcriptionService);
-                console.log('Transcription start result:', result);
+              // First, convert/prepare the audio according to settings
+              const conversionOptions = {
+                action: audioSettings.storageFormat === 'flac' ? 'convert-to-flac' : 
+                       audioSettings.storageFormat === 'always-convert' ? 'convert-to-flac' : 'keep-original',
+                targetSampleRate: audioSettings.masterSampleRate,
+                targetBitDepth: audioSettings.masterBitDepth
+              };
+              
+              console.log('Converting audio with options:', conversionOptions);
+              const conversionResult = await (window as any).electronAPI.convertAudio(filePath, conversionOptions);
+              console.log('Audio conversion result:', conversionResult);
+              
+              // Update the project's audio information
+              const currentProject = projectState.projectData;
+              if (currentProject) {
+                const audioMetadata = {
+                  originalPath: filePath,
+                  originalName: fileName,
+                  originalFormat: filePath.split('.').pop()?.toLowerCase() || 'unknown',
+                  originalSampleRate: audioSettings.masterSampleRate,
+                  originalSize: conversionResult.originalSize,
+                  embeddedFormat: conversionResult.outputPath.split('.').pop()?.toLowerCase() || 'flac',
+                  embeddedSize: conversionResult.convertedSize,
+                  duration: conversionResult.duration,
+                  channels: 2, // Default, will be updated by analysis
+                  compressionRatio: conversionResult.compressionRatio,
+                  wasConverted: conversionResult.wasConverted,
+                  conversionMethod: conversionOptions.action
+                };
                 
-                if (result.success) {
-                  console.log('Transcription started successfully with job ID:', result.jobId);
-                  
-                  // Create and add the transcription job to the context
-                  const transcriptionJob: TranscriptionJob = {
-                    id: result.jobId,
-                    filePath: filePath,
-                    fileName: fileName,
-                    status: 'pending',
-                    progress: 0
-                  };
-                  
-                  transcriptionActions.addJob(transcriptionJob);
-                  console.log('Added transcription job to context:', transcriptionJob);
-                } else {
-                  throw new Error(result.error || 'Failed to start transcription');
-                }
-              } else {
-                throw new Error('Electron API not available for starting transcription');
+                // Update project with audio information
+                const updatedProject = {
+                  ...currentProject,
+                  project: {
+                    ...currentProject.project,
+                    audio: {
+                      embeddedPath: conversionResult.outputPath,
+                      originalFile: filePath,
+                      originalName: fileName,
+                      format: audioMetadata.embeddedFormat,
+                      duration: conversionResult.duration,
+                      channels: 2,
+                      embedded: true
+                    }
+                  },
+                  audioMetadata
+                };
+                
+                projectActions.loadProject(updatedProject);
+                console.log('Project updated with audio metadata');
               }
+              
+              // Get transcription service based on user selection
+              const transcriptionService = await (window as any).electronAPI.getTranscriptionService(transcriptionSettings);
+              console.log('Using transcription service:', transcriptionService, 'for method:', transcriptionSettings.method);
+              
+              // Now start transcription with converted audio
+              const transcriptionResult = await (window as any).electronAPI.startTranscription(
+                conversionResult.outputPath, 
+                transcriptionService
+              );
+              
+              if (transcriptionResult.success) {
+                console.log('Transcription started successfully with job ID:', transcriptionResult.jobId);
+                
+                // Create and add the transcription job to the context
+                const transcriptionJob: TranscriptionJob = {
+                  id: transcriptionResult.jobId,
+                  filePath: conversionResult.outputPath, // Use converted audio path
+                  fileName: fileName,
+                  status: 'pending',
+                  progress: 0
+                };
+                
+                transcriptionActions.addJob(transcriptionJob);
+                transcriptionActions.selectJob(transcriptionJob);
+                console.log('Job added to context:', transcriptionJob);
+              } else {
+                throw new Error(transcriptionResult.error || 'Failed to start transcription');
+              }
+              
             } catch (error) {
-              console.error('Import failed:', error);
+              console.error('Enhanced import failed:', error);
               handleTranscriptionError(error);
             }
           }}
@@ -405,6 +471,7 @@ const AppMain: React.FC = () => {
             console.log('Opening API settings');
             // TODO: Implement API settings dialog
           }}
+          isDragDrop={false}
         />
       )}
     </TranscriptionErrorBoundary>
