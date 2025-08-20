@@ -203,12 +203,14 @@ export class ProjectFileService {
       
       if (audioMetadataJson) {
         projectData.audioMetadata = JSON.parse(audioMetadataJson);
+        console.log('Audio metadata loaded:', projectData.audioMetadata);
       }
       
       // Extract embedded audio to temporary location
       await this.extractAudioFiles(zip, projectData);
       
       console.log(`Project loaded successfully from: ${filePath}`);
+      console.log('Project audio data:', projectData.project.audio);
       return projectData;
     } catch (error: any) {
       console.error('Error loading project:', error);
@@ -236,7 +238,9 @@ export class ProjectFileService {
   }
 
   private static async extractAudioFiles(zip: JSZip, projectData: ProjectData): Promise<void> {
+    console.log('=== Extracting audio files from project ===');
     const tempDir = path.join(app.getPath('temp'), 'transcription_project_' + Date.now());
+    console.log('Creating temp directory:', tempDir);
     await fs.promises.mkdir(tempDir, { recursive: true });
     
     // Look for audio files in the audio folder
@@ -248,15 +252,17 @@ export class ProjectFileService {
     
     // Check for embedded audio file
     const audioFiles = audioFolder.files;
+    console.log('Audio folder files:', Object.keys(audioFiles));
     let extractedAudioPath: string | null = null;
     
     // Look for the main audio file (audio.flac, audio.mp3, etc.)
     for (const [fileName, file] of Object.entries(audioFiles)) {
       if (fileName.includes('/') && !fileName.endsWith('/')) {
         const baseName = path.basename(fileName);
+        console.log('Checking file:', baseName);
         
-        // Check if this is the main audio file
-        if (baseName.startsWith('audio.') && baseName !== 'audio_reference.json') {
+        // Check if this is the main audio file (exclude metadata JSON files)
+        if (baseName.startsWith('audio.') && !baseName.endsWith('.json')) {
           try {
             console.log(`Extracting embedded audio file: ${baseName}`);
             
@@ -270,6 +276,10 @@ export class ProjectFileService {
             extractedAudioPath = tempAudioPath;
             console.log(`Extracted audio file to: ${tempAudioPath}`);
             console.log(`Extracted file size: ${this.formatBytes(audioBuffer.length)}`);
+            
+            // Verify the file was written correctly
+            const verifyStats = await fs.promises.stat(tempAudioPath);
+            console.log('Verified extracted file exists, size:', verifyStats.size);
             
             break; // Use the first audio file found
           } catch (audioError: any) {
@@ -287,6 +297,7 @@ export class ProjectFileService {
       
       projectData.project.audio.extractedPath = extractedAudioPath;
       projectData.project.audio.tempDirectory = tempDir;
+      console.log('Set extractedPath in project.audio:', extractedAudioPath);
       
       // Keep original metadata if available
       if (projectData.audioMetadata) {

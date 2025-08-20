@@ -26,26 +26,41 @@ export const usePersistedClips = ({
 
   // Initialize clips - either from saved data or generate from segments
   useEffect(() => {
-    // Only initialize once
-    if (hasInitialized) return;
-    
     if (initialClips && initialClips.length > 0) {
-      // Use persisted clips
+      // Use persisted clips, but normalize them to include new fields
       console.log('Using persisted clips:', initialClips.length);
-      setClips(initialClips);
+      const normalizedClips = initialClips.map((clip, index) => ({
+        ...clip,
+        order: clip.order ?? index, // Use existing order or assign based on index
+        status: clip.status ?? 'active' // Default to active if not specified
+      }));
+      setClips(normalizedClips);
+      
+      // Only notify parent if this is the first initialization and clips needed normalization
+      if (!hasInitialized && normalizedClips.some((clip, index) => 
+        clip.order !== initialClips[index].order || clip.status !== initialClips[index].status)
+      ) {
+        setTimeout(() => {
+          if (onClipsChange) {
+            onClipsChange(normalizedClips);
+          }
+        }, 0);
+      }
       setHasInitialized(true);
-    } else if (segments && segments.length > 0) {
+    } else if (!hasInitialized && segments && segments.length > 0) {
       // Generate clips from segments (first time only)
       console.log('Generating clips from segments:', segments.length);
       const generatedClips = generateClipsFromSegments(segments, speakerNames || {});
       setClips(generatedClips);
       setHasInitialized(true);
-      // Immediately save the generated clips
-      if (onClipsChange) {
-        onClipsChange(generatedClips);
-      }
+      // Save the generated clips (defer to avoid state update during render)
+      setTimeout(() => {
+        if (onClipsChange) {
+          onClipsChange(generatedClips);
+        }
+      }, 0);
     }
-  }, [initialClips, segments, speakerNames, hasInitialized]);
+  }, [initialClips, segments, speakerNames]);
 
   // Helper function to generate clips from segments
   const generateClipsFromSegments = (segments: Segment[], speakerNames: { [key: string]: string }): Clip[] => {
@@ -92,7 +107,9 @@ export const usePersistedClips = ({
             text: clipWords.map(w => w.word).join(' '),
             duration: clipWords[clipWords.length - 1].end - clipWords[0].start,
             createdAt: Date.now(),
-            modifiedAt: Date.now()
+            modifiedAt: Date.now(),
+            order: generatedClips.length,
+            status: 'active'
           };
           generatedClips.push(clip);
         }
@@ -119,7 +136,9 @@ export const usePersistedClips = ({
           text: clipWords.map(w => w.word).join(' '),
           duration: clipWords[clipWords.length - 1].end - clipWords[0].start,
           createdAt: Date.now(),
-          modifiedAt: Date.now()
+          modifiedAt: Date.now(),
+          order: generatedClips.length,
+          status: 'active'
         };
         generatedClips.push(clip);
       }
@@ -153,10 +172,12 @@ export const usePersistedClips = ({
         return clip;
       });
       
-      // Notify parent of changes
-      if (onClipsChange) {
-        onClipsChange(updatedClips);
-      }
+      // Notify parent of changes (defer to avoid state update during render)
+      setTimeout(() => {
+        if (onClipsChange) {
+          onClipsChange(updatedClips);
+        }
+      }, 0);
       
       return updatedClips;
     });
@@ -178,10 +199,12 @@ export const usePersistedClips = ({
       );
       
       console.log('Updated clips, calling onClipsChange');
-      // Notify parent of changes
-      if (onClipsChange) {
-        onClipsChange(updatedClips);
-      }
+      // Notify parent of changes (defer to avoid state update during render)
+      setTimeout(() => {
+        if (onClipsChange) {
+          onClipsChange(updatedClips);
+        }
+      }, 0);
       
       return updatedClips;
     });
@@ -237,10 +260,12 @@ export const usePersistedClips = ({
         ...prevClips.slice(clipIndex + 1)
       ];
 
-      // Notify parent of changes
-      if (onClipsChange) {
-        onClipsChange(updatedClips);
-      }
+      // Notify parent of changes (defer to avoid state update during render)
+      setTimeout(() => {
+        if (onClipsChange) {
+          onClipsChange(updatedClips);
+        }
+      }, 0);
 
       return updatedClips;
     });
@@ -282,10 +307,12 @@ export const usePersistedClips = ({
         ...prevClips.slice(secondIndex + 1)
       ];
 
-      // Notify parent of changes
-      if (onClipsChange) {
-        onClipsChange(updatedClips);
-      }
+      // Notify parent of changes (defer to avoid state update during render)
+      setTimeout(() => {
+        if (onClipsChange) {
+          onClipsChange(updatedClips);
+        }
+      }, 0);
 
       return updatedClips;
     });

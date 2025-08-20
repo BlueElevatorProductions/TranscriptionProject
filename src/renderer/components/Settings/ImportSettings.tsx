@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Zap, Save, RotateCcw } from 'lucide-react';
+import { Settings, Zap, Save, RotateCcw, AlertTriangle } from 'lucide-react';
+import { useProject } from '../../contexts';
 
 interface ImportPreferences {
   defaultTranscriptionMethod: 'local' | 'cloud';
@@ -22,6 +23,7 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({
   onCancel,
   onClose
 }) => {
+  const { state: projectState, actions: projectActions } = useProject();
   const [preferences, setPreferences] = useState<ImportPreferences>({
     defaultTranscriptionMethod: 'cloud',
     defaultLocalModel: 'base',
@@ -33,6 +35,8 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Load current preferences on mount
   useEffect(() => {
@@ -73,6 +77,38 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({
       setPreferences(defaultPrefs);
     } catch (error) {
       console.error('Failed to reset preferences:', error);
+    }
+  };
+
+  // Handle project reset to original state
+  const handleProjectReset = async () => {
+    setResetting(true);
+    try {
+      // Check if project has original transcription data
+      if (!projectState.projectData?.originalTranscription) {
+        console.warn('No original transcription data available for reset');
+        return;
+      }
+
+      // Reset clips to original state by regenerating them from original segments
+      const originalSegments = projectState.projectData.originalTranscription.segments;
+      const originalSpeakers = projectState.projectData.originalTranscription.speakers || {};
+      
+      // Update the project with original data
+      projectActions.updateSegments(originalSegments);
+      projectActions.updateSpeakers(originalSpeakers);
+      
+      // Clear any clips - they'll be regenerated from segments
+      projectActions.updateClips([]);
+      
+      console.log('Project reset to original state successfully');
+      setShowResetConfirmation(false);
+      onClose(); // Close settings panel
+      
+    } catch (error) {
+      console.error('Failed to reset project to original state:', error);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -287,6 +323,77 @@ const ImportSettings: React.FC<ImportSettingsProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Project Management */}
+        {projectState.projectData && (
+          <div>
+            <h3 className="text-sm font-semibold mb-3 opacity-70">PROJECT MANAGEMENT</h3>
+            <div className="space-y-3">
+              <div className="p-4 bg-red-900 bg-opacity-20 border border-red-500 border-opacity-30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle size={20} className="text-red-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="text-white font-medium mb-2">Reset to Original Transcript</h4>
+                    <p className="text-xs text-white text-opacity-70 mb-3">
+                      This will permanently remove all edits and restore the transcript to its original state from when it was first transcribed. 
+                      All deleted clips, reordered sections, and word corrections will be lost.
+                    </p>
+                    <button
+                      onClick={() => setShowResetConfirmation(true)}
+                      disabled={!projectState.projectData?.originalTranscription}
+                      className="flex items-center gap-2 px-3 py-2 bg-red-500 bg-opacity-80 hover:bg-opacity-100 disabled:bg-opacity-40 disabled:cursor-not-allowed text-white rounded text-sm transition-all"
+                    >
+                      <RotateCcw size={14} />
+                      Reset Project
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Confirmation Dialog */}
+        {showResetConfirmation && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-gray-800 border border-gray-600 rounded-lg p-6 max-w-md mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <AlertTriangle size={24} className="text-red-400" />
+                <h3 className="text-lg font-bold text-white">Confirm Reset</h3>
+              </div>
+              <p className="text-white text-opacity-80 mb-6">
+                Are you sure you want to reset this project to its original state? This action cannot be undone and will permanently remove:
+              </p>
+              <ul className="text-white text-opacity-70 text-sm mb-6 space-y-1 list-disc list-inside">
+                <li>All deleted clips and sections</li>
+                <li>Any reordered clips</li>
+                <li>Word corrections and edits</li>
+                <li>Speaker name changes</li>
+              </ul>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowResetConfirmation(false)}
+                  disabled={resetting}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white rounded transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleProjectReset}
+                  disabled={resetting}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 disabled:bg-red-700 text-white rounded transition-all"
+                >
+                  {resetting ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  ) : (
+                    <RotateCcw size={16} />
+                  )}
+                  {resetting ? 'Resetting...' : 'Reset Project'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-3 justify-end pt-4 border-t border-white border-opacity-20">

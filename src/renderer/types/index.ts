@@ -123,6 +123,8 @@ export interface Clip {
   duration: number;
   createdAt: number;
   modifiedAt: number;
+  order: number;                // For clip reordering
+  status: 'active' | 'deleted'; // For clip deletion/restoration
 }
 
 export interface ClipSettings {
@@ -255,7 +257,11 @@ export type EditActionType =
   | 'clip-create' 
   | 'word-insert' 
   | 'word-delete' 
-  | 'paragraph-break';
+  | 'paragraph-break'
+  | 'selection-delete'   // Delete selected words (creates/marks clips as deleted)
+  | 'clip-restore'      // Restore deleted clip
+  | 'clip-reorder'      // Reorder clips
+  | 'reset-to-original'; // Reset entire project to original state
 
 export interface EditAction {
   type: EditActionType;

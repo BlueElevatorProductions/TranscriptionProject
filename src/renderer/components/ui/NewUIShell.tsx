@@ -181,6 +181,7 @@ export const EnhancedSidebar: React.FC<{
 export const EnhancedTranscript: React.FC<{ 
   mode: string;
   fontSettings?: FontSettings;
+  onWordClick?: (timestamp: number) => void;
   clipsHook?: {
     clips: any[];
     selectedClipId: string | null;
@@ -192,7 +193,7 @@ export const EnhancedTranscript: React.FC<{
     getAdjustedPlaybackTime?: (deletedWordIds: Set<string>, targetTime: number) => number;
     getOriginalTimeFromAdjusted?: (deletedWordIds: Set<string>, adjustedTime: number) => number;
   };
-}> = ({ mode, fontSettings, clipsHook }) => {
+}> = ({ mode, fontSettings, onWordClick, clipsHook }) => {
   const { state: audioState } = useAudio();
   const { state: projectState } = useProject();
   const { selectedJob } = useSelectedJob();
@@ -242,9 +243,9 @@ export const EnhancedTranscript: React.FC<{
   }, [audioState.currentTime, segments]);
   
   const handleWordClick = (start: number) => {
-    // Seek to word position
-    if ((window as any).electronAPI?.seekTo) {
-      (window as any).electronAPI.seekTo(start);
+    // Seek to word position using the provided callback
+    if (onWordClick) {
+      onWordClick(start);
     }
   };
   
@@ -543,6 +544,17 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   const { selectedJob } = useSelectedJob();
   const { state: audioState, actions: audioActions } = useAudio();
   
+  // Custom play handler from ClipBasedTranscript (for cursor-based seeking in Edit Mode)
+  const [customPlayHandler, setCustomPlayHandler] = useState<(() => void) | null>(null);
+  
+  // Virtual timeline functions from ClipBasedTranscript (for Listen Mode)
+  const [virtualTimelineFunctions, setVirtualTimelineFunctions] = useState<{
+    getVirtualTime: (originalTime: number) => number;
+    getOriginalTime: (virtualTime: number) => number;
+    getVirtualDuration: () => number;
+    getActiveClips: () => any[];
+  } | null>(null);
+  
   // Update font settings when project data changes
   useEffect(() => {
     if (projectState.projectData?.fontSettings) {
@@ -571,13 +583,18 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     return projectState.projectData?.clips?.clips || [];
   }, [projectState.projectData]);
   
+  // Stable callback for clips changes
+  const handleClipsChange = React.useCallback((updatedClips) => {
+    projectActions.updateClips(updatedClips);
+  }, [projectActions]);
+
   // Initialize clips hook with persisted clips
   const clipsHook = usePersistedClips({
     initialClips: persistedClips,
     segments, // Used only if no persisted clips exist
     speakerNames: projectState.globalSpeakers,
     setSpeakerNames: (speakers) => projectActions.updateSpeakers(speakers),
-    onClipsChange: (updatedClips) => projectActions.updateClips(updatedClips)
+    onClipsChange: handleClipsChange
   });
   
   
@@ -590,25 +607,33 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
       
       // Priority order:
       // 1. Extracted embedded audio (new system)
-      // 2. Original external file (fallback)
+      // 2. Embedded path (from conversion)
+      // 3. Original external file (fallback)
       if (audioData.extractedPath) {
-        console.log('Using extracted embedded audio:', audioData.extractedPath);
         return audioData.extractedPath;
+      } else if (audioData.embeddedPath) {
+        return audioData.embeddedPath;
       } else if (audioData.originalFile) {
-        console.log('Using external audio file:', audioData.originalFile);
         return audioData.originalFile;
       }
     }
     
     // Legacy fallback
     if (projectState.projectData?.audio?.originalFile) {
-      console.log('Using legacy audio path:', projectState.projectData.audio.originalFile);
       return projectState.projectData.audio.originalFile;
     }
     
     return null;
   }, [selectedJob, projectState.projectData]);
   
+  // Debug audio path
+  React.useEffect(() => {
+    console.log('NewUIShell - Audio file path:', audioFilePath);
+    if (projectState.projectData?.project?.audio) {
+      console.log('NewUIShell - Project audio data:', projectState.projectData.project.audio);
+    }
+  }, [audioFilePath, projectState.projectData]);
+
   // Load audio file when path changes
   useEffect(() => {
     let blobUrl: string | null = null;
@@ -668,15 +693,32 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     };
   }, [audioFilePath]);
   
+  // Stable callback for setting audio source
+  const setAudioSourceCallback = React.useCallback((path: string, duration: number) => {
+    audioActions.setAudioSource(path, duration);
+  }, [audioActions]);
+
+  // Stable callback for updating audio time
+  const updateAudioTimeCallback = React.useCallback((currentTime: number) => {
+    audioActions.updateAudioState({ currentTime });
+  }, [audioActions]);
+
   // Set up audio element when blob URL is ready
   useEffect(() => {
-    if (audioRef.current && audioBlobUrl && audioRef.current.src !== audioBlobUrl) {
+    // Only run if we have a valid blob URL
+    if (!audioBlobUrl) {
+      return;
+    }
+    
+    console.log('NewUIShell - Setting up audio element:', { audioBlobUrl, hasAudioRef: !!audioRef.current });
+    if (audioRef.current && audioRef.current.src !== audioBlobUrl) {
+      console.log('NewUIShell - Setting audio src:', audioBlobUrl);
       audioRef.current.src = audioBlobUrl;
       
       const handleLoadedData = () => {
         setIsAudioReady(true);
         setDuration(audioRef.current?.duration || 0);
-        audioActions.setAudioSource(audioFilePath || '', audioRef.current?.duration || 0);
+        setAudioSourceCallback(audioFilePath || '', audioRef.current?.duration || 0);
       };
       
       const handleCanPlay = () => {
@@ -692,10 +734,36 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           clearInterval(updateInterval);
         }
         updateInterval = setInterval(() => {
-          if (audioRef.current && !isSeekingRef.current && !audioRef.current.paused) {
-            // Add small offset to compensate for processing delays
-            const audioTime = audioRef.current.currentTime + 0.05; // 50ms ahead
-            audioActions.updateAudioState({ currentTime: audioTime });
+          try {
+            if (audioRef.current && !isSeekingRef.current && !audioRef.current.paused) {
+              // Add small offset to compensate for processing delays
+              const audioTime = audioRef.current.currentTime + 0.05; // 50ms ahead
+              
+              // In Listen Mode, check if we're in a deleted section and skip it
+              if (mode === 'listen' && clipsHook?.clips) {
+                const clips = clipsHook.clips;
+                const deletedClips = clips.filter(c => c.status === 'deleted');
+                
+                for (const deletedClip of deletedClips) {
+                  if (audioTime >= deletedClip.startTime && audioTime < deletedClip.endTime) {
+                    console.log('NewUIShell - Skipping deleted section:', deletedClip.id);
+                    // Jump to the end of the deleted section
+                    audioRef.current.currentTime = deletedClip.endTime;
+                    isSeekingRef.current = true;
+                    setTimeout(() => { isSeekingRef.current = false; }, 100);
+                    return;
+                  }
+                }
+              }
+              
+              // Only update if time has changed (avoid redundant updates)
+              if (Math.abs(audioTime - (audioRef.current as any).lastReportedTime || 0) > 0.01) {
+                (audioRef.current as any).lastReportedTime = audioTime;
+                updateAudioTimeCallback(audioTime);
+              }
+            }
+          } catch (error) {
+            console.error('Error in main time update interval:', error);
           }
         }, 50); // 50ms = 20 updates per second
       };
@@ -729,20 +797,75 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         }
       };
     }
-  }, [audioBlobUrl, audioFilePath, audioActions]);
+  }, [audioBlobUrl]);
   
   // Handle play/pause state changes
   useEffect(() => {
+    console.log('NewUIShell - Play/pause state change:', { 
+      isPlaying: audioState.isPlaying, 
+      isAudioReady, 
+      hasAudioRef: !!audioRef.current,
+      audioPaused: audioRef.current?.paused 
+    });
+    
     if (audioRef.current && isAudioReady) {
       if (audioState.isPlaying && audioRef.current.paused) {
+        console.log('NewUIShell - Attempting to play audio...');
         audioRef.current.play().catch(error => {
           console.error('NewUIShell - Audio play failed:', error);
         });
       } else if (!audioState.isPlaying && !audioRef.current.paused) {
+        console.log('NewUIShell - Pausing audio...');
         audioRef.current.pause();
       }
+    } else {
+      console.log('NewUIShell - Cannot play/pause:', { isAudioReady, hasAudioRef: !!audioRef.current });
     }
   }, [audioState.isPlaying, isAudioReady]);
+  
+  // Fallback time update mechanism - ensures time updates even if audio events are missed
+  const timeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    if (audioState.isPlaying && isAudioReady && audioRef.current) {
+      // Clear any existing interval
+      if (timeUpdateIntervalRef.current) {
+        clearInterval(timeUpdateIntervalRef.current);
+      }
+      
+      timeUpdateIntervalRef.current = setInterval(() => {
+        try {
+          if (audioRef.current && !isSeekingRef.current && !audioRef.current.paused) {
+            const audioTime = audioRef.current.currentTime + 0.05;
+            
+            // Only update if time has changed and main interval hasn't updated recently
+            const lastReportedTime = (audioRef.current as any).lastReportedTime || 0;
+            const timeDiff = Math.abs(audioTime - lastReportedTime);
+            
+            if (timeDiff > 0.08) { // If more than 80ms since last update
+              (audioRef.current as any).lastReportedTime = audioTime;
+              updateAudioTimeCallback(audioTime);
+            }
+          }
+        } catch (error) {
+          console.error('Error in fallback time update:', error);
+        }
+      }, 100); // 100ms = 10 updates per second (less frequent than main interval)
+      
+    } else {
+      if (timeUpdateIntervalRef.current) {
+        clearInterval(timeUpdateIntervalRef.current);
+        timeUpdateIntervalRef.current = null;
+      }
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (timeUpdateIntervalRef.current) {
+        clearInterval(timeUpdateIntervalRef.current);
+      }
+    };
+  }, [audioState.isPlaying, isAudioReady, updateAudioTimeCallback]);
   
   // Handle seek
   useEffect(() => {
@@ -1113,18 +1236,41 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           position: 'relative'
         }}
       >
-        {mode === 'edit' ? (
-          <ClipBasedTranscript mode={mode} clipsHook={clipsHook} fontSettings={fontSettings} />
-        ) : (
-          <EnhancedTranscript mode={mode} clipsHook={clipsHook} fontSettings={fontSettings} />
-        )}
+        <ClipBasedTranscript 
+          mode={mode} 
+          clipsHook={clipsHook} 
+          fontSettings={fontSettings}
+          onClipsChange={handleClipsChange}
+          isPlaying={audioState.isPlaying}
+          onSeek={(timestamp) => {
+            // In Listen Mode, use virtual timeline; in Edit Mode, use direct seeking
+            if (mode === 'listen' && virtualTimelineFunctions) {
+              // Convert virtual time back to original time for audio seeking
+              const originalTime = virtualTimelineFunctions.getOriginalTime(timestamp);
+              audioActions.seek(originalTime);
+            } else {
+              audioActions.seek(timestamp);
+            }
+          }}
+          onPlay={() => audioActions.play()}
+          onCustomPlay={(handler) => setCustomPlayHandler(() => handler)}
+          onVirtualTimelineFunctions={(functions) => setVirtualTimelineFunctions(functions)}
+        />
         
         {/* Glass Audio Player - positioned within transcript area */}
         <GlassAudioPlayer
         isVisible={openPanel === 'playback'}
         isPlaying={audioState.isPlaying}
-        currentTime={audioState.currentTime}
-        duration={audioState.duration}
+        currentTime={
+          mode === 'listen' && virtualTimelineFunctions 
+            ? virtualTimelineFunctions.getVirtualTime(audioState.currentTime)
+            : audioState.currentTime
+        }
+        duration={
+          mode === 'listen' && virtualTimelineFunctions 
+            ? virtualTimelineFunctions.getVirtualDuration()
+            : audioState.duration
+        }
         volume={audioState.volume}
         speed={audioState.playbackSpeed}
         fileName={selectedJob?.fileName || projectState.projectData?.project?.name || 'Audio'}
@@ -1132,13 +1278,30 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           if (audioState.isPlaying) {
             audioActions.pause();
           } else {
-            audioActions.play();
+            // Use custom play handler in Edit Mode, normal play otherwise
+            if (mode === 'edit' && customPlayHandler) {
+              customPlayHandler();
+            } else {
+              audioActions.play();
+            }
           }
         }}
-        onSeek={(time) => audioActions.seek(time)}
+        onSeek={(time) => {
+          if (mode === 'listen' && virtualTimelineFunctions) {
+            // Convert virtual time to original time for audio seeking
+            const originalTime = virtualTimelineFunctions.getOriginalTime(time);
+            audioActions.seek(originalTime);
+          } else {
+            audioActions.seek(time);
+          }
+        }}
         onSkipToClipStart={() => {
+          const clips = mode === 'listen' && virtualTimelineFunctions 
+            ? virtualTimelineFunctions.getActiveClips() 
+            : clipsHook.clips;
+            
           // Find current clip and skip to its start or previous clip
-          const currentClip = clipsHook.clips.find(
+          const currentClip = clips.find(
             clip => audioState.currentTime >= clip.startTime && audioState.currentTime <= clip.endTime
           );
           if (currentClip) {
@@ -1147,9 +1310,9 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
               audioActions.seek(currentClip.startTime);
             } else {
               // Otherwise, go to previous clip
-              const currentIndex = clipsHook.clips.indexOf(currentClip);
+              const currentIndex = clips.indexOf(currentClip);
               if (currentIndex > 0) {
-                const prevClip = clipsHook.clips[currentIndex - 1];
+                const prevClip = clips[currentIndex - 1];
                 audioActions.seek(prevClip.startTime);
               } else {
                 audioActions.seek(0);
@@ -1160,14 +1323,18 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           }
         }}
         onSkipToClipEnd={() => {
+          const clips = mode === 'listen' && virtualTimelineFunctions 
+            ? virtualTimelineFunctions.getActiveClips() 
+            : clipsHook.clips;
+            
           // Find current clip and skip to next clip
-          const currentClip = clipsHook.clips.find(
+          const currentClip = clips.find(
             clip => audioState.currentTime >= clip.startTime && audioState.currentTime <= clip.endTime
           );
           if (currentClip) {
-            const currentIndex = clipsHook.clips.indexOf(currentClip);
-            if (currentIndex < clipsHook.clips.length - 1) {
-              const nextClip = clipsHook.clips[currentIndex + 1];
+            const currentIndex = clips.indexOf(currentClip);
+            if (currentIndex < clips.length - 1) {
+              const nextClip = clips[currentIndex + 1];
               audioActions.seek(nextClip.startTime);
               // Auto-play the next clip
               if (!audioState.isPlaying) {
@@ -1177,9 +1344,9 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
               // If last clip, go to its end
               audioActions.seek(currentClip.endTime);
             }
-          } else if (clipsHook.clips.length > 0) {
+          } else if (clips.length > 0) {
             // If between clips, find next clip
-            const nextClip = clipsHook.clips.find(clip => clip.startTime > audioState.currentTime);
+            const nextClip = clips.find(clip => clip.startTime > audioState.currentTime);
             if (nextClip) {
               audioActions.seek(nextClip.startTime);
               if (!audioState.isPlaying) {

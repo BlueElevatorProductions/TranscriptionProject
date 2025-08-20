@@ -151,6 +151,40 @@ The main interface component featuring:
 - **Word Synchronization**: Real-time highlighting during playback
 - **Interactive Navigation**: Click-to-seek functionality
 
+#### Word-Level Playback Features (Listen Mode)
+- **Word Highlighting**: During playback, individual words are highlighted with blue background as they're spoken
+  - Uses precise word-level timestamps from transcription
+  - Updates 20 times per second (50ms intervals) for smooth highlighting
+  - 50ms lookahead offset compensates for rendering delays
+- **Click-to-Seek**: Click any word to instantly jump audio playback to that timestamp
+  - Audio immediately seeks to the clicked word's start time
+  - Scrubber position updates to match the new playback time
+  - Word highlighting continues from the new position
+  - Works with both clips-based and segments-based transcript rendering
+
+#### Mode-Specific Word Interactions
+- **Listen Mode**: Single-click words for instant audio seeking and playback navigation
+- **Edit Mode**: 
+  - **Single-click words**: Position cursor for smart audio seeking
+    - When audio is stopped: Immediately seeks to clicked word's timestamp
+    - When audio is playing: Moves cursor silently without interrupting playback
+    - Press spacebar OR play button to resume from cursor position when audio is stopped
+  - **Double-click words**: Inline editing for correcting transcription errors
+  - **Right-click words**: Context menu (Edit/Delete/Split)
+
+#### Audio Loading Process
+When opening an existing project:
+1. **ZIP Extraction**: ProjectFileService extracts the .transcript ZIP file
+2. **Audio Detection**: Scans `audio/` folder for files starting with `audio.` (excluding `.json` metadata files)
+3. **Temporary Extraction**: Audio file extracted to system temp directory (`/tmp/transcription_project_*`)
+4. **Path Resolution**: NewUIShell resolves audio path in priority order:
+   - `extractedPath`: Temp path to extracted embedded audio (preferred)
+   - `embeddedPath`: Original embedded file path (fallback)  
+   - `originalFile`: External audio file reference (last resort)
+5. **IPC Loading**: Audio file loaded via Electron IPC as ArrayBuffer
+6. **Blob Creation**: ArrayBuffer converted to Blob URL for HTML5 audio element
+7. **Playback Ready**: Audio synchronization and word highlighting enabled
+
 ### Project System
 - **ZIP-based Projects**: Self-contained `.transcript` files
 - **Metadata Management**: Project settings, speaker info, clips
@@ -245,8 +279,10 @@ ZIP archives containing:
 - `transcription.json`: Complete transcript with word timestamps
 - `metadata/speakers.json`: Speaker names and mappings  
 - `metadata/clips.json`: Audio clip definitions and boundaries
-- `audio/`: Embedded audio files (FLAC compressed for professional quality)
-- `audioMetadata.json`: Original audio file information and conversion details
+- `metadata/audio.json`: Original audio file information and conversion details
+- `audio/`: Embedded audio files and metadata
+  - `audio.flac` (or `audio.mp3`, `audio.wav`, etc.): The actual embedded audio file
+  - `audio_reference.json`: Fallback reference for external audio files (when embedding fails)
 
 ### Configuration
 - API keys: `~/.config/TranscriptionProject/api-keys.enc` (AES-256 encrypted)
@@ -377,7 +413,190 @@ Save to Project File → UI Updates
 
 This system ensures transcription service errors can be permanently corrected with immediate visual feedback and persistent storage.
 
-## Recent Updates (December 2024 - Latest)
+## Recent Updates (August 2025 - Latest)
+
+### ✅ Complete Word-Only Cursor Navigation System (Latest)
+
+#### **Advanced Text Selection & Editing**
+- **Click-and-Drag Selection**: Comprehensive text selection within clips
+  - **Mouse Drag**: Click and drag to select multiple words within a clip
+  - **Visual Feedback**: Selected words highlighted with blue background
+  - **Cross-Word Selection**: Seamlessly select across multiple words
+  - **Enhanced Debugging**: Comprehensive logging for troubleshooting selection issues
+- **Keyboard-Based Selection**: Professional text selection using keyboard shortcuts
+  - **Shift+Arrow Keys**: Extend selection word-by-word in any direction (left/right/up/down)
+  - **Selection Anchoring**: Smart anchor system for extending selections from cursor position
+  - **Multi-Line Selection**: Up/Down arrows navigate between lines while maintaining word-level precision
+
+#### **Professional Cursor Navigation**
+- **Word-Only Movement**: Arrow keys move cursor between words (no character-level positioning)
+  - **Left/Right Arrows**: Move cursor between words, automatically skipping spaces
+  - **Up/Down Arrows**: Navigate between lines using DOM positioning for accurate vertical movement
+  - **Cross-Clip Navigation**: Seamlessly move cursor between different clips
+  - **Space-Skipping Logic**: Single arrow press jumps full words, never stops mid-word
+- **Visual Cursor Design**: Custom serif-style cursor that scales with font size
+  - **Classic Design**: Traditional serif cursor with top/bottom serifs and vertical line
+  - **Font-Responsive**: Automatically scales with user's font size preferences
+  - **High Contrast**: Clear visibility against any background
+
+#### **Enhanced Clip Splitting with Selections**
+- **Return Key Magic**: Enter key creates new clips based on context
+  - **Cursor Position**: Press Enter at cursor to split clip at that word boundary
+  - **Text Selection**: Select text and press Enter to create three clips:
+    - **Before Selection**: Words before the selection become first clip
+    - **Selected Text**: Selected words become middle clip  
+    - **After Selection**: Words after the selection become third clip
+  - **Smart Boundaries**: Handles edge cases (selection at start/end of clip)
+  - **Atomic Operations**: All three clips created simultaneously for data integrity
+- **Delete Key Enhancement**: Delete key with selections creates clip boundaries like Enter
+  - **Same Logic**: Selection deletion creates same three-clip structure
+  - **Middle Clip Deleted**: Selected portion becomes deleted clip (can be restored)
+  - **Professional Workflow**: Perfect for removing unwanted sections while maintaining structure
+
+#### **Interactive Hover Effects**
+- **Clean Word Highlighting**: Enhanced word hover effects
+  - **Blue Background Only**: Removed underlines, keeping clean blue highlighting
+  - **Smooth Transitions**: Subtle hover animations for professional feel
+  - **Mode-Aware**: Different hover behaviors for Listen vs Edit mode
+
+#### **Comprehensive Debugging System**
+- **Selection State Tracking**: Real-time monitoring of selection changes
+  - **Jump Detection**: Automatically detects unexpected selection jumps
+  - **Clear Tracking**: Monitors when selections are cleared and why
+  - **Stack Traces**: Full call stack for every selection change
+  - **Context Labels**: Each change labeled with its trigger (e.g., 'drag-final', 'word-click', 'empty-space-click')
+- **Mouse Event Analysis**: Detailed logging of all mouse interactions
+  - **Coordinate Tracking**: Precise mouse position logging
+  - **Target Analysis**: Shows exactly what element was clicked/dragged
+  - **Drag Distance**: Monitors drag distance and movement patterns
+  - **Event Timing**: Timestamp tracking for analyzing event sequences
+- **Click Event Debugging**: Specialized logging for click behavior
+  - **Word vs Empty Space**: Distinguishes between word clicks and empty space clicks
+  - **Selection Clearing**: Tracks why selections are/aren't cleared
+  - **Event Bubbling**: Monitors event propagation and target elements
+
+#### **Smart Cursor-Based Seeking in Edit Mode**
+- **Intelligent Word Clicking**: Enhanced Edit Mode with smart cursor positioning and audio seeking
+  - **Click-to-Position**: Single-click any word to position cursor at that timestamp
+  - **Smart Seeking Logic**: 
+    - When audio is stopped: Immediately seeks to clicked word's timestamp
+    - When audio is playing: Moves cursor silently without interrupting playback
+  - **Resume from Cursor**: Press spacebar OR play button to resume from cursor position when audio is stopped
+  - **Visual Feedback**: Clicked words highlight with blue background to show cursor position
+  - **Unified Play Control**: Both spacebar and Glass Audio Player play button respect cursor position in Edit Mode
+- **Enhanced User Experience**: Allows precise audio navigation during transcript editing without disrupting playback flow
+- **Mode-Specific Behavior**: Different click behaviors for Listen Mode (immediate seek) vs Edit Mode (cursor positioning)
+
+#### **Technical Implementation Details**
+
+##### **Core Components Architecture**
+```typescript
+// Primary component managing word-only navigation
+ClipBasedTranscript.tsx:
+├── Selection State Management
+│   ├── selectedWords: Set<string>       // Currently selected word IDs
+│   ├── selectionAnchor: WordPosition    // Starting point for Shift+click selections
+│   └── wordCursorPosition: WordPosition // Current cursor position between words
+├── Drag Selection System
+│   ├── isDragging: boolean              // Active drag state
+│   ├── dragStart: DragPosition          // Drag starting coordinates & word
+│   ├── dragCurrent: DragPosition        // Current drag position & word
+│   └── hasDraggedMinDistance: boolean   // Prevents accidental drags
+└── Navigation Functions
+    ├── moveCursorByWord()              // Arrow key navigation
+    ├── findWordInDirection()           // Up/down navigation helper
+    ├── handleMouseDown/Move/Up()       // Drag selection handling
+    └── handleSelectionSplit()          // Enter key splitting logic
+```
+
+##### **Key Navigation Functions**
+- **`moveCursorByWord(direction, extendSelection)`**: Handles all arrow key navigation
+  - Supports left/right word-by-word movement with space-skipping
+  - Implements up/down line navigation using DOM positioning
+  - Extends selections when `extendSelection` is true (Shift+arrow)
+  - Cross-clip navigation for seamless cursor movement
+
+- **`findWordInDirection(currentPos, direction)`**: Vertical navigation algorithm  
+  - Uses `getBoundingClientRect()` to find word positions
+  - Calculates target Y coordinate for up/down movement
+  - Finds closest word at target line using horizontal position
+  - Returns word position or null if no suitable word found
+
+- **`handleSelectionSplit()`**: Enter key logic for creating three clips
+  - Analyzes selected words to find contiguous ranges
+  - Creates `firstPart`, `middlePart`, and `lastPart` clips
+  - Uses atomic clip replacement to maintain data integrity
+  - Properly handles edge cases (selection at start/end)
+
+##### **Debugging Architecture**
+- **`debugSetSelectedWords(selection, context)`**: Enhanced selection state wrapper
+  - Detects selection jumps and unexpected clears
+  - Provides stack traces for every selection change
+  - Labels each change with contextual information
+  - Automatically logs warnings for problematic patterns
+
+- **Mouse Event Debugging**: Comprehensive event analysis
+  - Logs all mouse coordinates, targets, and timing
+  - Tracks drag distances and movement patterns  
+  - Monitors event bubbling and propagation
+  - Provides detailed click vs drag differentiation
+
+##### **Data Flow for Key Operations**
+```
+Word Selection:
+User Click → findWordAtPosition() → debugSetSelectedWords() → 
+setSelectionAnchor() → Visual Highlight Update
+
+Drag Selection:  
+Mouse Down → handleMouseDown() → setDragStart() →
+Mouse Move → handleMouseMove() → updateDragSelection() →
+Mouse Up → handleMouseUp() → Final Selection Set
+
+Enter Key Splitting:
+Enter Pressed → handleSelectionSplit() → Create 3 Clips →
+onClipsChange() → UI Update → Project Save
+
+Arrow Navigation:
+Arrow Key → moveCursorByWord() → findWordInDirection() →
+setWordCursorPosition() → updateSelectionFromAnchor() → Visual Update
+```
+
+##### **Selection State Management**
+- **Word IDs**: Each word identified as `${clipId}-${wordIndex}` for unique tracking
+- **Selection Set**: Uses `Set<string>` for O(1) lookup performance
+- **Anchor System**: Tracks starting point for Shift+click range selections
+- **Cursor Position**: Separate state for visual cursor between words
+- **Drag State**: Multi-stage drag handling with distance thresholds
+
+##### **Event Handling Architecture**
+- **Global Keyboard Handler**: Captures arrow keys and Enter/Delete at window level
+- **ContentEditable Events**: Local handlers for arrow keys within clips
+- **Mouse Events**: Three-stage handling (down/move/up) with coordinate tracking
+- **Focus Management**: Proper focus handling to avoid input field interference
+- **Event Prevention**: Strategic `preventDefault()` to override browser defaults
+
+This architecture provides a robust, debuggable foundation for professional transcript editing with word-level precision and comprehensive user interaction support.
+
+### ✅ Word Click-to-Seek Fix for Listen Mode
+- **Fixed Word Clicking**: Restored click-to-seek functionality in Listen Mode
+  - **Root Cause**: EnhancedTranscript component was using non-existent `electronAPI.seekTo()` method
+  - **Solution**: Implemented proper prop-based architecture passing `audioActions.seek` from NewUIShell to EnhancedTranscript
+  - **Word Interaction**: Single-click any word in Listen Mode to instantly jump audio playback to that timestamp
+  - **Scrubber Sync**: Scrubber position automatically updates to match clicked word's timestamp
+  - **Dual Time Updates**: Robust time update system with main interval (50ms) and fallback interval (100ms) for reliable playback tracking
+
+### ✅ Audio Playback Fix for Reloaded Projects
+- **Fixed Audio Loading Bug**: Resolved issue where audio wouldn't play after reloading saved projects
+  - **Root Cause**: ProjectFileService was incorrectly extracting `audio.json` metadata files instead of actual audio files
+  - **Solution**: Updated audio detection logic to exclude `.json` files, only extracting actual audio files (`audio.flac`, `audio.mp3`, etc.)
+  - **Path Resolution**: Enhanced audio path priority system with proper fallback order
+  - **Debugging**: Added comprehensive logging throughout audio loading pipeline
+- **Improved Project File Structure**: Clarified embedded audio organization in ZIP archives
+  - Audio files stored in `audio/` folder with consistent naming (`audio.{format}`)
+  - Metadata files properly separated from actual audio content
+  - Temporary extraction to system temp directory for secure playback
+
+## Recent Updates (December 2024)
 
 ### ✅ Professional Audio Import System & Streamlined Transcription Workflow
 - **Enhanced Import Dialog**: Beautiful, compact import dialog with smart audio analysis

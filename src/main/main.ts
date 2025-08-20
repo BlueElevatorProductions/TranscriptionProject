@@ -426,11 +426,18 @@ class App {
     // Audio file handling
     ipcMain.handle('read-audio-file', async (event, filePath: string) => {
       try {
+        console.log('IPC: read-audio-file requested for:', filePath);
+        
         if (!fs.existsSync(filePath)) {
-          throw new Error('Audio file does not exist');
+          console.error('Audio file does not exist at path:', filePath);
+          throw new Error(`Audio file does not exist: ${filePath}`);
         }
         
+        const stats = await fs.promises.stat(filePath);
+        console.log('Audio file found, size:', stats.size, 'bytes');
+        
         const audioBuffer = await fs.promises.readFile(filePath);
+        console.log('Audio file read successfully, buffer size:', audioBuffer.length);
         return audioBuffer.buffer;
       } catch (error) {
         console.error('Error reading audio file:', error);
