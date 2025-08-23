@@ -8,7 +8,7 @@ export interface Clip {
   startWordIndex: number;
   endWordIndex: number;
   words: any[];
-  type: 'speaker-change' | 'paragraph-break' | 'user-created';
+  type: 'speaker-change' | 'paragraph-break' | 'user-created' | 'initial' | 'transcribed';
   text: string;
   duration: number;
   createdAt: number;
@@ -390,6 +390,10 @@ export const useClips = ({ segments, speakerNames, setSpeakerNames }: UseClipsPr
     mergeClipWithAbove,
     addNewSpeakerLabel,
     getAdjustedPlaybackTime,
-    getOriginalTimeFromAdjusted
+    getOriginalTimeFromAdjusted,
+    // Placeholder for drag-and-drop compatibility (not implemented in legacy hook)
+    reorderClips: () => {
+      console.warn('Clip reordering not implemented in legacy useClips hook');
+    }
   };
 };

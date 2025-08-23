@@ -118,7 +118,7 @@ export interface Clip {
   startWordIndex: number;
   endWordIndex: number;
   words: Word[];
-  type: 'speaker-change' | 'paragraph-break' | 'user-created';
+  type: 'speaker-change' | 'paragraph-break' | 'user-created' | 'initial' | 'transcribed';
   text: string;
   duration: number;
   createdAt: number;
