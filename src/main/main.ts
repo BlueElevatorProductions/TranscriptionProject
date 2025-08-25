@@ -111,7 +111,10 @@ class App {
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
       },
-      titleBarStyle: 'default',
+      titleBarStyle: 'default', // Normal title bar - draggable with traffic lights
+      transparent: true, // Enable window transparency
+      vibrancy: 'sidebar', // macOS vibrancy effect - try 'sidebar', 'window', 'content' for different effects
+      backgroundColor: '#00000000', // Fully transparent background
       movable: true, // Explicitly enable window movement
       resizable: true, // Ensure resizing is enabled
       show: false, // Don't show until ready-to-show
@@ -120,8 +123,15 @@ class App {
     // Load the app
     if (isDev()) {
       this.mainWindow.loadURL('http://localhost:3000');
-      // Open DevTools in development
-      this.mainWindow.webContents.openDevTools();
+      
+      // Check environment variable to control DevTools
+      const devToolsEnabled = process.env.DEVTOOLS_ENABLED === 'true';
+      if (devToolsEnabled) {
+        console.log('🧪 Opening DevTools (DEVTOOLS_ENABLED=true)');
+        this.mainWindow.webContents.openDevTools();
+      } else {
+        console.log('✨ DevTools disabled (DEVTOOLS_ENABLED=false or not set)');
+      }
     } else {
       this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     }

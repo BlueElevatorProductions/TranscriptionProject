@@ -21,8 +21,11 @@
     "postinstall": "echo 'Setup complete! Run npm run start-dev for development'",
     "dev:clean": "npm run clean:dev && npm run dev:vite",
     "test": "jest",
+    "test:unit": "jest",
+    "test:e2e": "playwright test",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:all": "npm run test:unit && cd .. && npx playwright test"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.24.0",
@@ -54,6 +57,7 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^14.1.0",
     "@testing-library/react-hooks": "^8.0.1",

@@ -9,10 +9,13 @@ TranscriptionProject is a desktop application designed for content creators, jou
 ## Features
 
 ### Modern User Interface
-- **Dark Green Sidebar**: Professional ScriptScribe-inspired design with Listen/Edit mode tabs
-- **Responsive Layout**: Tailwind CSS with clean, modern styling
+- **macOS-Style Transparency**: Full window transparency with vibrancy effects - see desktop through app window
+- **Glass Morphism Design**: Professional frosted glass sidebar and panels with backdrop blur
+- **Design Token System**: Complete CSS architecture with centralized color and transparency control
+- **Dark Mode Support**: Adaptive transparency and glass effects optimized for macOS dark mode
+- **Responsive Layout**: Tailwind CSS with clean, modern styling and transparency utilities
 - **Mode Switching**: Toggle between Listen mode (playback-focused) and Edit mode (editing-focused)
-- **Panel System**: Expandable sidebar panels for speakers, clips, fonts, and project management
+- **Panel System**: Expandable glass sidebar panels for speakers, clips, fonts, and project management
 - **Glass Progress Overlay**: Beautiful glass morphism progress indicator during transcription
 
 ### Cloud Transcription Services
@@ -518,11 +521,147 @@ TimelineValidator.cleanup()  // Cache clearing
 - Speaker management and project workflows preserved
 - Import/export functionality unchanged
 
+## Transparency & Visual Testing (August 2025)
+
+### ✅ macOS Window Transparency System
+
+**Full Window Transparency**: Professional macOS-style transparency with vibrancy effects that show the desktop and applications through the app window.
+
+#### **Design Token Architecture**
+- **Single Source of Truth**: All transparency controlled via `design-tokens.css`
+- **Composable Glass Effects**: HSL color composition with separate opacity controls
+- **Dark Mode Adaptive**: Automatic transparency adjustments for macOS dark mode
+- **Live Hot Reload**: Change transparency values and see results instantly
+
+#### **Key Variables** (in `design-tokens.css`)
+```css
+/* App-wide transparency control */
+--app-bg-opacity: 0.3;        /* 0=fully transparent, 1=opaque */
+--opacity-glass-medium: 0.2;  /* Sidebar glass opacity */  
+--opacity-glass-light: 0.1;   /* Panel glass opacity */
+--backdrop-blur: blur(100px); /* Frosted glass blur effect */
+```
+
+#### **Utility Classes**
+```css
+.app-transparent  /* Fully transparent mode */
+.app-opaque      /* Standard opaque mode */
+.vibrancy-sidebar /* Glass sidebar effects */
+.vibrancy-panel  /* Glass panel effects */
+```
+
+### ✅ DevTools vs Transparency Discovery
+
+**Important Finding**: DevTools interfere with Electron window transparency. Use the provided scripts for proper testing:
+
+- **With DevTools**: `./start-with-devtools.sh` - Debugging enabled, transparency disabled
+- **Without DevTools**: `./start-without-devtools.sh` - Full transparency enabled, no debugging
+
+### ✅ Automated Visual Testing System
+
+**Playwright Visual Regression Tests**: Comprehensive screenshot testing for transparency effects.
+
+#### **Test Suites**
+- **`basic.spec.ts`**: Verifies app launches successfully 
+- **`main-app-transparency.spec.ts`**: Tests actual app window with various transparency settings
+- **`replicable-transparency.spec.ts`**: Creates screenshots with exact design-tokens.css values
+
+#### **Running Visual Tests**
+```bash
+# Run all transparency tests
+npx playwright test tests/visual/ --update-snapshots
+
+# Run specific test suite  
+npx playwright test tests/visual/replicable-transparency.spec.ts
+
+# View test results
+npx playwright show-report
+```
+
+#### **Test Results**
+Each test captures screenshots showing:
+- Current transparency settings
+- Fully transparent mode (0% opacity)
+- Semi-transparent mode (30% opacity) 
+- Opaque mode (100% opacity)
+- Different vibrancy effects
+- Color theme variations
+- **Exact replication values** for design-tokens.css
+
+#### **Replicable Design Tokens**
+Every test screenshot includes console output showing exact values to copy into `design-tokens.css`:
+
+```
+=== TO REPLICATE IN design-tokens.css ===
+--app-bg-opacity: 0;
+--opacity-glass-medium: 0.05;
+--opacity-glass-light: 0.02;
+--backdrop-blur: blur(50px);
+```
+
+### ✅ Transparency Troubleshooting
+
+**Common Issues & Solutions:**
+
+1. **No transparency visible**:
+   - Ensure `transparent: true` in main.ts BrowserWindow config
+   - Check macOS System Preferences > Accessibility > Display > Reduce Transparency is OFF
+   - Use `./start-without-devtools.sh` (DevTools disable transparency)
+
+2. **Content invisible/too transparent**:
+   - Increase `--app-bg-opacity` in design-tokens.css (try 0.3-0.7)
+   - Increase glass effect opacities for better visibility
+
+3. **Changes not reflecting**:
+   - CSS files have hot reload - changes should be instant
+   - If not working, restart dev server: `npm run build:main` then restart
+
+4. **Window can't be dragged**:
+   - Current setting: `titleBarStyle: 'default'` (normal title bar)
+   - Alternative: `titleBarStyle: 'hiddenInset'` (hidden but draggable)
+
+### ✅ Customizing Transparency
+
+**Easy Transparency Presets** (copy to `design-tokens.css`):
+
+**Fully Transparent**:
+```css
+--app-bg-opacity: 0;
+--opacity-glass-medium: 0.05;
+--opacity-glass-light: 0.02;
+```
+
+**Semi-Transparent** (Recommended):
+```css
+--app-bg-opacity: 0.3;
+--opacity-glass-medium: 0.2; 
+--opacity-glass-light: 0.1;
+```
+
+**Subtle Transparency**:
+```css
+--app-bg-opacity: 0.8;
+--opacity-glass-medium: 0.6;
+--opacity-glass-light: 0.4;
+```
+
+**Heavy Blur Effect**:
+```css
+--backdrop-blur: blur(50px);
+```
+
+**No Blur** (Sharp transparency):
+```css
+--backdrop-blur: blur(0px);
+```
+
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
 | `~/start-transcription-robust.sh` | **Recommended**: Robust launch script with port handling |
+| `./start-with-devtools.sh` | Launch with DevTools enabled (transparency disabled) |
+| `./start-without-devtools.sh` | Launch without DevTools (full transparency enabled) |
 | `npm run start-dev` | Start both Vite and Electron for development |
 | `npm run dev:vite` | Start Vite development server only |
 | `npm run dev:electron` | Start Electron app only |

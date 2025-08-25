@@ -411,7 +411,25 @@ const AppMain: React.FC = () => {
                   conversionMethod: conversionOptions.action
                 };
                 
-                // Update project with audio information
+                // Create initial clip representing the entire audio file
+                const initialClip = {
+                  id: 'initial-clip',
+                  startTime: 0,
+                  endTime: conversionResult.duration,
+                  startWordIndex: 0,
+                  endWordIndex: 0,
+                  words: [], // Empty until transcription
+                  text: `Untranscribed audio (${Math.floor(conversionResult.duration / 60)}:${Math.floor(conversionResult.duration % 60).toString().padStart(2, '0')})`,
+                  speaker: 'SPEAKER_00',
+                  confidence: 1.0,
+                  type: 'initial' as const,
+                  duration: conversionResult.duration,
+                  order: 0,
+                  createdAt: Date.now(),
+                  modifiedAt: Date.now(),
+                };
+
+                // Update project with audio information and initial clip
                 const updatedProject = {
                   ...currentProject,
                   project: {
@@ -426,7 +444,11 @@ const AppMain: React.FC = () => {
                       embedded: true
                     }
                   },
-                  audioMetadata
+                  audioMetadata,
+                  clips: {
+                    ...currentProject.clips,
+                    clips: [initialClip]
+                  }
                 };
                 
                 projectActions.loadProject(updatedProject);

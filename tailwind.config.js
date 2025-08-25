@@ -15,7 +15,37 @@ module.exports = {
     },
     extend: {
       colors: {
-        /* Region-scoped colors from new UI design */
+        /* === DESIGN TOKEN MAPPINGS === */
+        /* Core color system from design tokens */
+        bg: 'hsl(var(--bg))',
+        surface: 'hsl(var(--surface))',
+        sidebar: 'hsl(var(--sidebar))',
+        'sidebar-light': 'hsl(var(--sidebar-light))',
+        text: 'hsl(var(--text))',
+        'text-muted': 'hsl(var(--text-muted))',
+        'text-on-dark': 'hsl(var(--text-on-dark))',
+        border: 'hsl(var(--border))',
+        'border-muted': 'hsl(var(--border-muted))',
+        accent: 'hsl(var(--accent))',
+        'accent-hover': 'hsl(var(--accent-hover))',
+        warn: 'hsl(var(--warn))',
+        success: 'hsl(var(--success))',
+        'success-bg': 'hsl(var(--success-bg))',
+        'success-text': 'hsl(var(--success-text))',
+        error: 'hsl(var(--error))',
+        'error-bg': 'hsl(var(--error-bg))',
+        'error-text': 'hsl(var(--error-text))',
+        'warn-bg': 'hsl(var(--warn-bg))',
+        'warn-text': 'hsl(var(--warn-text))',
+        'neutral-bg': 'hsl(var(--neutral-bg))',
+        'neutral-text': 'hsl(var(--neutral-text))',
+        'button-primary': 'hsl(var(--button-primary))',
+        'button-primary-hover': 'hsl(var(--button-primary-hover))',
+        'button-secondary': 'hsl(var(--button-secondary))',
+        'button-secondary-hover': 'hsl(var(--button-secondary-hover))',
+        'primary-50': 'hsl(var(--primary-50))',
+        
+        /* === COMPONENT SPECIFIC COLORS === */
         'sidebar-bg': 'var(--sidebar-bg)',
         'sidebar-text': 'var(--sidebar-text)',
         'transcript-bg': 'var(--transcript-bg)',
@@ -24,18 +54,16 @@ module.exports = {
         'player-text': 'var(--player-text)',
         'hover-bg': 'var(--hover-bg)',
         
-        /* General tokens for broader use */
-        bg: 'hsl(var(--bg))',
-        surface: 'hsl(var(--surface))',
-        sidebar: 'hsl(var(--sidebar))',
-        text: 'hsl(var(--text))',
-        'text-muted': 'hsl(var(--text-muted))',
-        warn: 'hsl(var(--warn))',
+        /* === VIBRANCY/GLASS EFFECT COLORS === */
+        'sidebar-bg-blur': 'var(--sidebar-bg-blur)',
+        'panel-bg-blur': 'var(--panel-bg-blur)',
+        'glass-surface': 'hsl(var(--glass-surface))',
+        'glass-border': 'hsl(var(--glass-border))',
+        'glass-hover': 'hsl(var(--glass-hover))',
+        'glass-track': 'hsl(var(--glass-track))',
+        'glass-border-subtle': 'hsl(var(--glass-border-subtle))',
         
-        /* Existing colors kept for compatibility */
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
+        /* === SHADCN/UI COMPATIBILITY === */
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         primary: {
@@ -54,10 +82,6 @@ module.exports = {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",
         },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",
@@ -66,12 +90,18 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
       },
       borderRadius: {
         sm: 'var(--radius-sm)',
         md: 'var(--radius-md)',
         lg: 'var(--radius-lg)',
-        '2xl': 'calc(var(--radius-lg) + 8px)',
+        xl: 'var(--radius-xl)',
+        '2xl': 'calc(var(--radius-xl) + 8px)',
+      },
+      backdropBlur: {
+        'glass': 'var(--backdrop-blur)',
       },
       keyframes: {
         "accordion-down": {
@@ -105,7 +135,25 @@ module.exports = {
       fontFamily: {
         sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
         arial: ['var(--font-sidebar)', 'sans-serif'],        // use className="font-arial"
-        transcript: ['var(--font-transcript)', 'sans-serif'] // use className="font-transcript"
+        transcript: ['var(--font-transcript)', 'sans-serif'], // use className="font-transcript"
+        mono: ['var(--font-mono)', 'monospace'],             // use className="font-mono"
+        sidebar: ['var(--font-sidebar)', 'sans-serif'],      // use className="font-sidebar"
+      },
+      spacing: {
+        'xs': 'var(--spacing-xs)',
+        'sm': 'var(--spacing-sm)', 
+        'md': 'var(--spacing-md)',
+        'lg': 'var(--spacing-lg)',
+        'xl': 'var(--spacing-xl)',
+        '2xl': 'var(--spacing-2xl)',
+      },
+      boxShadow: {
+        'sm': 'var(--shadow-sm)',
+        'md': 'var(--shadow-md)',
+        'lg': 'var(--shadow-lg)',
+        'xl': 'var(--shadow-xl)',
+        'accent': 'var(--shadow-accent)',
+        'focus': 'var(--shadow-focus)',
       },
     },
   },

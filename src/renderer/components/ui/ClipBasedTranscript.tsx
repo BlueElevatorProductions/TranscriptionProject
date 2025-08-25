@@ -4,6 +4,7 @@ import { Segment, Clip } from '../../types';
 import ModernContextMenu, { createContextMenuItem } from '../TranscriptEdit/ModernContextMenu';
 import { useClips } from '../TranscriptEdit/useClips';
 import { FontSettings } from '../shared/FontsPanel';
+import { useSimpleClipReordering } from '../../hooks/useSimpleClipReordering';
 
 interface ClipBasedTranscriptProps {
   mode: string;
@@ -15,6 +16,8 @@ interface ClipBasedTranscriptProps {
     selectClip: (clipId: string) => void;
     createNewClip: (splitWordIndex: number) => boolean;
     splitClip?: (clipId: string, splitAtWordIndex: number) => void;
+    reorderClips?: (dragClipId: string, dropClipId: string) => void;
+    updateClips?: (clips: Clip[]) => void;
     updateClipWord?: (clipId: string, wordIndex: number, newWord: string) => void;
     updateClipSpeaker?: (clipId: string, newSpeaker: string) => void;
     mergeClipWithAbove?: (clipId: string) => boolean;
@@ -97,6 +100,7 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
     selectClip,
     createNewClip,
     splitClip,
+    reorderClips,
     updateClipWord,
     updateClipSpeaker,
     mergeClipWithAbove,
@@ -108,6 +112,18 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
     speakerNames: projectState.globalSpeakers,
     setSpeakerNames: (speakers) => projectActions.updateSpeakers(speakers)
   });
+
+  // Initialize SimpleClipSequencer for reordering support
+  const clipSequencer = useSimpleClipReordering(clips);
+
+  // Debug clips prop changes
+  React.useEffect(() => {
+    if (clips.length > 0) {
+      console.log('ClipBasedTranscript - clips updated:', clips.length, 'clips with orders:', clips.map(c => ({ id: c.id, order: c.order })));
+      // Update sequencer with new clips
+      clipSequencer.updateClips(clips);
+    }
+  }, [clips]); // Removed clipSequencer from dependencies to avoid infinite loop
   
   // Edit state
   const [cursorPosition, setCursorPosition] = useState<CursorPosition | null>(null);
@@ -116,6 +132,10 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
   
   // Selection state for word deletion
   const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set()); // wordIds
+  
+  // Drag and drop state for clip reordering (only in Edit Mode)
+  const [draggedClipId, setDraggedClipId] = useState<string | null>(null);
+  const [dragOverClipId, setDragOverClipId] = useState<string | null>(null);
   
   // Debug selection changes
   useEffect(() => {
@@ -185,54 +205,56 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
 
   // Get active clips in playback order (for virtual timeline)
   const getActiveClips = useCallback(() => {
-    return clips
+    const activeClips = clips
       .filter(clip => clip.status === 'active')
       .sort((a, b) => a.order - b.order);
+    
+    return activeClips;
   }, [clips]);
 
-  // Map original timestamp to virtual timeline position
+  // REPLACED: Use SimpleClipSequencer instead of virtual timeline functions
   const getVirtualTime = useCallback((originalTime: number): number => {
-    const activeClips = getActiveClips();
-    let virtualTime = 0;
+    // Find which clip contains this original timestamp
+    const targetClip = clips.find(clip => 
+      originalTime >= clip.startTime && originalTime <= clip.endTime && clip.status === 'active'
+    );
     
-    for (const clip of activeClips) {
-      if (originalTime >= clip.startTime && originalTime <= clip.endTime) {
-        // Time falls within this clip
-        return virtualTime + (originalTime - clip.startTime);
-      } else if (originalTime > clip.endTime) {
-        // Time is after this clip, add the clip's duration
-        virtualTime += clip.duration;
-      } else {
-        // Time is before this clip, return current virtual time
-        break;
+    if (!targetClip) {
+      // Only log if we have clips but none match (unusual case)
+      if (clips.length > 0) {
+        console.log('ClipBasedTranscript - No active clip found for timestamp:', originalTime);
       }
+      return originalTime; // Fallback if no clip found
     }
     
-    return virtualTime;
-  }, [getActiveClips]);
+    // Use clip sequencer to get edited time
+    const editedTime = clipSequencer.originalTimeToEdited(originalTime, targetClip.id);
+    
+    console.log('ClipBasedTranscript - Sequencer mapping:', {
+      originalTime,
+      clipId: targetClip.id,
+      editedTime
+    });
+    
+    return editedTime !== null ? editedTime : originalTime;
+  }, [clips, clipSequencer]);
 
   // Map virtual timeline position back to original timestamp
   const getOriginalTime = useCallback((virtualTime: number): number => {
-    const activeClips = getActiveClips();
-    let accumulatedTime = 0;
+    const result = clipSequencer.editedTimeToOriginal(virtualTime);
     
-    for (const clip of activeClips) {
-      if (virtualTime >= accumulatedTime && virtualTime <= accumulatedTime + clip.duration) {
-        // Virtual time falls within this clip
-        return clip.startTime + (virtualTime - accumulatedTime);
-      }
-      accumulatedTime += clip.duration;
-    }
+    console.log('ClipBasedTranscript - Reverse sequencer mapping:', {
+      virtualTime,
+      result
+    });
     
-    // If beyond all clips, return the last clip's end time
-    const lastClip = activeClips[activeClips.length - 1];
-    return lastClip ? lastClip.endTime : 0;
-  }, [getActiveClips]);
+    return result ? result.originalTime : 0;
+  }, [clipSequencer]);
 
-  // Get total virtual duration (sum of active clip durations)
+  // Get total virtual duration using sequencer
   const getVirtualDuration = useCallback((): number => {
-    return getActiveClips().reduce((total, clip) => total + clip.duration, 0);
-  }, [getActiveClips]);
+    return clipSequencer.getTotalEditedDuration();
+  }, [clipSequencer]);
   
   // Handle word click for cursor positioning, selection (Edit Mode), and seeking (Listen Mode)
   const handleWordClick = useCallback((clip: Clip, wordIndex: number, event?: React.MouseEvent) => {
@@ -241,9 +263,9 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
       return;
     }
     
-    // Don't handle clicks if we just finished a drag selection (give time for drag state to clear)
-    if (selectedWords.size > 1 || hasDraggedMinDistance) {
-      console.log('Ignoring word click - drag selection exists with', selectedWords.size, 'words or just finished dragging');
+    // Only ignore clicks if we're in the middle of a drag gesture
+    if (hasDraggedMinDistance) {
+      console.log('Ignoring word click - just finished dragging');
       return;
     }
     
@@ -333,7 +355,15 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
           // - If audio is stopped, seek immediately
           // - If audio is playing, don't interrupt (cursor moves silently)
           if (!isPlaying && onSeek) {
-            onSeek(timestamp);
+            // Check if this clip is active (not deleted)
+            if (clip.status === 'active') {
+              // Map original word time to virtual timeline to respect clip reordering
+              const virtualTime = getVirtualTime(word.start);
+              console.log('Edit Mode seeking:', { original: word.start, virtual: virtualTime, isPlaying });
+              onSeek(virtualTime);
+            }
+          } else {
+            console.log('Edit Mode seek skipped:', { isPlaying, hasOnSeek: !!onSeek });
           }
         }
       }
@@ -351,15 +381,22 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
     }
   }, [mode, isPlaying, onSeek, selectedWords, selectionAnchor, getWordId, getVirtualTime, isDragging]);
 
-  // Handle play with cursor resume logic
+  // Handle play/pause toggle with cursor resume logic
   const handlePlay = useCallback(() => {
-    if (mode === 'edit' && !isPlaying && lastCursorTime !== null && onSeek && onPlay) {
-      // If we have a cursor position and audio is stopped, seek to cursor position before playing
-      onSeek(lastCursorTime);
-      onPlay();
-    } else if (onPlay) {
-      // Normal play behavior
-      onPlay();
+    if (isPlaying) {
+      // If currently playing, pause by clicking the audio player button
+      const pauseButton = document.querySelector('[aria-label="Pause"]') as HTMLButtonElement;
+      pauseButton?.click();
+    } else {
+      // If not playing, start playback
+      if (mode === 'edit' && lastCursorTime !== null && onSeek && onPlay) {
+        // If we have a cursor position and audio is stopped, seek to cursor position before playing
+        onSeek(lastCursorTime);
+        onPlay();
+      } else if (onPlay) {
+        // Normal play behavior
+        onPlay();
+      }
     }
   }, [mode, isPlaying, lastCursorTime, onSeek, onPlay]);
 
@@ -535,8 +572,12 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
             : clip
         );
         
-        console.log('ClipBasedTranscript - Calling onClipsChange with updated clips:', updatedClips.length);
-        onClipsChange?.(updatedClips);
+        console.log('ClipBasedTranscript - Calling updateClips with updated clips:', updatedClips.length);
+        if (externalClipsHook?.updateClips) {
+          externalClipsHook.updateClips(updatedClips);
+        } else {
+          onClipsChange?.(updatedClips);
+        }
       } else {
         console.log('ClipBasedTranscript - Need to split clip for partial selection');
         // Need to split the clip to isolate the selected portion
@@ -678,7 +719,7 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
           updatedClips.splice(clipIndex, 1, firstPart, deletedPart, lastPart);
         }
         
-        console.log('ClipBasedTranscript - Calling onClipsChange with split clips:', updatedClips.length);
+        console.log('ClipBasedTranscript - Calling updateClips with split clips:', updatedClips.length);
         updatedClips.forEach((c, idx) => {
           console.log(`ClipBasedTranscript - Clip ${idx}:`, { 
             id: c.id, 
@@ -688,7 +729,11 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
             text: c.text.substring(0, 30) + '...'
           });
         });
-        onClipsChange?.(updatedClips);
+        if (externalClipsHook?.updateClips) {
+          externalClipsHook.updateClips(updatedClips);
+        } else {
+          onClipsChange?.(updatedClips);
+        }
       }
     }
     
@@ -698,6 +743,65 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
     console.log('ClipBasedTranscript - Selection cleared after deletion');
     
   }, [selectedWords, clips, getWordId, onClipsChange, debugSetSelectedWords, setSelectionAnchor, setDeletedWords, onDeletedWordsChange]);
+  
+  // Drag and drop handlers for clip reordering (Edit Mode only)
+  const handleDragStart = useCallback((event: React.DragEvent, clipId: string) => {
+    if (mode !== 'edit') return;
+    
+    setDraggedClipId(clipId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', clipId);
+    
+    // Add some visual feedback
+    if (event.currentTarget instanceof HTMLElement) {
+      event.currentTarget.style.opacity = '0.5';
+    }
+  }, [mode]);
+
+  const handleDragEnd = useCallback((event: React.DragEvent) => {
+    if (mode !== 'edit') return;
+    
+    setDraggedClipId(null);
+    setDragOverClipId(null);
+    
+    // Reset visual feedback
+    if (event.currentTarget instanceof HTMLElement) {
+      event.currentTarget.style.opacity = '1';
+    }
+  }, [mode]);
+
+  const handleDragOver = useCallback((event: React.DragEvent, clipId: string) => {
+    if (mode !== 'edit' || !draggedClipId || draggedClipId === clipId) return;
+    
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDragOverClipId(clipId);
+  }, [mode, draggedClipId]);
+
+  const handleDragLeave = useCallback((event: React.DragEvent) => {
+    if (mode !== 'edit') return;
+    
+    // Only clear if we're leaving the clip element itself, not a child
+    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+      setDragOverClipId(null);
+    }
+  }, [mode]);
+
+  const handleDrop = useCallback((event: React.DragEvent, dropClipId: string) => {
+    if (mode !== 'edit' || !draggedClipId || draggedClipId === dropClipId) return;
+    
+    event.preventDefault();
+    
+    console.log('ClipBasedTranscript - Dropping clip:', draggedClipId, 'onto:', dropClipId);
+    
+    // Call reorder function if available
+    if (reorderClips) {
+      reorderClips(draggedClipId, dropClipId);
+    }
+    
+    setDraggedClipId(null);
+    setDragOverClipId(null);
+  }, [mode, draggedClipId, reorderClips, clips]);
   
   // Handle selection split (creates clips at selection boundaries)
   const handleSelectionSplit = useCallback(() => {
@@ -813,8 +917,12 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
       const clipIndex = updatedClips.findIndex(c => c.id === targetClip.id);
       updatedClips.splice(clipIndex, 1, firstPart, middlePart, lastPart);
       
-      console.log('ClipBasedTranscript - Created 3 clips, calling onClipsChange');
-      onClipsChange?.(updatedClips);
+      console.log('ClipBasedTranscript - Created 3 clips, calling updateClips');
+      if (externalClipsHook?.updateClips) {
+        externalClipsHook.updateClips(updatedClips);
+      } else {
+        onClipsChange?.(updatedClips);
+      }
     }
 
     // Clear selection
@@ -1039,15 +1147,8 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
   // Get clips to display based on current mode
   const displayClips = React.useMemo(() => {
     if (mode === 'edit') {
-      // Edit Mode: Show all clips in original order
-      const sortedClips = clips.sort((a, b) => a.order - b.order);
-      console.log('ClipBasedTranscript - Display clips in Edit Mode:', sortedClips.map(c => ({
-        id: c.id,
-        status: c.status,
-        order: c.order,
-        words: c.words.length
-      })));
-      return sortedClips;
+      // Edit Mode: Show all clips in order property
+      return clips.sort((a, b) => a.order - b.order);
     } else {
       // Listen Mode: Show only active clips in order
       return getActiveClips();
@@ -1587,18 +1688,21 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
         if (e.key === ' ' && !e.repeat) {
           console.log('ClipBasedTranscript - Spacebar pressed, calling handlePlay');
           e.preventDefault();
+          e.stopPropagation();
           handlePlay();
         }
         // Handle Delete key for selection deletion
         else if (e.key === 'Delete' || e.key === 'Backspace') {
           console.log('ClipBasedTranscript - Delete/Backspace pressed, calling handleSelectionDelete');
           e.preventDefault();
+          e.stopPropagation();
           handleSelectionDelete();
         }
         // Handle Enter key for selection splitting or cursor splitting
         else if (e.key === 'Enter') {
           console.log('ClipBasedTranscript - Enter pressed, selectedWords:', selectedWords.size, 'hasWordCursor:', !!wordCursorPosition);
           e.preventDefault();
+          e.stopPropagation();
           
           if (selectedWords.size > 0) {
             // If there's a selection, split at selection boundaries
@@ -1630,6 +1734,7 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
         else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
           console.log('ClipBasedTranscript - Global arrow key pressed:', e.key, 'shiftKey:', e.shiftKey);
           e.preventDefault();
+          e.stopPropagation();
           
           let direction: 'left' | 'right' | 'up' | 'down';
           if (e.key === 'ArrowLeft') direction = 'left';
@@ -1644,8 +1749,8 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
       }
     };
     
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [mode, editingWord, editingSpeaker, handleWordEditSave, handleSpeakerEditSave, handlePlay, handleSelectionDelete, handleSelectionSplit, handleCreateClip, moveCursorByWord, wordCursorPosition, updateSelectionFromAnchor, selectedWords, clips]);
 
   // Early return for empty clips (after all hooks)
@@ -1679,12 +1784,23 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
               ? 'bg-green-50 border-green-400' 
               : 'bg-white';
           
+          // Drag and drop styling for Edit Mode
+          const dragClasses = mode === 'edit' ? 'cursor-move' : '';
+          const dragOverClasses = dragOverClipId === clip.id ? 'ring-2 ring-blue-400 ring-opacity-75' : '';
+          
           return (
           <div 
             key={clip.id} 
             data-clip-id={clip.id}
-            className={`${baseClasses} ${statusClasses}`}
+            className={`${baseClasses} ${statusClasses} ${dragClasses} ${dragOverClasses}`}
             onClick={() => selectClip(clip.id)}
+            // Drag and drop properties (only in Edit Mode)
+            draggable={mode === 'edit' && !isDeleted}
+            onDragStart={(e) => handleDragStart(e, clip.id)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, clip.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, clip.id)}
           >
             {/* Clip header with speaker and controls */}
             <div className="flex items-center justify-between mb-3">
@@ -1787,9 +1903,9 @@ export const ClipBasedTranscript: React.FC<ClipBasedTranscriptProps> = ({
                 });
 
                 if (mode === 'edit' && e.target === e.currentTarget) {
-                  // Don't clear selection if we just finished a drag or have multiple words selected
-                  if (selectedWords.size > 1 || hasDraggedMinDistance) {
-                    console.log('⏭️  IGNORING empty space click - drag selection exists or just finished dragging');
+                  // Only ignore if we just finished dragging to avoid accidental clears
+                  if (hasDraggedMinDistance) {
+                    console.log('⏭️  IGNORING empty space click - just finished dragging');
                     return;
                   }
                   

@@ -16,14 +16,19 @@ module.exports = {
   
   // Transform files
   transform: {
-    '^.+\\.(ts|tsx)$': 'ts-jest',
+    '^.+\\.(ts|tsx)$': ['ts-jest', {
+      tsconfig: {
+        jsx: 'react-jsx',
+      },
+    }],
     '^.+\\.(js|jsx)$': 'babel-jest',
   },
   
   // Module name mapping for CSS and assets
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/renderer/$1',
     '^@shared/(.*)$': '<rootDir>/src/shared/$1',
+    '^electron$': '<rootDir>/src/__mocks__/electron.ts',
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
     '\\.(gif|ttf|eot|svg|png|jpg|jpeg)$': 'jest-transform-stub',
   },
@@ -46,11 +51,6 @@ module.exports = {
     },
   },
   
-  // Mock Electron APIs
-  moduleNameMapping: {
-    '^electron$': '<rootDir>/src/__mocks__/electron.ts',
-  },
-  
   // Ignore patterns
   testPathIgnorePatterns: [
     '<rootDir>/node_modules/',
@@ -58,12 +58,4 @@ module.exports = {
     '<rootDir>/dist/',
   ],
   
-  // TypeScript configuration
-  globals: {
-    'ts-jest': {
-      tsconfig: {
-        jsx: 'react-jsx',
-      },
-    },
-  },
 };

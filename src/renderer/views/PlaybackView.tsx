@@ -87,7 +87,7 @@ const PlaybackView: React.FC<PlaybackViewProps> = ({ onBack }) => {
   });
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground">
       <Tabs 
         value={playbackMode} 
         onValueChange={(value) => handleModeSwitch(value as PlaybackModeType)}

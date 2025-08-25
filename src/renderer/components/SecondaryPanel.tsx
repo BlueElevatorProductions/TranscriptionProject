@@ -27,33 +27,32 @@ const SecondaryPanel: React.FC<SecondaryPanelProps> = ({
   return (
     <div
       className={[
-        "relative h-full shrink-0 border-r border-white border-opacity-20",
+        "relative h-full shrink-0 border-r vibrancy-panel",
         open ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 pointer-events-none overflow-hidden",
       ].join(" ")}
       style={{ 
         width: open ? widthPx : 0,
-        backgroundColor: backgroundColor,
         position: 'relative',
         transition: 'width 300ms ease-in-out, opacity 300ms ease-in-out, transform 300ms ease-in-out, background-color 150ms ease-in-out'
       }}
       aria-hidden={!open}
     >
-      {/* White overlay with 28% opacity for better text readability */}
+      {/* Subtle overlay for better text readability on glass background */}
       <div 
         className="absolute inset-0 pointer-events-none"
         style={{ 
-          backgroundColor: 'rgba(255, 255, 255, 0.28)',
+          backgroundColor: 'rgba(255, 255, 255, 0.1)',
           zIndex: 0
         }}
       />
       
       {/* Content with higher z-index to be above overlay */}
       <div className="relative z-10 h-full flex flex-col">
-        <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-white border-opacity-20">
+        <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-glass-border-subtle">
           <h3 className="text-base font-medium text-white">{title}</h3>
           <button
             onClick={onClose}
-            className="rounded p-1.5 hover:bg-white hover:bg-opacity-10 transition-colors"
+            className="rounded p-1.5 hover:bg-glass-hover transition-colors"
             aria-label="Close panel"
           >
             <X className="w-4 h-4 text-white" />

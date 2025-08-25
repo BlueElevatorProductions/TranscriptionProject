@@ -354,10 +354,66 @@ export const usePersistedClips = ({
     setSelectedClipId(clipId);
   }, []);
 
+  // Reorder clips by moving a clip from one position to another
+  const reorderClips = useCallback((dragClipId: string, dropClipId: string) => {
+    console.log('usePersistedClips - reorderClips called:', { dragClipId, dropClipId });
+    
+    setClips(prevClips => {
+      const dragIndex = prevClips.findIndex(c => c.id === dragClipId);
+      const dropIndex = prevClips.findIndex(c => c.id === dropClipId);
+      
+      console.log('usePersistedClips - reorder indices:', { dragIndex, dropIndex });
+      
+      if (dragIndex === -1 || dropIndex === -1) {
+        console.log('usePersistedClips - reorder failed: clip not found');
+        return prevClips;
+      }
+      
+      // Create new array with reordered clips
+      const reorderedClips = [...prevClips];
+      const [draggedClip] = reorderedClips.splice(dragIndex, 1);
+      reorderedClips.splice(dropIndex, 0, draggedClip);
+      
+      // Update order values to reflect new positions
+      const updatedClips = reorderedClips.map((clip, index) => ({
+        ...clip,
+        order: index,
+        modifiedAt: Date.now()
+      }));
+      
+      console.log('usePersistedClips - new order:', updatedClips.map(c => ({ id: c.id, order: c.order })));
+      
+      // Notify parent of changes (defer to avoid state update during render)
+      setTimeout(() => {
+        console.log('usePersistedClips - calling onClipsChange with reordered clips');
+        if (onClipsChange) {
+          onClipsChange(updatedClips);
+        } else {
+          console.log('usePersistedClips - WARNING: onClipsChange callback is missing for reorderClips!');
+        }
+      }, 0);
+      
+      return updatedClips;
+    });
+  }, [onClipsChange]);
+
+  // Update all clips (used when clips are modified externally, e.g., in ClipBasedTranscript)
+  const updateClips = useCallback((newClips: Clip[]) => {
+    setClips(newClips);
+    // Notify parent of changes (defer to avoid state update during render)
+    setTimeout(() => {
+      if (onClipsChange) {
+        onClipsChange(newClips);
+      }
+    }, 0);
+  }, [onClipsChange]);
+
   return {
     clips,
     selectedClipId,
     selectClip,
+    reorderClips,
+    updateClips,
     updateClipWord,
     updateClipSpeaker,
     splitClip,
