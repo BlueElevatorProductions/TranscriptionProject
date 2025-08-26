@@ -20,9 +20,9 @@ const SecondaryPanel: React.FC<SecondaryPanelProps> = ({
   open,
   title = "Panel",
   onClose,
-  widthPx = 320,
+  widthPx, // Now optional - defaults to CSS variable
   children,
-  backgroundColor = '#003223'
+  backgroundColor // Now optional - uses CSS variable
 }) => {
   return (
     <div
@@ -31,23 +31,14 @@ const SecondaryPanel: React.FC<SecondaryPanelProps> = ({
         open ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 pointer-events-none overflow-hidden",
       ].join(" ")}
       style={{ 
-        width: open ? widthPx : 0,
+        width: open ? (widthPx ? `${widthPx}px` : 'var(--secondary-panel-width)') : 0,
         position: 'relative',
         transition: 'width 300ms ease-in-out, opacity 300ms ease-in-out, transform 300ms ease-in-out, background-color 150ms ease-in-out'
       }}
       aria-hidden={!open}
     >
-      {/* Subtle overlay for better text readability on glass background */}
-      <div 
-        className="absolute inset-0 pointer-events-none"
-        style={{ 
-          backgroundColor: 'rgba(255, 255, 255, 0.1)',
-          zIndex: 0
-        }}
-      />
-      
-      {/* Content with higher z-index to be above overlay */}
-      <div className="relative z-10 h-full flex flex-col">
+      {/* Panel content */}
+      <div className="relative h-full flex flex-col">
         <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-glass-border-subtle">
           <h3 className="text-base font-medium text-white">{title}</h3>
           <button

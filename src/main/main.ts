@@ -111,7 +111,7 @@ class App {
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
       },
-      titleBarStyle: 'default', // Normal title bar - draggable with traffic lights
+      titleBarStyle: 'hiddenInset', // Hidden title bar but still draggable - perfect for transparent windows
       transparent: true, // Enable window transparency
       vibrancy: 'sidebar', // macOS vibrancy effect - try 'sidebar', 'window', 'content' for different effects
       backgroundColor: '#00000000', // Fully transparent background

@@ -12,15 +12,15 @@ import ApiSettings from '../Settings/ApiSettings';
 import ColorSettings from '../Settings/ColorSettings';
 import ImportSettings from '../Settings/ImportSettings';
 import { GlassAudioPlayer } from './GlassAudioPlayer';
+import TopBar from './TopBar';
 
 interface NewUIShellProps {
   // Any props from parent component
 }
 
-// Enhanced Sidebar with Mode Tabs
+// Enhanced Sidebar
 export const EnhancedSidebar: React.FC<{ 
-  mode: string; 
-  onModeChange: (mode: string) => void;
+  collapsed: boolean;
   onNewProject: () => void;
   onOpenProject: () => void;
   onSaveProject: () => void;
@@ -33,8 +33,7 @@ export const EnhancedSidebar: React.FC<{
   onOpenPlayback: () => void;
   onExportProject: () => void;
 }> = ({ 
-  mode, 
-  onModeChange, 
+  collapsed, 
   onNewProject, 
   onOpenProject, 
   onSaveProject,
@@ -48,113 +47,108 @@ export const EnhancedSidebar: React.FC<{
   onExportProject
 }) => {
   return (
-    <aside className="w-64 vibrancy-sidebar border-r border-glass-border-subtle flex flex-col h-full">
-      {/* Mode Tabs */}
-      <Tabs.Root value={mode} onValueChange={onModeChange} className="flex-1 flex flex-col">
-        <Tabs.List className="grid grid-cols-2 gap-1 p-4">
-          <Tabs.Trigger
-            value="listen"
-            className="px-4 py-2 text-sm font-medium rounded-lg transition-colors data-[state=active]:bg-accent data-[state=active]:text-white hover:bg-hover-bg"
+    <aside 
+      className={`${collapsed ? 'sidebar-width-collapsed' : 'sidebar-width'} vibrancy-sidebar border-r border-glass-border-subtle flex flex-col h-full transition-all duration-300 ease-in-out overflow-hidden`}
+    >
+      {/* Project Controls */}
+      <div className={`${collapsed ? 'px-2' : 'px-4'} pb-4 border-b border-border`}>
+        <div className="space-y-2">
+          <button
+            onClick={onNewProject}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "New Project" : undefined}
           >
-            Listen
-          </Tabs.Trigger>
-          <Tabs.Trigger
-            value="edit"
-            className="px-4 py-2 text-sm font-medium rounded-lg transition-colors data-[state=active]:bg-accent data-[state=active]:text-white hover:bg-hover-bg"
+            <FileText size={16} />
+            {!collapsed && <span>New Project</span>}
+          </button>
+          <button
+            onClick={onOpenProject}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Open Project" : undefined}
           >
-            Edit
-          </Tabs.Trigger>
-        </Tabs.List>
-
-        {/* Project Controls */}
-        <div className="px-4 pb-4 border-b border-border">
-          <div className="space-y-2">
-            <button
-              onClick={onNewProject}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <FileText size={16} />
-              New Project
-            </button>
-            <button
-              onClick={onOpenProject}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <FolderOpen size={16} />
-              Open Project
-            </button>
-            <button
-              onClick={onSaveProject}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Save size={16} />
-              Save Project
-            </button>
-            <button
-              onClick={onExportProject}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Download size={16} />
-              Export
-            </button>
-          </div>
+            <FolderOpen size={16} />
+            {!collapsed && <span>Open Project</span>}
+          </button>
+          <button
+            onClick={onSaveProject}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Save Project" : undefined}
+          >
+            <Save size={16} />
+            {!collapsed && <span>Save Project</span>}
+          </button>
+          <button
+            onClick={onExportProject}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Export" : undefined}
+          >
+            <Download size={16} />
+            {!collapsed && <span>Export</span>}
+          </button>
         </div>
+      </div>
 
-        {/* Panel Controls */}
-        <div className="px-4 py-4 flex-1">
-          <div className="space-y-2">
-            <button
-              onClick={onOpenSpeakers}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Users size={16} />
-              Speakers
-            </button>
-            <button
-              onClick={onOpenClips}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Scissors size={16} />
-              Clips
-            </button>
-            <button
-              onClick={onOpenFonts}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Type size={16} />
-              Fonts
-            </button>
-            <button
-              onClick={onOpenApiSettings}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Settings size={16} />
-              API Settings
-            </button>
-            <button
-              onClick={onOpenColorSettings}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Palette size={16} />
-              Colors
-            </button>
-            <button
-              onClick={onOpenImportSettings}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Music size={16} />
-              Import
-            </button>
-            <button
-              onClick={onOpenPlayback}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-lg transition-colors"
-            >
-              <Play size={16} />
-              Playback
-            </button>
-          </div>
+      {/* Panel Controls */}
+      <div className={`${collapsed ? 'px-2' : 'px-4'} py-4 flex-1`}>
+        <div className="space-y-2">
+          <button
+            onClick={onOpenSpeakers}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Speakers" : undefined}
+          >
+            <Users size={16} />
+            {!collapsed && <span>Speakers</span>}
+          </button>
+          <button
+            onClick={onOpenClips}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Clips" : undefined}
+          >
+            <Scissors size={16} />
+            {!collapsed && <span>Clips</span>}
+          </button>
+          <button
+            onClick={onOpenFonts}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Fonts" : undefined}
+          >
+            <Type size={16} />
+            {!collapsed && <span>Fonts</span>}
+          </button>
+          <button
+            onClick={onOpenApiSettings}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "API Settings" : undefined}
+          >
+            <Settings size={16} />
+            {!collapsed && <span>API Settings</span>}
+          </button>
+          <button
+            onClick={onOpenColorSettings}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Colors" : undefined}
+          >
+            <Palette size={16} />
+            {!collapsed && <span>Colors</span>}
+          </button>
+          <button
+            onClick={onOpenImportSettings}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Import" : undefined}
+          >
+            <Music size={16} />
+            {!collapsed && <span>Import</span>}
+          </button>
+          <button
+            onClick={onOpenPlayback}
+            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+            title={collapsed ? "Playback" : undefined}
+          >
+            <Play size={16} />
+            {!collapsed && <span>Playback</span>}
+          </button>
         </div>
-      </Tabs.Root>
+      </div>
     </aside>
   );
 };
@@ -192,8 +186,9 @@ const SimpleSegmentDisplay: React.FC<{ segments: Segment[] }> = ({ segments }) =
 
 // Main Shell Component
 const NewUIShell: React.FC<NewUIShellProps> = () => {
-  const [mode, setMode] = useState<string>('listen');
+  const [mode, setMode] = useState<'listen' | 'edit'>('listen');
   const [openPanel, setOpenPanel] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   
   const [currentApiKeys, setCurrentApiKeys] = useState<{ [service: string]: string }>({});
   const [currentColor, setCurrentColor] = useState<string>('#003223');
@@ -584,6 +579,11 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     }
   };
 
+  // Sidebar toggle handler
+  const handleSidebarToggle = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  };
+
   // Render the main content area
   const renderMainContent = () => {
     // If we have clips data, use the new AudioSystemIntegration
@@ -603,12 +603,21 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
 
   return (
     <div className="flex flex-col h-screen text-text overflow-hidden">
+      {/* Top Bar */}
+      <TopBar
+        mode={mode}
+        onModeChange={setMode}
+        sidebarCollapsed={sidebarCollapsed}
+        onSidebarToggle={handleSidebarToggle}
+        projectName={projectState.projectData?.project?.name}
+        projectStatus="Ready"
+      />
+      
       {/* Main horizontal layout */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <EnhancedSidebar
-        mode={mode}
-        onModeChange={setMode}
+        collapsed={sidebarCollapsed}
         onNewProject={handleNewProject}
         onOpenProject={handleOpenProject}
         onSaveProject={handleSaveProject}

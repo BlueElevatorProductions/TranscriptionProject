@@ -9,12 +9,15 @@ TranscriptionProject is a desktop application designed for content creators, jou
 ## Features
 
 ### Modern User Interface
+- **macOS-Style Top Bar**: Professional title bar with native traffic lights and draggable window area
+- **Collapsible Sidebar**: Toggle between full sidebar (256px) and icon-only mode (64px) with smooth animations
+- **Icon-Based Mode Switching**: Listen (headphones) and Edit (pencil) buttons in the top bar with clear active states
 - **macOS-Style Transparency**: Full window transparency with vibrancy effects - see desktop through app window
-- **Glass Morphism Design**: Professional frosted glass sidebar and panels with backdrop blur
-- **Design Token System**: Complete CSS architecture with centralized color and transparency control
+- **Glass Morphism Design**: Professional frosted glass sidebar, panels, and top bar with backdrop blur
+- **Design Token System**: Complete CSS architecture with centralized color, transparency, and layout control
 - **Dark Mode Support**: Adaptive transparency and glass effects optimized for macOS dark mode
 - **Responsive Layout**: Tailwind CSS with clean, modern styling and transparency utilities
-- **Mode Switching**: Toggle between Listen mode (playback-focused) and Edit mode (editing-focused)
+- **Professional Window Management**: Native macOS window controls with proper dragging behavior
 - **Panel System**: Expandable glass sidebar panels for speakers, clips, fonts, and project management
 - **Glass Progress Overlay**: Beautiful glass morphism progress indicator during transcription
 
@@ -438,6 +441,54 @@ ZIP archives containing:
 - **Dark Theme**: Professional dark green color scheme
 
 ## Recent Updates (August 2025 - Latest)
+
+### ✅ macOS-Style Top Bar Implementation (Latest)
+
+**Professional macOS Integration**: Complete top bar implementation following Day One app design patterns for native macOS experience.
+
+#### **🎯 Key Features**
+- **Native Traffic Lights**: Proper macOS window controls using `titleBarStyle: 'hiddenInset'`
+- **Full Window Dragging**: Entire top bar is draggable except interactive buttons
+- **Collapsible Sidebar**: Toggle between 256px (full) and 64px (icons-only) with smooth 300ms transitions
+- **Icon-Based Mode Switching**: Professional headphones (Listen) and pencil (Edit) icons with active states
+- **Glass Vibrancy**: Top bar matches sidebar transparency and backdrop blur effects
+- **Project Information Display**: Right-aligned project name and status
+
+#### **🎨 Professional Spacing & Layout** 
+Following Day One's exact measurements:
+- **Height**: 44px top bar (matches Day One exactly)
+- **Traffic Lights Space**: 78px reserved for macOS controls
+- **Button Spacing**: 16px between groups, 4px within groups
+- **Icon Size**: 20×20px icons with 24×24px touch targets
+- **Layout**: `[Traffic Lights] [Sidebar Toggle] | [Listen] [Edit] | ... | [Project Info]`
+
+#### **🔧 Technical Implementation**
+
+**New Components**:
+- **TopBar.tsx**: Complete top bar with all functionality
+- **Enhanced CSS Variables**: `--topbar-height`, `--sidebar-width-collapsed`
+- **Glass Effects**: `.vibrancy-topbar` with consistent transparency
+- **Button Styling**: Complete hover states and active indicators
+
+**Updated Components**:
+- **NewUIShell.tsx**: Integrated top bar and sidebar collapse state management
+- **EnhancedSidebar.tsx**: Supports collapsed mode with tooltips and smooth animations
+- **design-tokens.css**: New variables for layout and transparency control
+
+#### **🎭 User Experience**
+- **Sidebar Toggle**: Click arrow icon to collapse/expand, icon rotates to indicate state
+- **Mode Switching**: Click headphones for Listen mode, pencil for Edit mode
+- **Visual Feedback**: Active mode shows purple accent background
+- **Tooltips**: Collapsed sidebar shows tooltips on hover for all buttons
+- **Smooth Animations**: All state changes animated with CSS transitions
+
+#### **🎨 Design System Integration**
+- **CSS Variables**: Full control via design-tokens.css
+- **Hot Reload**: Live updates during development
+- **Transparency**: Consistent with existing glass morphism design
+- **Color Theming**: Uses accent color for active states
+
+## Recent Updates (August 2025 - Previous)
 
 ### ✅ Complete Audio System Redesign
 

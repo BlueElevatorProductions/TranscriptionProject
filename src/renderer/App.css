@@ -52,6 +52,7 @@
     --waveform-fill: hsl(var(--accent));
   }
 
+
   .dark {
     /* === DARK THEME OVERRIDES FOR DESIGN TOKENS === */
     /* Override core design tokens for dark theme */
@@ -60,7 +61,7 @@
     --text: 0 0% 95%;              /* Light text */
     --text-muted: 240 5% 65%;      /* Muted light text */
     --text-on-dark: 0 0% 98%;      /* White text */
-    --border: 240 4% 16%;          /* Dark borders */
+    --border: 220 15% 100%;        /* Light borders for dark theme - same as design-tokens.css */
     --border-muted: 240 4% 12%;    /* Darker borders */
     
     /* Dark theme glass adjustments moved to design-tokens.css for centralized control */
