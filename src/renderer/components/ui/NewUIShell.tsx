@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette, Download } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette, Download, File, ChevronDown } from 'lucide-react';
 import { useProject, useSelectedJob } from '../../contexts';
+import { useTheme } from '../theme-provider';
 import { Segment } from '../../types';
 import SecondaryPanel from '../SecondaryPanel';
 import SpeakersPanel, { Speaker } from '../SpeakersPanel';
@@ -24,68 +26,100 @@ export const EnhancedSidebar: React.FC<{
   onNewProject: () => void;
   onOpenProject: () => void;
   onSaveProject: () => void;
+  onImportAudio: () => void;
+  onExportProject: () => void;
   onOpenFonts: () => void;
   onOpenSpeakers: () => void;
   onOpenClips: () => void;
   onOpenApiSettings: () => void;
   onOpenColorSettings: () => void;
-  onOpenImportSettings: () => void;
   onOpenPlayback: () => void;
-  onExportProject: () => void;
 }> = ({ 
   collapsed, 
   onNewProject, 
   onOpenProject, 
   onSaveProject,
+  onImportAudio,
+  onExportProject,
   onOpenFonts,
   onOpenSpeakers,
   onOpenClips,
   onOpenApiSettings,
   onOpenColorSettings,
-  onOpenImportSettings,
-  onOpenPlayback,
-  onExportProject
+  onOpenPlayback
 }) => {
   return (
     <aside 
-      className={`${collapsed ? 'sidebar-width-collapsed' : 'sidebar-width'} vibrancy-sidebar border-r border-glass-border-subtle flex flex-col h-full transition-all duration-300 ease-in-out overflow-hidden`}
+      className={`${collapsed ? 'sidebar-width-collapsed' : 'sidebar-width'} vibrancy-sidebar flex flex-col h-full transition-all duration-300 ease-in-out overflow-hidden`}
     >
-      {/* Project Controls */}
-      <div className={`${collapsed ? 'px-2' : 'px-4'} pb-4 border-b border-border`}>
-        <div className="space-y-2">
-          <button
-            onClick={onNewProject}
-            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
-            title={collapsed ? "New Project" : undefined}
-          >
-            <FileText size={16} />
-            {!collapsed && <span>New Project</span>}
-          </button>
-          <button
-            onClick={onOpenProject}
-            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
-            title={collapsed ? "Open Project" : undefined}
-          >
-            <FolderOpen size={16} />
-            {!collapsed && <span>Open Project</span>}
-          </button>
-          <button
-            onClick={onSaveProject}
-            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
-            title={collapsed ? "Save Project" : undefined}
-          >
-            <Save size={16} />
-            {!collapsed && <span>Save Project</span>}
-          </button>
-          <button
-            onClick={onExportProject}
-            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm bg-surface hover:bg-hover-bg rounded-lg transition-colors`}
-            title={collapsed ? "Export" : undefined}
-          >
-            <Download size={16} />
-            {!collapsed && <span>Export</span>}
-          </button>
-        </div>
+      {/* File Menu */}
+      <div className={`${collapsed ? 'px-2' : 'px-4'} pt-4 pb-4`}>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
+              title={collapsed ? "File" : undefined}
+            >
+              <File size={16} />
+              {!collapsed && (
+                <>
+                  <span>File</span>
+                  <ChevronDown size={12} className="ml-auto" />
+                </>
+              )}
+            </button>
+          </DropdownMenu.Trigger>
+          
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              className="min-w-[200px] bg-surface border border-border rounded-lg shadow-lg p-1 z-50"
+              sideOffset={5}
+              align={collapsed ? "start" : "center"}
+            >
+              <DropdownMenu.Item
+                className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-md cursor-pointer outline-none"
+                onClick={onNewProject}
+              >
+                <FileText size={16} />
+                <span>New Project</span>
+              </DropdownMenu.Item>
+              
+              <DropdownMenu.Item
+                className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-md cursor-pointer outline-none"
+                onClick={onOpenProject}
+              >
+                <FolderOpen size={16} />
+                <span>Open Project</span>
+              </DropdownMenu.Item>
+              
+              <DropdownMenu.Item
+                className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-md cursor-pointer outline-none"
+                onClick={onSaveProject}
+              >
+                <Save size={16} />
+                <span>Save Project</span>
+              </DropdownMenu.Item>
+              
+              <DropdownMenu.Separator className="h-px bg-border my-1" />
+              
+              <DropdownMenu.Item
+                className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-md cursor-pointer outline-none"
+                onClick={onImportAudio}
+              >
+                <Music size={16} />
+                <span>Import Audio</span>
+              </DropdownMenu.Item>
+              
+              <DropdownMenu.Item
+                className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover-bg rounded-md cursor-pointer outline-none"
+                onClick={onExportProject}
+              >
+                <Download size={16} />
+                <span>Export</span>
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
 
       {/* Panel Controls */}
@@ -130,14 +164,6 @@ export const EnhancedSidebar: React.FC<{
           >
             <Palette size={16} />
             {!collapsed && <span>Colors</span>}
-          </button>
-          <button
-            onClick={onOpenImportSettings}
-            className={`w-full flex items-center ${collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-3 py-2'} text-sm hover:bg-hover-bg rounded-lg transition-colors`}
-            title={collapsed ? "Import" : undefined}
-          >
-            <Music size={16} />
-            {!collapsed && <span>Import</span>}
           </button>
           <button
             onClick={onOpenPlayback}
@@ -205,6 +231,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   // Get contexts
   const { state: projectState, actions: projectActions } = useProject();
   const { selectedJob } = useSelectedJob();
+  const { theme, setTheme } = useTheme();
 
   // Get audio file path from project and convert to blob URL
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
@@ -449,6 +476,25 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     loadApiKeys();
   }, []);
 
+  // Theme toggle IPC listener
+  useEffect(() => {
+    const handleThemeToggle = () => {
+      const newTheme = theme === 'dark' ? 'light' : 'dark';
+      setTheme(newTheme);
+    };
+
+    // Set up IPC listener
+    if (window.electronAPI?.onToggleTheme) {
+      window.electronAPI.onToggleTheme(handleThemeToggle);
+    }
+
+    // Cleanup function
+    return () => {
+      // Remove listener if cleanup is available
+      // (In this simple case, we don't need explicit cleanup)
+    };
+  }, [theme, setTheme]);
+
   // API Keys handlers
   const handleApiKeySave = async (apiKeys: { [service: string]: string }) => {
     try {
@@ -565,6 +611,11 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     window.dispatchEvent(event);
   };
 
+  const handleImportAudio = () => {
+    const event = new CustomEvent('open-import-dialog');
+    window.dispatchEvent(event);
+  };
+
   // Font settings handlers
   const handleFontChange = (newSettings: FontSettings) => {
     setFontSettings(newSettings);
@@ -621,14 +672,14 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         onNewProject={handleNewProject}
         onOpenProject={handleOpenProject}
         onSaveProject={handleSaveProject}
-        onOpenFonts={() => setOpenPanel('fonts')}
-        onOpenSpeakers={() => setOpenPanel('speakers')}
-        onOpenClips={() => setOpenPanel('clips')}
-        onOpenApiSettings={() => setOpenPanel('api')}
-        onOpenColorSettings={() => setOpenPanel('colors')}
-        onOpenImportSettings={() => setOpenPanel('import')}
-        onOpenPlayback={handleToggleGlassPlayer}
+        onImportAudio={handleImportAudio}
         onExportProject={handleExportProject}
+        onOpenFonts={() => setOpenPanel(openPanel === 'fonts' ? null : 'fonts')}
+        onOpenSpeakers={() => setOpenPanel(openPanel === 'speakers' ? null : 'speakers')}
+        onOpenClips={() => setOpenPanel(openPanel === 'clips' ? null : 'clips')}
+        onOpenApiSettings={() => setOpenPanel(openPanel === 'api' ? null : 'api')}
+        onOpenColorSettings={() => setOpenPanel(openPanel === 'colors' ? null : 'colors')}
+        onOpenPlayback={handleToggleGlassPlayer}
       />
 
       {/* Secondary Panel */}
@@ -641,7 +692,6 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           openPanel === 'fonts' ? 'Font Settings' :
           openPanel === 'api' ? 'API Settings' :
           openPanel === 'colors' ? 'Color Settings' :
-          openPanel === 'import' ? 'Import Settings' :
           'Panel'
         }
       >
@@ -693,11 +743,6 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           />
         )}
         
-        {openPanel === 'import' && (
-          <ImportSettings
-            onClose={() => setOpenPanel(null)}
-          />
-        )}
       </SecondaryPanel>
 
         {/* Main Content */}

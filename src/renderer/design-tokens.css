@@ -18,10 +18,9 @@
     
     /* Core Colors (HSL values without hsl() wrapper, space-separated format) */
     --bg: 220 15% 15%;                /* Main background - dark */
-    --surface: 220 15% 20%;           /* Surface elements - slightly lighter */
-    --sidebar: 0 100% 50%;            /* Sidebar background - BRIGHT RED for
-      testing */
-    --sidebar-light: 198 30% 45%;     /* Lighter sidebar variant */
+    --surface: 210 40% 25%;           /* Surface elements - blue tinted */
+    --sidebar: 210 50% 60%;            /* Sidebar background - blue tinted */
+    --sidebar-light: 210 40% 55%;     /* Lighter sidebar variant - blue */
     --text: 50 100% 95%;              /* Primary text - light */
     --text-muted: 240 5% 65%;         /* Muted text */
     --text-on-dark: 0 0% 98%;         /* White text for dark backgrounds */
@@ -36,11 +35,11 @@
     --error: 0 84% 60%;               /* Error color */
     
     /* Status Background Colors */
-    --success-bg: 142 76% 36% / 0.1;
+    --success-bg: 142 76% 36% / 0.5;
     --success-text: 142 76% 50%;
-    --error-bg: 0 84% 60% / 0.1;
+    --error-bg: 0 84% 60% / 0.5;
     --error-text: 0 84% 70%;
-    --warn-bg: 38 92% 50% / 0.1;
+    --warn-bg: 38 92% 50% / 0.5;
     --warn-text: 38 92% 60%;
     
     /* Component Colors */
@@ -55,21 +54,22 @@
     --primary-50: 45 100% 90%;
     
     /* Sidebar Specific */
-    --sidebar-bg: 198 30% 36% / var(--sidebar-bg-opacity);
-    --sidebar-text: 0 0% 95%;
+    --sidebar-bg: 100 30% 36% / var(--sidebar-bg-opacity);
+    --sidebar-text: 40 0% 95%;
     --sidebar-bg-blur: hsla(198 30% 36% / var(--sidebar-bg-opacity));
     
     /* Glass/Vibrancy Effects */
-    --glass-surface: 240 8% 8% / 0.8;
-    --glass-border: 240 10% 30% / 0.3;
-    --glass-hover: 240 8% 15% / 0.6;
-    --glass-track: 240 8% 20% / 0.3;
-    --glass-border-subtle: 240 4% 20% / 0.2;
+    --glass-surface: 240 8% 8% / 1;
+    --glass-text: 0 0% 60%;          /* Glass text color - dynamic based on theme */
+    --glass-border: 240 10% 30% / 1;
+    --glass-hover: 240 8% 15% / 1;
+    --glass-track: 240 8% 20% / 1;
+    --glass-border-subtle: 240 4% 20% / 1;
     
     /* Panel Layout */
-    --transcript-bg: 220 15% 15%;
+    --transcript-bg: 198 100% 100%;
     --transcript-text: 50 100% 95%;
-    --player-bg: 220 15% 18%;
+    --player-bg: 10 15% 18%;
     --player-text: 50 100% 95%;
     --hover-bg: 220 15% 25%;
     --panel-bg-blur: hsla(220 15% 15% / var(--panel-bg-opacity));
@@ -118,23 +118,23 @@
     --shadow-focus: 0 0 0 2px hsl(var(--accent) / 0.5);
     
     /* Panel Widths - Change these to resize panels */
-    --sidebar-width: 16rem;           /* Left sidebar width (w-64 = 16rem) */
-    --sidebar-width-collapsed: 64px;  /* Collapsed sidebar width (icons only) */
+    --sidebar-width: 13rem;           /* Left sidebar width (w-64 = 16rem) */
+    --sidebar-width-collapsed: 50px;  /* Collapsed sidebar width (icons only) */
     --secondary-panel-width: 320px;   /* Secondary panel width */
     --topbar-height: 44px;            /* Top bar height (matches Day One) */
     
     /* Window Transparency Controls */
-    --app-bg-opacity: 0.3;            /* Main app background opacity (0=fully transparent, 1=opaque) */
-    --sidebar-bg-opacity: 0.5;        /* Sidebar background opacity */
-    --panel-bg-opacity: 0.3;          /* Secondary panel background opacity */
-    --glass-blur-amount: 100px;       /* Backdrop blur effect strength */
-    --backdrop-blur: blur(100px);     /* Backdrop filter value */
+    --app-bg-opacity: 1;            /* ?Main app background opacity (0=fully transparent, 1=opaque) */
+    --sidebar-bg-opacity: 0.3;        /* Sidebar background opacity MAIN - lighter */
+    --panel-bg-opacity: 0.2;          /* Secondary panel background opacity - light transparency */
+    --glass-blur-amount: 0px;       /* Backdrop blur effect strength */
+    --backdrop-blur: blur(20px);    /* Backdrop filter value */
     
     /* Glass Effect Opacity Levels */
-    --opacity-glass-heavy: 0.8;       /* Heavy glass effect */
-    --opacity-glass-medium: 0.5;      /* Medium glass effect */
-    --opacity-glass-light: 0.2;       /* Light glass effect */
-    --opacity-glass-subtle: 0.1;      /* Subtle glass effect */
+    --opacity-glass-heavy: 0.8;     /* Heavy glass effect */
+    --opacity-glass-medium: 0.5;    /* Medium glass effect */
+    --opacity-glass-light: 0.3;     /* Light glass effect */
+    --opacity-glass-subtle: 0.1;    /* Subtle glass effect */
 }
 
 /* ============================================== */
@@ -297,14 +297,14 @@ EXAMPLE - Blue Theme:
 
 /* === TRANSCRIPTION SETTINGS === */
 .transcription-settings {
-    background-color: hsla(220 15% 18% / var(--opacity-glass-heavy)) !important;
+    background-color: hsla(0 15% 18% / var(--opacity-glass-heavy)) !important;
     backdrop-filter: blur(var(--glass-blur-amount)) !important;
     -webkit-backdrop-filter: blur(var(--glass-blur-amount)) !important;
 }
 
 /* === PROGRESS OVERLAYS === */
 .progress-overlay {
-    background-color: hsla(220 15% 10% / 0.9) !important;
+    background-color: hsla(220 15% 10% / 0.5) !important;
     backdrop-filter: blur(50px) !important;
     -webkit-backdrop-filter: blur(50px) !important;
 }
@@ -318,7 +318,7 @@ EXAMPLE - Blue Theme:
 
 /* === MAIN APP TRANSPARENCY === */
 .app-transparent {
-    background-color: hsla(220 15% 15% / var(--app-bg-opacity)) !important;
+    background-color: hsla(220 15% 15% / 1 var(--app-bg-opacity)) !important;
 }
 
 .app-opaque {
@@ -327,9 +327,9 @@ EXAMPLE - Blue Theme:
 
 /* === TOP BAR SPECIFIC STYLES === */
 .traffic-lights-space {
-    width: 78px; /* Space for macOS traffic lights (12px + 68px buttons + padding) */
+    width: 90px; /* Space for macOS traffic lights (12px + 68px buttons + padding) */
     height: var(--topbar-height);
-    flex-shrink: 0;
+    flex-shrink: 1;
 }
 
 .sidebar-toggle-btn {
@@ -342,7 +342,7 @@ EXAMPLE - Blue Theme:
     border: none;
     border-radius: 4px;
     color: hsl(var(--text) / 0.8);
-    transition: all 0.2s ease;
+    transition: all 1s ease;
     cursor: pointer;
     -webkit-app-region: no-drag; /* Prevent dragging when clicking button */
 }
@@ -353,7 +353,7 @@ EXAMPLE - Blue Theme:
 }
 
 .button-group-separator {
-    width: 16px; /* Gap between button groups */
+    width: 100px; /* Gap between button groups */
     flex-shrink: 0;
 }
 
@@ -416,8 +416,8 @@ EXAMPLE - Blue Theme:
 
 /* Fully Transparent Mode */
 .transparency-full {
-    --app-bg-opacity: 0 !important;
-    --sidebar-bg-opacity: 0.05 !important;
+    --app-bg-opacity: 0.5 !important;
+    --sidebar-bg-opacity: 0.3 !important;
     --panel-bg-opacity: 0.1 !important;
     --glass-blur-amount: 50px !important;
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Check } from 'lucide-react';
 
 interface ColorOption {
@@ -18,23 +18,111 @@ const colorOptions: ColorOption[] = [
   {
     id: 'green',
     name: 'Green',
-    value: '#003223',
-    preview: '#003223'
+    value: '#007552',
+    preview: '#007552'
   },
   {
     id: 'blue',
     name: 'Blue', 
-    value: '#005d7f',
-    preview: '#005d7f'
+    value: '#0086bf',
+    preview: '#0086bf'
+  },
+  {
+    id: 'light',
+    name: 'Light Mode',
+    value: 'light',
+    preview: '#f5f5f5'
+  },
+  {
+    id: 'dark',
+    name: 'Dark Mode',
+    value: 'dark', 
+    preview: '#1e293b'
   }
 ];
 
 const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChange, onClose }) => {
   const [selectedColor, setSelectedColor] = useState(currentColor);
 
+  const applyTheme = (themeValue: string) => {
+    const root = document.documentElement;
+    
+    if (themeValue === 'light') {
+      // Light mode colors
+      root.style.setProperty('--bg', '0 0% 98%');           // Very light gray background
+      root.style.setProperty('--surface', '0 0% 96%');      // Light gray surface - f5f5f5
+      root.style.setProperty('--sidebar', '0 0% 96%');      // Light sidebar - f5f5f5
+      root.style.setProperty('--text', '220 13% 15%');      // Dark text
+      root.style.setProperty('--text-muted', '220 13% 40%'); // Muted dark text
+      root.style.setProperty('--border', '220 13% 85%');    // Light border
+      root.style.setProperty('--hover-bg', '220 13% 90%');  // Light hover
+      // Playback panel colors (light)
+      root.style.setProperty('--glass-surface', '0 0% 96% / 1');  // Light playback panel
+      root.style.setProperty('--glass-text', '220 13% 15%');      // Dark text for playback
+    } else if (themeValue === 'dark') {
+      // Dark mode colors  
+      root.style.setProperty('--bg', '220 15% 10%');        // Very dark background
+      root.style.setProperty('--surface', '220 15% 15%');   // Dark surface
+      root.style.setProperty('--sidebar', '220 13% 20%');   // Dark sidebar
+      root.style.setProperty('--text', '50 100% 95%');      // Light text
+      root.style.setProperty('--text-muted', '240 5% 65%'); // Muted light text
+      root.style.setProperty('--border', '220 15% 25%');    // Dark border
+      root.style.setProperty('--hover-bg', '220 15% 20%');  // Dark hover
+      // Playback panel colors (white text/buttons)
+      root.style.setProperty('--glass-surface', '220 15% 15% / 1');  // Dark playback panel
+      root.style.setProperty('--glass-text', '0 0% 100%');           // White text for playback
+    } else if (themeValue === '#0086bf') {
+      // Blue mode - lighter blue (0086bf)
+      root.style.setProperty('--bg', '220 15% 15%');        // Dark background
+      root.style.setProperty('--surface', '200 100% 37%');  // Blue surface (#0086bf)
+      root.style.setProperty('--sidebar', '200 100% 37%');  // Blue sidebar (#0086bf)
+      root.style.setProperty('--text', '50 100% 95%');      // Light text
+      root.style.setProperty('--text-muted', '240 5% 65%'); // Muted light text
+      root.style.setProperty('--border', '220 15% 100%');   // Light border
+      root.style.setProperty('--hover-bg', '200 100% 42%'); // Lighter blue hover
+      // Playback panel colors (same as light mode)
+      root.style.setProperty('--glass-surface', '0 0% 96% / 1');  // Light playback panel
+      root.style.setProperty('--glass-text', '220 13% 15%');      // Dark text for playback
+    } else if (themeValue === '#007552') {
+      // Green mode - 007552
+      root.style.setProperty('--bg', '220 15% 15%');        // Dark background
+      root.style.setProperty('--surface', '160 100% 23%');  // Green surface (#007552)
+      root.style.setProperty('--sidebar', '160 100% 23%');  // Green sidebar (#007552)  
+      root.style.setProperty('--text', '50 100% 95%');      // Light text
+      root.style.setProperty('--text-muted', '240 5% 65%'); // Muted light text
+      root.style.setProperty('--border', '220 15% 100%');   // Light border
+      root.style.setProperty('--hover-bg', '160 100% 28%'); // Lighter green hover
+      // Playback panel colors (same as light mode)
+      root.style.setProperty('--glass-surface', '0 0% 96% / 1');  // Light playback panel
+      root.style.setProperty('--glass-text', '220 13% 15%');      // Dark text for playback
+    } else {
+      // Fallback - original theme
+      root.style.setProperty('--bg', '220 15% 15%');
+      root.style.setProperty('--surface', '220 15% 20%');
+      root.style.setProperty('--sidebar', '220 13% 50%');
+      root.style.setProperty('--text', '50 100% 95%');
+      root.style.setProperty('--text-muted', '240 5% 65%');
+      root.style.setProperty('--border', '220 15% 100%');
+      root.style.setProperty('--hover-bg', '220 15% 25%');
+      // Default playback panel
+      root.style.setProperty('--glass-surface', '240 8% 8% / 1');
+      root.style.setProperty('--glass-text', '0 0% 60%');
+    }
+  };
+
+  // Apply the current theme when component mounts
+  useEffect(() => {
+    if (currentColor) {
+      applyTheme(currentColor);
+    }
+  }, []);
+
   const handleColorSelect = (color: string) => {
     setSelectedColor(color);
     onColorChange(color);
+    
+    // Apply the theme by updating CSS custom properties
+    applyTheme(color);
   };
 
   return (

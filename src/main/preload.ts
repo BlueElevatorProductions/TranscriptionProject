@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMenuImportAudio: (callback: () => void) => {
     ipcRenderer.on('menu-import-audio', callback);
   },
+  onToggleTheme: (callback: () => void) => {
+    ipcRenderer.on('toggle-theme', callback);
+  },
 
   // Audio import and transcription
   importAudioDialog: () => ipcRenderer.invoke('import-audio-dialog'),

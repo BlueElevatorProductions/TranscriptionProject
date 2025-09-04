@@ -68,9 +68,9 @@ export function GlassAudioPlayer({
           "w-full max-w-6xl mx-auto",
           "flex items-center gap-3 px-6 py-4",
           "rounded-[var(--radius-lg)]",
-          // Glass styling
+          // Glass styling - transparent glass effect
           "backdrop-blur-md border",
-          "bg-[hsl(var(--glass-surface))] border-[hsl(var(--glass-border))]",
+          "bg-[hsl(var(--surface)_/_var(--opacity-glass-medium))] border-[hsl(var(--glass-border-subtle))]",
           // Subtle elevation
           "shadow-[0_10px_30px_-12px_rgba(0,0,0,0.35)]",
         ].join(" ")}
@@ -84,26 +84,26 @@ export function GlassAudioPlayer({
             onClick={onSkipToClipStart}
             className="p-2 rounded-md hover:bg-[hsl(var(--glass-hover))] transition-colors"
           >
-            <SkipBack className="w-5 h-5 text-gray-700" />
+            <SkipBack className="w-5 h-5" style={{color: 'hsl(var(--glass-text))'}} />
           </button>
           <button
             aria-label={isPlaying ? "Pause" : "Play"}
             onClick={onPlayPause}
             className="p-2.5 rounded-md hover:bg-[hsl(var(--glass-hover))] transition-colors"
           >
-            {isPlaying ? <Pause className="w-5 h-5 text-gray-700" /> : <Play className="w-5 h-5 text-gray-700" />}
+            {isPlaying ? <Pause className="w-5 h-5" style={{color: 'hsl(var(--glass-text))'}} /> : <Play className="w-5 h-5" style={{color: 'hsl(var(--glass-text))'}} />}
           </button>
           <button
             aria-label="Skip to clip end"
             onClick={onSkipToClipEnd}
             className="p-2 rounded-md hover:bg-[hsl(var(--glass-hover))] transition-colors"
           >
-            <SkipForward className="w-5 h-5 text-gray-700" />
+            <SkipForward className="w-5 h-5" style={{color: 'hsl(var(--glass-text))'}} />
           </button>
         </div>
 
         {/* Timeline */}
-        <time className="tabular-nums text-xs text-gray-700 min-w-[45px] text-right">
+        <time className="tabular-nums text-xs min-w-[45px] text-right" style={{color: 'hsl(var(--glass-text))'}}>
           {fmt(currentTime)}
         </time>
         <div className="flex-1">
@@ -121,7 +121,7 @@ export function GlassAudioPlayer({
             <Slider.Thumb className="block size-3 rounded-full bg-[hsl(var(--accent))] outline-none focus:ring-2 focus:ring-[hsl(var(--accent))]/40 cursor-grab active:cursor-grabbing" />
           </Slider.Root>
         </div>
-        <time className="tabular-nums text-xs text-gray-700 min-w-[45px]">
+        <time className="tabular-nums text-xs min-w-[45px]" style={{color: 'hsl(var(--glass-text))'}}>
           {fmt(duration)}
         </time>
 
@@ -129,7 +129,8 @@ export function GlassAudioPlayer({
         <select
           value={String(speed)}
           onChange={(e) => onSpeedChange?.(Number(e.target.value))}
-          className="ml-2 rounded-md bg-transparent border border-[hsl(var(--glass-border))] px-2 py-1 text-xs text-gray-700 hover:bg-[hsl(var(--glass-hover))] transition-colors cursor-pointer"
+          className="ml-2 rounded-md bg-transparent border border-[hsl(var(--glass-border))] px-2 py-1 text-xs hover:bg-[hsl(var(--glass-hover))] transition-colors cursor-pointer"
+          style={{color: 'hsl(var(--glass-text))'}}
           aria-label="Playback speed"
         >
           {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((s) => (
@@ -141,7 +142,7 @@ export function GlassAudioPlayer({
 
         {/* Volume Control */}
         <div className="flex items-center gap-2 min-w-[120px] ml-2">
-          <Volume2 className="w-4 h-4 text-gray-700" />
+          <Volume2 className="w-4 h-4" style={{color: 'hsl(var(--glass-text))'}} />
           <Slider.Root
             value={[Math.round((volume ?? 1) * 100)]}
             max={100}
@@ -164,7 +165,7 @@ export function GlassAudioPlayer({
             onClick={onClose}
             className="ml-2 p-2 rounded-md hover:bg-[hsl(var(--glass-hover))] transition-colors"
           >
-            <X className="w-4 h-4 text-gray-700" />
+            <X className="w-4 h-4" style={{color: 'hsl(var(--glass-text))'}} />
           </button>
         )}
       </div>

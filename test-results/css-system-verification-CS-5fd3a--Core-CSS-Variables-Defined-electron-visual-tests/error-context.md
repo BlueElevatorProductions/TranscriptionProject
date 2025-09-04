@@ -1,0 +1,79 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - tablist [ref=e7]:
+          - tab "Listen" [selected] [ref=e8] [cursor=pointer]
+          - tab "Edit" [ref=e9] [cursor=pointer]
+        - generic [ref=e11]:
+          - button "New Project" [ref=e12] [cursor=pointer]:
+            - img [ref=e13] [cursor=pointer]
+            - text: New Project
+          - button "Open Project" [ref=e16] [cursor=pointer]:
+            - img [ref=e17] [cursor=pointer]
+            - text: Open Project
+          - button "Save Project" [ref=e19] [cursor=pointer]:
+            - img [ref=e20] [cursor=pointer]
+            - text: Save Project
+          - button "Export" [ref=e24] [cursor=pointer]:
+            - img [ref=e25] [cursor=pointer]
+            - text: Export
+        - generic [ref=e29]:
+          - button "Speakers" [ref=e30] [cursor=pointer]:
+            - img [ref=e31] [cursor=pointer]
+            - text: Speakers
+          - button "Clips" [ref=e36] [cursor=pointer]:
+            - img [ref=e37] [cursor=pointer]
+            - text: Clips
+          - button "Fonts" [ref=e43] [cursor=pointer]:
+            - img [ref=e44] [cursor=pointer]
+            - text: Fonts
+          - button "API Settings" [ref=e46] [cursor=pointer]:
+            - img [ref=e47] [cursor=pointer]
+            - text: API Settings
+          - button "Colors" [ref=e50] [cursor=pointer]:
+            - img [ref=e51] [cursor=pointer]
+            - text: Colors
+          - button "Import" [ref=e57] [cursor=pointer]:
+            - img [ref=e58] [cursor=pointer]
+            - text: Import
+          - button "Playback" [ref=e62] [cursor=pointer]:
+            - img [ref=e63] [cursor=pointer]
+            - text: Playback
+    - generic:
+      - generic:
+        - heading [level=3]: Panel
+        - button:
+          - img
+    - main [ref=e65]:
+      - generic [ref=e68]:
+        - paragraph [ref=e69]: No transcript available
+        - paragraph [ref=e70]: Import an audio file and run transcription to get started.
+  - region "Audio player" [ref=e72]:
+    - generic [ref=e73]:
+      - button "Skip to clip start" [ref=e74] [cursor=pointer]:
+        - img [ref=e75] [cursor=pointer]
+      - button "Play" [ref=e77] [cursor=pointer]:
+        - img [ref=e78] [cursor=pointer]
+      - button "Skip to clip end" [ref=e80] [cursor=pointer]:
+        - img [ref=e81] [cursor=pointer]
+    - time [ref=e83]: 0:00
+    - slider [ref=e88]
+    - time [ref=e89]: 0:00
+    - combobox "Playback speed" [ref=e90] [cursor=pointer]:
+      - option "0.5×"
+      - option "0.75×"
+      - option "1×" [selected]
+      - option "1.25×"
+      - option "1.5×"
+      - option "1.75×"
+      - option "2×"
+    - generic [ref=e91]:
+      - img [ref=e92]
+      - slider [ref=e100]
+    - button "Close player" [ref=e101] [cursor=pointer]:
+      - img [ref=e102] [cursor=pointer]
+```

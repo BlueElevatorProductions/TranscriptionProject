@@ -54,21 +54,33 @@ const TopBar: React.FC<TopBarProps> = ({
         <div className="button-group-separator" />
 
         {/* Listen/Edit Mode Toggle */}
-        <div className="flex items-center mode-button-group">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => onModeChange('listen')}
-            className={`mode-button ${mode === 'listen' ? 'mode-button-active' : 'mode-button-inactive'}`}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              mode === 'listen' 
+                ? 'bg-surface text-text' 
+                : 'bg-transparent text-text-muted hover:bg-surface hover:text-text'
+            }`}
+            style={{ WebkitAppRegion: 'no-drag' as any }}
             aria-label="Listen mode"
           >
-            <Headphones size={20} />
+            <Headphones size={16} />
+            <span>Listen Mode</span>
           </button>
           
           <button
             onClick={() => onModeChange('edit')}
-            className={`mode-button ${mode === 'edit' ? 'mode-button-active' : 'mode-button-inactive'}`}
+            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+              mode === 'edit' 
+                ? 'bg-surface text-text' 
+                : 'bg-transparent text-text-muted hover:bg-surface hover:text-text'
+            }`}
+            style={{ WebkitAppRegion: 'no-drag' as any }}
             aria-label="Edit mode"
           >
-            <PencilLine size={20} />
+            <PencilLine size={16} />
+            <span>Edit Mode</span>
           </button>
         </div>
       </div>

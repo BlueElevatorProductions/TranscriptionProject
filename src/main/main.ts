@@ -219,6 +219,14 @@ class App {
           { role: 'zoomIn' },
           { role: 'zoomOut' },
           { type: 'separator' },
+          {
+            label: 'Toggle Dark Mode',
+            accelerator: 'CmdOrCtrl+Shift+D',
+            click: () => {
+              this.mainWindow?.webContents.send('toggle-theme');
+            },
+          },
+          { type: 'separator' },
           { role: 'togglefullscreen' },
         ],
       },
