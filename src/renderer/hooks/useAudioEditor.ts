@@ -74,6 +74,8 @@ export interface AudioEditorActions {
   isClipActive: (clipId: string) => boolean;
   getEditedClips: () => Clip[]; // Clips in edited order, excluding deleted ones
   getVisibleClips: () => Clip[]; // Clips visible in current mode
+  /** Get the internal reorderIndices array for undo/redo. */
+  getReorderIndices: () => number[];
 }
 
 export interface UseAudioEditorOptions {
@@ -410,6 +412,10 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
         // In edit mode, show all clips (deleted ones will be styled differently)
         return editedClips;
       }
+    },
+    getReorderIndices: () => {
+      const appState = managerRef.current?.getState();
+      return appState?.timeline.reorderIndices || [];
     },
   };
 

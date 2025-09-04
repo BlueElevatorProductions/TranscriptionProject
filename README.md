@@ -422,7 +422,7 @@ ZIP archives containing:
 
 ### Code Organization
 - **Components**: Functional React components with TypeScript
-- **Hooks**: Custom hooks for reusable logic (`useAudioEditor`)
+- **Hooks**: Custom hooks for reusable logic (`useAudioEditor`, `useClipEditor`)
 - **Contexts**: Centralized state management (Project, Notification)
 - **Services**: Business logic and external API integration
 - **Types**: Comprehensive TypeScript definitions
