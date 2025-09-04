@@ -234,6 +234,7 @@ export class ProjectPackageService {
             projectData.project.audio.tempDirectory = tempDir;
             
             console.log(`Extracted audio file to: ${tempAudioPath}`);
+            console.log('Audio resolved path set on projectData:', projectData.project.audio.resolvedPath);
             break; // Use the first original audio file found
           } catch (audioError: any) {
             console.warn('Could not extract audio file:', audioError.message);

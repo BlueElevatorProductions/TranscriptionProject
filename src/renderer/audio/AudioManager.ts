@@ -402,7 +402,12 @@ export class AudioManager {
   async initialize(audioUrl: string, clips: Clip[]): Promise<void> {
     try {
       this.audioUrl = audioUrl;
-      this.audioElement.src = audioUrl;
+      // Prefix file URLs when loading local audio files
+      const src = audioUrl.startsWith('http') || audioUrl.startsWith('blob:') || audioUrl.startsWith('file://')
+        ? audioUrl
+        : `file://${audioUrl}`;
+      console.log('[AudioManager] Audio element src set to:', src);
+      this.audioElement.src = src;
       
       await new Promise<void>((resolve, reject) => {
         console.log('[AudioManager] Setting up audio loading promise...');

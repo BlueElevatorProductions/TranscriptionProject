@@ -268,16 +268,17 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
         {renderSpeakerLabel(clip)}
         
         <div
-          className="leading-relaxed"
+          className="leading-relaxed break-words"
+          contentEditable={audioState.mode === 'edit'}
+          suppressContentEditableWarning
           style={{
             fontSize: `${fontSettings.size}px`,
             fontFamily: fontSettings.family,
             lineHeight: fontSettings.lineHeight,
+            whiteSpace: 'pre-wrap',
           }}
         >
-          {clip.words.map((word, wordIndex) => 
-            renderWord(clip, word, wordIndex)
-          )}
+          {clip.words.map((word, wordIndex) => renderWord(clip, word, wordIndex))}
         </div>
         
         {/* Debug info for development */}
@@ -334,7 +335,7 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-4xl mx-auto prose dark:prose-invert break-words">
       {/* Mode indicator */}
       <div className="mb-4 flex items-center justify-between">
         <div className="text-sm text-gray-500">

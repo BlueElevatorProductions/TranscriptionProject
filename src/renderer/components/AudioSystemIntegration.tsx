@@ -100,11 +100,8 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   // Initialize audio system when clips and audio URL are available
   useEffect(() => {
     if (clips.length > 0 && audioUrl && !audioState.isInitialized && !initializationAttemptRef.current) {
-      console.log('[AudioSystemIntegration] Initializing audio system with:', { 
-        audioUrl, 
-        clipCount: clips.length,
-        isInitialized: audioState.isInitialized 
-      });
+      console.log('[AudioSystemIntegration] Initializing audio system with audioUrl:', audioUrl);
+      console.log({ clipCount: clips.length, isInitialized: audioState.isInitialized });
       
       initializationAttemptRef.current = true;
       setInitializationError(null);
