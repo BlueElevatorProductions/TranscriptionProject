@@ -348,14 +348,23 @@ export const findMatchingCommand = (
 // Helper to check if target is an input element
 export const isInputElement = (target: EventTarget | null): boolean => {
   if (!target) return false;
-  
   const element = target as HTMLElement;
-  const tagName = element.tagName.toLowerCase();
-  
-  return (
-    tagName === 'input' ||
-    tagName === 'textarea' ||
-    tagName === 'select' ||
-    element.contentEditable === 'true'
-  );
+  const tagName = (element.tagName || '').toLowerCase();
+
+  // Standard form elements
+  if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+    return true;
+  }
+
+  // ContentEditable handling: use isContentEditable which accounts for ancestors
+  if ((element as any).isContentEditable) {
+    return true;
+  }
+
+  // Also check ancestors explicitly (some environments may not propagate correctly)
+  if (element.closest && element.closest('[contenteditable="true"]')) {
+    return true;
+  }
+
+  return false;
 };

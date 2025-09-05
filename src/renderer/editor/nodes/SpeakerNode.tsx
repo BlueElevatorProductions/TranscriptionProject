@@ -203,6 +203,12 @@ export class SpeakerNode extends DecoratorNode<React.JSX.Element> {
         displayName={this.__displayName}
         color={this.__color}
         nodeKey={this.__key}
+        onSpeakerChange={(speakerId: string, newName: string) => {
+          // Dispatch a global event handled by SpeakerPlugin to update speakers map
+          window.dispatchEvent(new CustomEvent('speaker-name-change', {
+            detail: { speakerId, newName }
+          }));
+        }}
       />
     );
   }

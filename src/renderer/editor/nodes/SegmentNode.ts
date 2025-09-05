@@ -66,7 +66,7 @@ export class SegmentNode extends ElementNode {
     
     // Add paragraph break styling if needed
     if (this.__isParagraphBreak) {
-      element.classList.add('paragraph-break', 'mt-8', 'pt-4', 'border-t', 'border-gray-200');
+      element.classList.add('paragraph-break', 'mt-8', 'pt-4', 'border-t', 'border-dashed', 'border-gray-200');
     } else {
       element.classList.add('mb-4');
     }
@@ -84,10 +84,10 @@ export class SegmentNode extends ElementNode {
     // Update paragraph break styling
     if (prevNode.__isParagraphBreak !== this.__isParagraphBreak) {
       if (this.__isParagraphBreak) {
-        element.classList.add('paragraph-break', 'mt-8', 'pt-4', 'border-t', 'border-gray-200');
+        element.classList.add('paragraph-break', 'mt-8', 'pt-4', 'border-t', 'border-dashed', 'border-gray-200');
         element.classList.remove('mb-4');
       } else {
-        element.classList.remove('paragraph-break', 'mt-8', 'pt-4', 'border-t', 'border-gray-200');
+        element.classList.remove('paragraph-break', 'mt-8', 'pt-4', 'border-t', 'border-dashed', 'border-gray-200');
         element.classList.add('mb-4');
       }
     }

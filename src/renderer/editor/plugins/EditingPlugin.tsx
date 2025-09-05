@@ -431,13 +431,75 @@ export default function EditingPlugin({
     if (editorElement) {
       editorElement.addEventListener('dblclick', handleDoubleClick);
       editorElement.addEventListener('contextmenu', handleContextMenu);
+      // Enter key to split at cursor into a new segment (Edit mode only)
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (readOnly) return;
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          editor.update(() => {
+            const selection = $getSelection();
+            if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
+
+            // Ascend to WordNode
+            let node: any = selection.anchor.getNode();
+            while (node && !$isWordNode(node)) {
+              node = node.getParent && node.getParent();
+            }
+            if (!node || !$isWordNode(node)) return;
+            const wordNode = node as WordNode;
+
+            // Ascend to SegmentNode
+            let parent: any = wordNode.getParent();
+            while (parent && !$isSegmentNode(parent)) {
+              parent = parent.getParent && parent.getParent();
+            }
+            if (!parent || !$isSegmentNode(parent)) return;
+            const segmentNode = parent as SegmentNode;
+
+            const children = segmentNode.getChildren();
+            const splitIndex = children.findIndex((c) => c.getKey() === wordNode.getKey());
+            if (splitIndex <= 0 || splitIndex >= children.length) return;
+
+            const newSegmentId = `segment_${Date.now()}`;
+            const newSegment = new SegmentNode(
+              newSegmentId,
+              segmentNode.getStartTime(),
+              segmentNode.getEndTime(),
+              segmentNode.getSpeakerId(),
+              true // show paragraph break indicator
+            );
+
+            // Move trailing nodes from splitIndex onward
+            for (let i = splitIndex; i < children.length; i++) {
+              newSegment.append(children[i]);
+            }
+
+            // Insert new segment after current
+            segmentNode.insertAfter(newSegment);
+
+            // Recompute timings based on word nodes
+            const updateTiming = (seg: SegmentNode) => {
+              const words = seg.getWordNodes().filter($isWordNode) as WordNode[];
+              if (words.length > 0) {
+                seg.setTiming(words[0].getStart(), words[words.length - 1].getEnd());
+              }
+            };
+            updateTiming(segmentNode);
+            updateTiming(newSegment);
+
+            onParagraphBreak?.(0);
+          });
+        }
+      };
+      editorElement.addEventListener('keydown', handleKeyDown);
       
       return () => {
         editorElement.removeEventListener('dblclick', handleDoubleClick);
         editorElement.removeEventListener('contextmenu', handleContextMenu);
+        editorElement.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [editor, handleDoubleClick, handleContextMenu]);
+  }, [editor, handleDoubleClick, handleContextMenu, readOnly, onParagraphBreak]);
 
   // Clean up on unmount
   useEffect(() => {
