@@ -120,6 +120,7 @@ function transcriptionReducer(state: TranscriptionState, action: TranscriptionAc
         ...state,
         jobs: updatedJobs,
         isProcessing: state.currentTranscriptionId === id ? false : state.isProcessing,
+        currentTranscriptionId: state.currentTranscriptionId === id ? null : state.currentTranscriptionId,
       };
     }
 

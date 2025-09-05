@@ -48,9 +48,9 @@ fi
 echo "🔧 Temporarily enabling DevTools..."
 # This will be handled by a separate main.ts configuration
 
-# Start Electron with DevTools
+# Start Electron with DevTools and load from Vite dev server
 echo "🖥️  Starting Electron with DevTools..."
-DEVTOOLS_ENABLED=true npm run dev:electron
+USE_LOCALHOST=true DEVTOOLS_ENABLED=true npm run dev:electron
 
 # Clean up when done
 echo "🧹 Cleaning up..."

@@ -187,10 +187,30 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
       );
     }
 
-    // Build CSS classes
+    // Build CSS classes and styles
     const classes = [
       'inline cursor-pointer px-1 py-0.5 mx-0.5 rounded transition-all duration-75',
     ];
+
+    // Apply clip styles
+    const clipStyle = clip.style || {};
+    const inlineStyles: React.CSSProperties = {};
+    
+    if (clipStyle.bold) {
+      classes.push('font-bold');
+    }
+    if (clipStyle.italic) {
+      classes.push('italic');
+    }
+    if (clipStyle.underline) {
+      classes.push('underline');
+    }
+    if (clipStyle.strikethrough) {
+      classes.push('line-through');
+    }
+    if (clipStyle.highlightColor) {
+      inlineStyles.backgroundColor = clipStyle.highlightColor;
+    }
 
     if (isHighlighted) {
       classes.push('bg-blue-500 text-white');
@@ -207,11 +227,20 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
       }
     }
 
+    const wordId = generateWordId(clip.id, wordIndex);
+    
     return (
       <span
-        key={`${clip.id}-word-${wordIndex}`}
+        key={wordId}
+        data-word-id={wordId}
+        data-clip-id={clip.id}
+        data-word-index={wordIndex}
         className={classes.join(' ')}
-        onClick={() => handleWordClick(clip, wordIndex)}
+        style={inlineStyles}
+        onClick={() => {
+          console.log('handleWordClick', clip.id, wordIndex);
+          handleWordClick(clip, wordIndex);
+        }}
         onDoubleClick={(e) => handleWordDoubleClick(clip, wordIndex, e)}
         title={audioState.mode === 'edit' ? 'Double-click to edit' : 'Click to seek'}
       >
@@ -226,11 +255,12 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
     const displayName = speakerNames[speakerId] || speakerId || 'Unknown';
     const isActiveClip = audioState.currentClipId === clip.id;
 
-    // Ensure the current clip's speaker is always present as an option
+    // In Edit mode: Only show project-defined speakers (no arbitrary speaker creation)
     const options = Object.entries(speakerNames);
-    if (options.every(([id]) => id !== speakerId)) {
-      options.push([speakerId, displayName]);
-    }
+    
+    // If current speaker isn't in project speakers, show it as "Unknown" in dropdown
+    // but don't add it as a selectable option to prevent persistence of arbitrary names
+    const validSpeakerId = speakerNames[speakerId] ? speakerId : (options[0]?.[0] || '');
 
     return (
       <div className={`flex items-center mb-2 ${isActiveClip ? 'font-semibold' : ''}`}>
@@ -238,14 +268,18 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
           <>
             <select
               className="text-sm font-medium text-gray-600 mr-3 bg-white border border-gray-300 rounded"
-              value={speakerId}
+              value={validSpeakerId}
               onChange={e => handleSpeakerChange(clip.id, e.target.value)}
             >
-              {options.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
+              {options.length > 0 ? (
+                options.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))
+              ) : (
+                <option value="" disabled>No speakers defined</option>
+              )}
             </select>
             <span className="text-sm font-medium text-gray-600 mr-3">:</span>
           </>
@@ -367,7 +401,25 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
       </div>
 
       {/* Transcript content */}
-      <div className="space-y-4">
+      <div
+        className="space-y-4"
+        contentEditable={audioState.mode === 'edit'}
+        suppressContentEditableWarning
+        onKeyDown={event => {
+          if (event.key === 'Enter' && audioState.mode === 'edit') {
+            event.preventDefault();
+            const sel = window.getSelection();
+            if (sel && sel.anchorNode) {
+              const span = (sel.anchorNode as HTMLElement).parentElement?.closest('span[data-clip-id]');
+              if (span) {
+                const clipId = span.getAttribute('data-clip-id')!;
+                const wordIndex = Number(span.getAttribute('data-word-index'));
+                onClipSplit?.(clipId, wordIndex);
+              }
+            }
+          }
+        }}
+      >
         {visibleClips.map(renderClip)}
       </div>
     </div>

@@ -8,6 +8,8 @@ import './App.css';
 
 // New UI components
 import NewUIShell from './components/ui/NewUIShell';
+import ToastContainer from './components/Notifications/ToastContainer';
+import { useNotifications } from './contexts';
 
 // Error boundary for transcription crashes
 class TranscriptionErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
@@ -68,7 +70,6 @@ import {
 } from './contexts';
 
 // Components
-import ImportDialog from './components/ImportDialog/ImportDialog';
 import EnhancedImportDialog from './components/ImportDialog/EnhancedImportDialog';
 import ProjectImportDialog from './components/ImportDialog/ProjectImportDialog';
 import NewProjectDialog from './components/NewProject/NewProjectDialog';
@@ -80,6 +81,8 @@ import { TranscriptionJob, ProjectData } from './types';
 // ==================== Main App Component ====================
 
 const AppMain: React.FC = () => {
+  // Notifications
+  const { state: notificationState, dismissToast } = useNotifications() as any;
   // Dialog state
   const [showImportDialog, setShowImportDialog] = useState<boolean>(false);
   const [showProjectImportDialog, setShowProjectImportDialog] = useState<boolean>(false);
@@ -253,6 +256,14 @@ const AppMain: React.FC = () => {
 
     const handleTranscriptionErrorEvent = (errorData: any) => {
       console.log('Renderer: Received transcription error:', errorData);
+      
+      // Update the transcription job status to error
+      if (errorData?.id) {
+        transcriptionActions.errorJob(errorData.id, errorData.error || 'Transcription failed');
+        console.log('Renderer: Called errorJob action for job ID:', errorData.id);
+      }
+      
+      // Show error notification to user
       handleTranscriptionError(errorData?.error || errorData, 'transcription');
     };
 
@@ -496,6 +507,13 @@ const AppMain: React.FC = () => {
           isDragDrop={false}
         />
       )}
+      {/* Global Toasts */}
+      <ToastContainer
+        toasts={(notificationState?.toasts) || []}
+        position="top-right"
+        maxToasts={5}
+        onDismiss={(id: string) => dismissToast?.(id)}
+      />
     </TranscriptionErrorBoundary>
   );
 };

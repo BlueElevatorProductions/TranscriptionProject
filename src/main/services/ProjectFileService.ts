@@ -45,8 +45,17 @@ export class ProjectFileService {
       
       const zip = new JSZip();
       
-      // Add main project file
-      zip.file('project.json', JSON.stringify(projectData.project, null, 2));
+      // Prepare sanitized project copy (avoid persisting temp paths)
+      const sanitizedProject: any = JSON.parse(JSON.stringify(projectData.project || {}));
+      if (!sanitizedProject.version) sanitizedProject.version = this.CURRENT_VERSION;
+      if (sanitizedProject?.audio) {
+        delete sanitizedProject.audio?.tempDirectory;
+        delete sanitizedProject.audio?.extractedPath;
+        delete sanitizedProject.audio?.processedFile;
+      }
+      
+      // Add main project file (will be overwritten later after audio embedding if needed)
+      zip.file('project.json', JSON.stringify(sanitizedProject, null, 2));
       onProgress?.(5, 'Saving project metadata...');
       
       // Add transcription data
@@ -87,7 +96,8 @@ export class ProjectFileService {
           }
           
           const audioStats = fs.statSync(projectData.project.audio.embeddedPath);
-          const audioFormat = projectData.audioMetadata?.embeddedFormat || 'flac';
+          const inferredExt = path.extname(projectData.project.audio.embeddedPath).slice(1);
+          const audioFormat = projectData.audioMetadata?.embeddedFormat || inferredExt || 'flac';
           
           // Determine audio file name based on format
           const audioFileName = `audio.${audioFormat}`;
@@ -107,6 +117,11 @@ export class ProjectFileService {
           onProgress?.(70, 'Audio file embedded successfully');
           console.log('Audio file embedded successfully');
           
+          // Update sanitized project to point to package-relative path
+          if (!sanitizedProject.audio) sanitizedProject.audio = {};
+          sanitizedProject.audio.embedded = true;
+          sanitizedProject.audio.embeddedPath = `audio/${audioFileName}`;
+
         } catch (audioError: any) {
           console.error('Failed to embed audio file:', audioError);
           // Don't fail the entire save operation, just warn
@@ -119,6 +134,10 @@ export class ProjectFileService {
             error: audioError.message,
             note: "Audio embedding failed. File reference preserved."
           }, null, 2));
+          
+          if (!sanitizedProject.audio) sanitizedProject.audio = {};
+          sanitizedProject.audio.embedded = false;
+          sanitizedProject.audio.embeddedPath = null;
         }
       } else if (audioFolder && projectData.project.audio?.originalFile) {
         // Fallback: save reference for external audio files
@@ -128,8 +147,15 @@ export class ProjectFileService {
           originalName: projectData.project.audio.originalName,
           note: "External audio file reference. Audio not embedded in project."
         }, null, 2));
+        
+        if (!sanitizedProject.audio) sanitizedProject.audio = {};
+        sanitizedProject.audio.embedded = false;
+        sanitizedProject.audio.embeddedPath = null;
       }
       
+      // Overwrite project.json with final sanitized content (stable paths)
+      zip.file('project.json', JSON.stringify(sanitizedProject, null, 2));
+
       onProgress?.(80, 'Generating project package...');
       
       // Generate ZIP with progress tracking
@@ -292,12 +318,15 @@ export class ProjectFileService {
     if (extractedAudioPath) {
       // Update project data with temporary path
       if (!projectData.project.audio) {
-        projectData.project.audio = {};
+        projectData.project.audio = {} as any;
       }
       
+      // Set both extractedPath and embeddedPath to the temp extraction location
+      // to remain compatible with renderer code that expects embeddedPath.
       projectData.project.audio.extractedPath = extractedAudioPath;
+      projectData.project.audio.embeddedPath = extractedAudioPath;
       projectData.project.audio.tempDirectory = tempDir;
-      console.log('Set extractedPath in project.audio:', extractedAudioPath);
+      console.log('Set extractedPath and embeddedPath in project.audio:', extractedAudioPath);
       
       // Keep original metadata if available
       if (projectData.audioMetadata) {

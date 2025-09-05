@@ -106,18 +106,43 @@ export class UserPreferencesService {
   }
 
   /**
-   * Get transcription service name based on preferences
+   * Get transcription service name based on UI settings or stored preferences
+   * @param uiSettings - Current UI selection (takes priority)
+   * @param storedPreferences - Stored user preferences (fallback)
    */
-  getTranscriptionService(preferences: ImportPreferences): string {
+  getTranscriptionService(uiSettings?: any, storedPreferences?: ImportPreferences): string {
+    console.log('🔍 getTranscriptionService called with:', {
+      uiSettings,
+      storedPreferences: storedPreferences ? 'loaded' : 'not provided'
+    });
+
+    // If UI settings are provided, use them (this is the current user selection)
+    if (uiSettings) {
+      console.log('📋 Using UI settings for transcription service selection');
+      
+      if (uiSettings.method === 'local') {
+        const localModel = uiSettings.localModel || 'base';
+        console.log('🖥️  Local transcription selected, model:', localModel);
+        return localModel;
+      } else if (uiSettings.method === 'cloud') {
+        const cloudProvider = uiSettings.cloudProvider || 'openai';
+        const serviceName = `cloud-${cloudProvider}`;
+        console.log('☁️  Cloud transcription selected, service:', serviceName);
+        return serviceName;
+      }
+    }
+
+    // Fallback to stored preferences
+    const preferences = storedPreferences || DEFAULT_PREFERENCES;
+    console.log('💾 Falling back to stored preferences:', preferences);
+    
     if (preferences.defaultTranscriptionMethod === 'local') {
+      console.log('🖥️  Using stored local model:', preferences.defaultLocalModel);
       return preferences.defaultLocalModel;
     } else {
-      switch (preferences.defaultCloudProvider) {
-        case 'openai': return 'cloud-openai';
-        case 'assemblyai': return 'cloud-assemblyai';
-        case 'revai': return 'cloud-revai';
-        default: return 'cloud-openai';
-      }
+      const serviceName = `cloud-${preferences.defaultCloudProvider}`;
+      console.log('☁️  Using stored cloud provider:', serviceName);
+      return serviceName;
     }
   }
 

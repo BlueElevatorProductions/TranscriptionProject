@@ -1,0 +1,188 @@
+/**
+ * Lexical Transcript Editor Styles
+ */
+
+/* Word nodes */
+.lexical-word-node {
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0 2px;
+  transition: background-color 0.2s ease;
+  display: inline;
+}
+
+.lexical-word-node:hover {
+  background-color: #dbeafe;
+}
+
+.lexical-word-node.currently-playing {
+  background-color: #fef3c7;
+  box-shadow: 0 0 0 2px #f59e0b;
+  border-radius: 4px;
+}
+
+/* Speaker nodes */
+.lexical-speaker-node {
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.lexical-speaker-node button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+}
+
+/* Segment nodes */
+.lexical-segment-node.paragraph-break {
+  margin-top: 2rem;
+}
+
+/* Editor content area */
+.transcript-editor-content {
+  position: relative;
+  min-height: 400px;
+  padding: 2rem;
+  outline: none;
+}
+
+.transcript-editor-placeholder {
+  user-select: none;
+  pointer-events: none;
+  position: absolute;
+  color: #9ca3af;
+}
+
+.transcript-editor-root {
+  position: relative;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Context menus */
+.editing-context-menu,
+.speaker-context-menu,
+.speaker-selection-dialog {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
+  background: white;
+  border-radius: 8px;
+  z-index: 1000;
+  max-width: 250px;
+}
+
+.editing-context-menu button,
+.speaker-context-menu button,
+.speaker-selection-dialog button {
+  transition: background-color 0.15s ease;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-size: 0.875rem;
+  color: #374151;
+  cursor: pointer;
+}
+
+.editing-context-menu button:hover,
+.speaker-context-menu button:hover,
+.speaker-selection-dialog button:hover {
+  background-color: #f3f4f6;
+}
+
+.editing-context-menu hr,
+.speaker-context-menu hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 4px 0;
+}
+
+/* Red delete buttons */
+.editing-context-menu button.text-red-600 {
+  color: #dc2626;
+}
+
+.editing-context-menu button.text-red-600:hover {
+  background-color: #fef2f2;
+}
+
+/* Selected speaker highlight */
+.speaker-selection-dialog button.bg-blue-100 {
+  background-color: #dbeafe;
+}
+
+/* Lexical editor wrapper */
+.lexical-transcript-editor-wrapper {
+  position: relative;
+}
+
+/* Make sure text selection works properly */
+.transcript-editor-content * {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Ensure proper line height and spacing */
+.transcript-editor-content p {
+  margin-bottom: 1.5rem;
+  line-height: 1.4;
+}
+
+/* Inline editing input styling */
+input[class*="border-b-2"] {
+  min-width: 3rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .transcript-editor-content {
+    padding: 1rem;
+    font-size: 1.25rem;
+    line-height: 1.5;
+  }
+  
+  .transcript-editor-placeholder {
+    font-size: 1.25rem;
+  }
+}
+
+/* Focus states */
+.transcript-editor-content:focus {
+  outline: none;
+}
+
+.transcript-editor-content:focus-within {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Loading states */
+.transcript-editor-loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Animation for smooth transitions */
+.lexical-word-node,
+.lexical-speaker-node,
+.editing-context-menu,
+.speaker-context-menu {
+  transition: all 0.2s ease;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .lexical-word-node:hover {
+    background-color: #000;
+    color: #fff;
+  }
+  
+  .lexical-word-node.currently-playing {
+    background-color: #ffff00;
+    color: #000;
+    box-shadow: 0 0 0 3px #000;
+  }
+}

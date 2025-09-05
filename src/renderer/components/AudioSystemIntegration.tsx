@@ -9,6 +9,7 @@ import { useProject } from '../contexts';
 import { useAudioEditor } from '../hooks/useAudioEditor';
 import { useKeyboardManager } from '../hooks/useKeyboardManager';
 import { SimpleTranscript } from './SimpleTranscript';
+import { LexicalTranscriptEditor } from '../editor/LexicalTranscriptEditor';
 import { AudioErrorBoundary } from './AudioErrorBoundary';
 import { Clip } from '../types';
 import { generateWordId, TimelinePosition } from '../audio/AudioAppState';
@@ -59,6 +60,11 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   const speakers = useMemo(() => {
     return projectState.globalSpeakers || {};
   }, [projectState.globalSpeakers]);
+
+  // Segments source for Lexical editor
+  const segments = useMemo(() => {
+    return projectState.projectData?.transcription?.segments || [];
+  }, [projectState.projectData?.transcription?.segments]);
 
   // Initialize audio editor
   const [audioState, audioActions] = useAudioEditor({
@@ -182,6 +188,12 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
 
   // Handle speaker changes
   const handleSpeakerChange = useCallback((clipId: string, newSpeaker: string) => {
+    // Validate that the speaker exists in project speakers
+    if (!speakers[newSpeaker]) {
+      console.warn('Attempted to assign non-existent speaker:', newSpeaker);
+      return;
+    }
+    
     const updatedClips = clips.map(clip => 
       clip.id === clipId 
         ? { ...clip, speaker: newSpeaker, modifiedAt: Date.now() }
@@ -203,7 +215,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
       
       projectActions.updateProjectData(updatedProjectData);
     }
-  }, [clips, audioActions, projectState.projectData, projectActions]);
+  }, [clips, audioActions, projectState.projectData, projectActions, speakers]);
 
   // Handle clip splitting
   const handleClipSplit = useCallback((clipId: string, wordIndex: number) => {
@@ -407,8 +419,8 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     );
   }
 
-  // Debug what's being passed to SimpleTranscript
-  console.log('[AudioSystemIntegration] Rendering SimpleTranscript with audioState clips:', {
+  // Debug what's being passed to editor
+  console.log('[AudioSystemIntegration] Rendering Transcript Editor with audio state:', {
     audioStateClipCount: audioState.clips?.length || 0,
     audioStateClipTypes: audioState.clips?.map(c => c.type) || [],
     audioStateFirstClip: audioState.clips?.[0] ? {
@@ -418,23 +430,46 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
       text: audioState.clips[0].text?.substring(0, 50) + (audioState.clips[0].text?.length > 50 ? '...' : '')
     } : null,
     audioStateIsInitialized: audioState.isInitialized,
-    audioStateIsReady: audioState.isReady
+    audioStateIsReady: audioState.isReady,
+    segmentCount: segments.length
   });
 
   return (
     <AudioErrorBoundary onRecoveryAttempt={handleRecoveryAttempt}>
-      <SimpleTranscript
-        audioState={audioState}
-        audioActions={audioActions}
-        fontSettings={fontSettings}
-        speakerNames={speakers}
-        onSpeakerChange={handleSpeakerChange}
-        onWordEdit={handleWordEdit}
-        onClipSplit={handleClipSplit}
-        cursorPosition={cursorPosition}
-        onCursorPositionChange={setCursorPosition}
-        selectedWordIds={selectedWordIds}
-        onSelectedWordsChange={setSelectedWordIds}
+      <LexicalTranscriptEditor
+        segments={segments}
+        currentTime={audioState.currentTime}
+        isPlaying={audioState.isPlaying}
+        readOnly={mode === 'listen'}
+        onSegmentsChange={(updated) => {
+          if (!projectState.projectData) return;
+          const next = {
+            ...projectState.projectData,
+            transcription: {
+              ...projectState.projectData.transcription,
+              segments: updated,
+            },
+          };
+          projectActions.updateProjectData(next);
+        }}
+        onWordClick={(ts) => {
+          // Seek audio and play if in listen mode
+          audioActions.seekToTime(ts);
+          if (mode === 'listen' && !audioState.isPlaying) {
+            audioActions.play().catch(() => {});
+          }
+        }}
+        getSpeakerDisplayName={(id) => speakers[id] || id}
+        onSpeakerNameChange={(id, newName) => {
+          // Update global speakers map
+          const updated = { ...speakers, [id]: newName };
+          projectActions.updateSpeakers(updated);
+        }}
+        speakers={speakers}
+        fontFamily={fontSettings?.family || fontSettings?.fontFamily}
+        fontSize={fontSettings?.size || fontSettings?.fontSize}
+        onWordEdit={(_, __, ___, ____) => {/* optional: clips sync could be added */}}
+        getSpeakerColor={(id) => '#3b82f6'}
       />
     </AudioErrorBoundary>
   );

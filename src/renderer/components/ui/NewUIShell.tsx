@@ -4,13 +4,23 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette, Download, File, ChevronDown } from 'lucide-react';
 import { useProject, useSelectedJob } from '../../contexts';
 import { useTheme } from '../theme-provider';
-import { Segment } from '../../types';
+import { Segment, ClipSettings } from '../../types';
 import SecondaryPanel from '../SecondaryPanel';
-import SpeakersPanel, { Speaker } from '../SpeakersPanel';
+import SpeakersPanel from '../shared/SpeakersPanel';
 import { AudioSystemIntegration } from '../AudioSystemIntegration';
 import ClipsPanel from '../shared/ClipsPanel';
 import FontsPanel, { FontSettings } from '../shared/FontsPanel';
 import ApiSettings from '../Settings/ApiSettings';
+
+// Define Speaker interface to match what's used in the component
+interface Speaker {
+  id: string;
+  name: string;
+  segments?: any[];
+  totalDuration?: number;
+  totalTime?: number;
+  color?: string;
+}
 import ColorSettings from '../Settings/ColorSettings';
 import ImportSettings from '../Settings/ImportSettings';
 import { GlassAudioPlayer } from './GlassAudioPlayer';
@@ -237,12 +247,16 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   
   const audioFilePath = useMemo(() => {
-    if (projectState.projectData?.project?.audio?.embeddedPath) {
-      return projectState.projectData.project.audio.embeddedPath;
-    } else if (projectState.projectData?.project?.audio?.path) {
-      return projectState.projectData.project.audio.path;
-    }
-    return null;
+    const audio = projectState.projectData?.project?.audio as any;
+    if (!audio) return null;
+    // Prefer freshly extracted temp path from loaded packages, then embeddedPath, then external path, then original
+    return (
+      audio.extractedPath ||
+      audio.embeddedPath ||
+      audio.path ||
+      audio.originalFile ||
+      null
+    );
   }, [projectState.projectData]);
 
   // Convert audio file path to blob URL for web playback
@@ -326,6 +340,97 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     return [];
   }, [selectedJob, projectState.projectData]);
 
+  // Group segments into natural paragraphs
+  const groupSegmentsIntoParagraphs = useCallback((segments: any[], wordSegments: any[], settings?: ClipSettings['grouping']) => {
+    const defaultSettings: ClipSettings['grouping'] = {
+      pauseThreshold: 1.2,
+      maxClipDuration: 30,
+      minWordsPerClip: 20,
+      maxWordsPerClip: 120,
+      sentenceTerminators: ['.', '!', '?', '。', '！', '？']
+    };
+    
+    const groupingSettings = settings || defaultSettings;
+    const groups: any[][] = [];
+    let currentGroup: any[] = [];
+    let currentWordCount = 0;
+    let currentDuration = 0;
+    
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const segmentWords = wordSegments.filter((word: any) => 
+        word.start >= segment.start && word.end <= segment.end
+      );
+      const segmentWordCount = segmentWords.length || segment.text?.split(' ').length || 0;
+      const segmentDuration = (segment.end || 0) - (segment.start || 0);
+      
+      // Check if we should start a new group
+      let shouldBreak = false;
+      
+      // Always break on speaker change
+      if (currentGroup.length > 0 && segment.speaker !== currentGroup[0].speaker) {
+        shouldBreak = true;
+      }
+      
+      // Break on long pause
+      if (currentGroup.length > 0) {
+        const prevSegment = currentGroup[currentGroup.length - 1];
+        const pauseDuration = (segment.start || 0) - (prevSegment.end || 0);
+        if (pauseDuration > groupingSettings.pauseThreshold) {
+          shouldBreak = true;
+        }
+      }
+      
+      // Break if adding this segment would exceed limits
+      const newWordCount = currentWordCount + segmentWordCount;
+      const newDuration = currentDuration + segmentDuration;
+      
+      if (currentGroup.length > 0 && (
+        newWordCount > groupingSettings.maxWordsPerClip ||
+        newDuration > groupingSettings.maxClipDuration
+      )) {
+        shouldBreak = true;
+      }
+      
+      // Break on sentence terminators if we have enough content
+      if (currentGroup.length > 0 && 
+          currentWordCount >= groupingSettings.minWordsPerClip &&
+          segment.text &&
+          groupingSettings.sentenceTerminators.some(terminator => 
+            segment.text.trim().endsWith(terminator)
+          )) {
+        shouldBreak = true;
+      }
+      
+      if (shouldBreak) {
+        if (currentGroup.length > 0) {
+          groups.push([...currentGroup]);
+        }
+        currentGroup = [segment];
+        currentWordCount = segmentWordCount;
+        currentDuration = segmentDuration;
+      } else {
+        currentGroup.push(segment);
+        currentWordCount = newWordCount;
+        currentDuration = newDuration;
+      }
+    }
+    
+    // Add the final group
+    if (currentGroup.length > 0) {
+      groups.push(currentGroup);
+    }
+    
+    console.log('Segment grouping results:', {
+      originalSegments: segments.length,
+      groups: groups.length,
+      averageSegmentsPerGroup: segments.length / groups.length,
+      groupSizes: groups.map(g => g.length)
+    });
+    
+    return groups;
+  }, []);
+
   // Convert transcription segments to clips when transcription completes
   useEffect(() => {
     console.log('Transcription conversion effect triggered with:', {
@@ -357,50 +462,83 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         // Map word_segments to individual segments
         const wordSegments = selectedJob.result.word_segments || [];
         
-        // Convert segments to clips with proper word mapping
-        const transcriptionClips = selectedJob.result.segments.map((segment: any, index: number) => {
-          // Find words that belong to this segment based on timing
-          let segmentWords = wordSegments.filter((word: any) => 
-            word.start >= segment.start && word.end <= segment.end
-          );
+        // Group segments into natural paragraphs
+        const segmentGroups = groupSegmentsIntoParagraphs(selectedJob.result.segments, wordSegments);
+        
+        // Convert grouped segments to clips
+        const transcriptionClips = segmentGroups.map((group: any[], groupIndex: number) => {
+          // Combine all words from all segments in this group
+          let allGroupWords = group.flatMap(segment => {
+            return wordSegments.filter((word: any) => 
+              word.start >= segment.start && word.end <= segment.end
+            );
+          });
           
           // If no word-level data found, create placeholder words from text
-          if (segmentWords.length === 0 && segment.text) {
-            const words = segment.text.split(' ').filter(w => w.trim().length > 0);
-            const segmentDuration = (segment.end || 0) - (segment.start || 0);
-            const wordDuration = segmentDuration / words.length;
+          if (allGroupWords.length === 0) {
+            allGroupWords = group.flatMap(segment => {
+              if (!segment.text) return [];
+              
+              const words = segment.text.split(' ').filter((w: string) => w.trim().length > 0);
+              const segmentDuration = (segment.end || 0) - (segment.start || 0);
+              const wordDuration = segmentDuration / words.length;
+              
+              return words.map((word: string, wordIndex: number) => ({
+                word: word,
+                start: (segment.start || 0) + (wordIndex * wordDuration),
+                end: (segment.start || 0) + ((wordIndex + 1) * wordDuration),
+                confidence: segment.confidence || 0.95
+              }));
+            });
             
-            segmentWords = words.map((word: string, wordIndex: number) => ({
-              word: word,
-              start: (segment.start || 0) + (wordIndex * wordDuration),
-              end: (segment.start || 0) + ((wordIndex + 1) * wordDuration),
-              confidence: segment.confidence || 0.95
-            }));
-            
-            console.log(`Created ${segmentWords.length} placeholder words for segment ${index}`);
+            console.log(`Created ${allGroupWords.length} placeholder words for group ${groupIndex}`);
           }
           
-          console.log(`Segment ${index}:`, {
-            text: segment.text,
-            wordCount: segmentWords.length,
-            totalWordSegments: wordSegments.length,
-            timeRange: `${segment.start}-${segment.end}`,
-            hasWords: segmentWords.length > 0
+          // Sort words by start time to ensure proper order
+          allGroupWords.sort((a, b) => a.start - b.start);
+          
+          // Calculate group boundaries
+          const firstSegment = group[0];
+          const lastSegment = group[group.length - 1];
+          const startTime = firstSegment.start || 0;
+          const endTime = lastSegment.end || 0;
+          
+          // Combine all text from the group
+          const combinedText = group.map(seg => seg.text).filter(Boolean).join(' ');
+          
+          // Use the most common speaker in the group
+          const speakerCounts = group.reduce((acc: Record<string, number>, seg) => {
+            const speaker = seg.speaker || 'SPEAKER_00';
+            acc[speaker] = (acc[speaker] || 0) + 1;
+            return acc;
+          }, {});
+          const dominantSpeaker = Object.keys(speakerCounts).reduce((a, b) => 
+            speakerCounts[a] > speakerCounts[b] ? a : b
+          );
+          
+          console.log(`Group ${groupIndex}:`, {
+            segmentCount: group.length,
+            text: combinedText.substring(0, 100) + (combinedText.length > 100 ? '...' : ''),
+            wordCount: allGroupWords.length,
+            timeRange: `${startTime}-${endTime}`,
+            duration: endTime - startTime,
+            speaker: dominantSpeaker
           });
           
           return {
-            id: `segment-${index}`,
-            startTime: segment.start || 0,
-            endTime: segment.end || 0,
-            startWordIndex: index * 100, // Rough estimate, will be refined
-            endWordIndex: (index + 1) * 100,
-            words: segmentWords,
-            text: segment.text || '',
-            speaker: segment.speaker || 'SPEAKER_00',
-            confidence: segment.confidence || 0.95,
-            type: 'transcribed' as const,
-            duration: (segment.end || 0) - (segment.start || 0),
-            order: index,
+            id: `paragraph-${groupIndex}`,
+            startTime,
+            endTime,
+            startWordIndex: groupIndex * 1000, // Rough estimate, will be refined
+            endWordIndex: (groupIndex + 1) * 1000,
+            words: allGroupWords,
+            text: combinedText,
+            speaker: dominantSpeaker,
+            confidence: group.reduce((acc, seg) => acc + (seg.confidence || 0.95), 0) / group.length,
+            type: 'paragraph-break' as const,
+            duration: endTime - startTime,
+            order: groupIndex,
+            status: 'active' as const,
             createdAt: Date.now(),
             modifiedAt: Date.now(),
           };
@@ -696,11 +834,21 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         }
       >
         {openPanel === 'speakers' && (
-          <SpeakersPanel
-            speakers={speakers}
-            onChange={handleSpeakersChange}
-            onClose={() => setOpenPanel(null)}
-          />
+          <div className="p-4">
+            <h2 className="text-lg font-semibold text-white mb-4">Speakers</h2>
+            <p className="text-white opacity-70 mb-4">Speaker management will be restored in a future update.</p>
+            {speakers.map((speaker) => (
+              <div key={speaker.id} className="mb-2 p-2 bg-white bg-opacity-10 rounded">
+                <span className="text-white">{speaker.name}</span>
+              </div>
+            ))}
+            <button
+              onClick={() => setOpenPanel(null)}
+              className="mt-4 px-3 py-1 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30"
+            >
+              Close
+            </button>
+          </div>
         )}
         
         {openPanel === 'clips' && (

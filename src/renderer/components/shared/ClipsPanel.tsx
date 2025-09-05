@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Scissors, Plus, Play, Trash2, Copy } from 'lucide-react';
 import { Clip } from '../TranscriptEdit/useClips';
 
@@ -8,6 +8,7 @@ interface ClipsPanelProps {
   onClipSelect?: (clipId: string) => void;
   onClipDelete?: (clipId: string) => void;
   onClipPlay?: (clip: Clip) => void;
+  onClipMerge?: (clipIds: string[]) => void;
   onClose: () => void;
 }
 
@@ -17,13 +18,83 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
   onClipSelect,
   onClipDelete,
   onClipPlay,
+  onClipMerge,
   onClose
 }) => {
-  // Removed editing state - no longer needed
+  // Multi-select state
+  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipIds: string[] } | null>(null);
 
   // Show all clips (both generated and user-created)
   const allClips = clips;
   const userClips = clips.filter(clip => clip.type === 'user-created');
+
+  // Handle clip selection with multi-select support
+  const handleClipClick = useCallback((clipId: string, event: React.MouseEvent) => {
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl/Cmd click - toggle selection
+      setSelectedClipIds(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(clipId)) {
+          newSet.delete(clipId);
+        } else {
+          newSet.add(clipId);
+        }
+        return newSet;
+      });
+    } else if (event.shiftKey && selectedClipIds.size > 0) {
+      // Shift click - select range
+      const clipIds = allClips.map(c => c.id);
+      const lastSelected = Array.from(selectedClipIds).pop();
+      if (lastSelected) {
+        const startIndex = clipIds.indexOf(lastSelected);
+        const endIndex = clipIds.indexOf(clipId);
+        const [minIndex, maxIndex] = startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+        
+        const rangeIds = clipIds.slice(minIndex, maxIndex + 1);
+        setSelectedClipIds(new Set(rangeIds));
+      }
+    } else {
+      // Regular click - single selection
+      setSelectedClipIds(new Set([clipId]));
+      onClipSelect?.(clipId);
+    }
+  }, [selectedClipIds, allClips, onClipSelect]);
+
+  // Handle right-click context menu
+  const handleContextMenu = useCallback((event: React.MouseEvent, clipId: string) => {
+    event.preventDefault();
+    
+    let clipIds: string[];
+    if (selectedClipIds.has(clipId)) {
+      // Right-clicked on selected clip - use all selected
+      clipIds = Array.from(selectedClipIds);
+    } else {
+      // Right-clicked on unselected clip - just this clip
+      clipIds = [clipId];
+      setSelectedClipIds(new Set([clipId]));
+    }
+
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      clipIds
+    });
+  }, [selectedClipIds]);
+
+  // Handle merge action
+  const handleMerge = useCallback(() => {
+    if (contextMenu && contextMenu.clipIds.length >= 2) {
+      onClipMerge?.(contextMenu.clipIds);
+      setSelectedClipIds(new Set());
+    }
+    setContextMenu(null);
+  }, [contextMenu, onClipMerge]);
+
+  // Close context menu
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
   
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -59,15 +130,22 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
       </p>
       
       <div className="space-y-3 flex-1 overflow-y-auto">
-        {allClips.map((clip, index) => (
+        {allClips.map((clip, index) => {
+          const isSelected = selectedClipIds.has(clip.id);
+          const isActive = selectedClipId === clip.id;
+          
+          return (
           <div 
             key={clip.id} 
             className={`
-              border rounded-lg p-3 cursor-pointer
+              border rounded-lg p-3 cursor-pointer transition-colors
               ${clip.type === 'user-created' ? 'bg-green-900 bg-opacity-20 border-green-400 border-opacity-40' : 'bg-white bg-opacity-10 border-white border-opacity-20'}
-              ${selectedClipId === clip.id ? 'bg-blue-900 bg-opacity-30 border-blue-400' : 'hover:bg-white hover:bg-opacity-15'}
+              ${isSelected ? 'bg-purple-900 bg-opacity-40 border-purple-400' : 
+                isActive ? 'bg-blue-900 bg-opacity-30 border-blue-400' : 
+                'hover:bg-white hover:bg-opacity-15'}
             `}
-            onClick={() => onClipSelect?.(clip.id)}
+            onClick={(e) => handleClipClick(clip.id, e)}
+            onContextMenu={(e) => handleContextMenu(e, clip.id)}
           >
             {/* Clip header */}
             <div className="flex items-center justify-between mb-2">
@@ -143,8 +221,45 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
               </span>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <>
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={closeContextMenu}
+          />
+          <div
+            className="fixed z-50 bg-gray-800 border border-gray-600 rounded-md shadow-lg py-1 min-w-48"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {contextMenu.clipIds.length >= 2 && (
+              <button
+                onClick={handleMerge}
+                className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-700 flex items-center gap-2"
+              >
+                <Scissors size={14} />
+                Merge {contextMenu.clipIds.length} Clips
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (contextMenu.clipIds.length === 1 && onClipDelete) {
+                  onClipDelete(contextMenu.clipIds[0]);
+                }
+                closeContextMenu();
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+            >
+              <Trash2 size={14} />
+              Delete Clip{contextMenu.clipIds.length > 1 ? 's' : ''}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 };

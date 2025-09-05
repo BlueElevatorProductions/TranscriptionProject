@@ -44,9 +44,9 @@ if curl -s http://localhost:3000 > /dev/null; then
   sleep 3
 fi
 
-# Start Electron without DevTools
+# Start Electron without DevTools, but load from Vite dev server
 echo "🖥️  Starting Electron without DevTools..."
-DEVTOOLS_ENABLED=false npm run dev:electron
+USE_LOCALHOST=true DEVTOOLS_ENABLED=false npm run dev:electron
 
 # Clean up when done
 echo "🧹 Cleaning up..."

@@ -20,6 +20,10 @@ interface ProjectFile {
   project: {
     name: string;
     description: string;
+    audio?: {
+      embeddedPath?: string;
+      path?: string;
+    };
   };
   media: {
     audioFile: {
@@ -111,16 +115,27 @@ export class ProjectFileManager {
           const tempPath = path.join(require('os').tmpdir(), audioFile.fileName);
           const audioBuffer = Buffer.from(audioFile.data, 'base64');
           await fs.promises.writeFile(tempPath, audioBuffer);
-          (audioFile as any).resolvedPath = tempPath;
+          
+          // Set the path that renderer expects for embedded audio
+          if (!projectData.project.audio) {
+            projectData.project.audio = {};
+          }
+          projectData.project.audio.embeddedPath = tempPath;
         } else {
           // Look for audio file relative to project
           const projectDir = path.dirname(projectPath);
           const audioPath = path.join(projectDir, audioFile.fileName);
           
           if (await this.fileExists(audioPath)) {
-            (audioFile as any).resolvedPath = audioPath;
+            if (!projectData.project.audio) {
+              projectData.project.audio = {};
+            }
+            projectData.project.audio.path = audioPath;
           } else if (await this.fileExists(audioFile.originalPath)) {
-            (audioFile as any).resolvedPath = audioFile.originalPath;
+            if (!projectData.project.audio) {
+              projectData.project.audio = {};
+            }
+            projectData.project.audio.path = audioFile.originalPath;
           } else {
             return { success: false, error: `Audio file not found: ${audioFile.fileName}` };
           }

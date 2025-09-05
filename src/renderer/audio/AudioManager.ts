@@ -120,6 +120,18 @@ export class AudioManager {
         const wordId = generateWordId(position.clipId, position.localWordIndex);
         
         if (wordId !== this.state.playback.currentWordId) {
+          // Debug logging for word highlighting
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[AudioManager] Word highlight:', {
+              originalTime,
+              editedTime,
+              clipId: position.clipId,
+              wordIndex: position.localWordIndex,
+              wordId,
+              previousWordId: this.state.playback.currentWordId
+            });
+          }
+          
           this.dispatch({ 
             type: 'UPDATE_PLAYBACK', 
             payload: { 
@@ -173,6 +185,23 @@ export class AudioManager {
 
     // Clamp word index to valid range
     wordIndex = Math.max(0, Math.min(wordIndex, clip.words.length - 1));
+
+    // Debug logging for word position calculation
+    if (process.env.NODE_ENV === 'development' && clip.words[wordIndex]) {
+      const word = clip.words[wordIndex];
+      console.log('[AudioManager] Word position calc:', {
+        editedTime,
+        originalTime: result.originalTime,
+        clipId: result.clipId,
+        relativeTime,
+        wordIndex,
+        word: word.word,
+        wordStart: word.start,
+        wordEnd: word.end,
+        wordRelativeStart: word.start - clip.startTime,
+        wordRelativeEnd: word.end - clip.startTime
+      });
+    }
 
     return {
       editedTime,
@@ -516,8 +545,9 @@ export class AudioManager {
     if (!clip || wordIndex < 0 || wordIndex >= clip.words.length) return;
 
     const word = clip.words[wordIndex];
+    console.log(`[AudioManager] seekToWord: clip=${clipId}, wordIndex=${wordIndex}, originalTime=${word.start}`);
     const editedTime = this.sequencer.originalTimeToEditedTime(word.start, clipId);
-    
+    console.log('[AudioManager] computed editedTime=', editedTime);
     if (editedTime !== null) {
       this.seekToEditedTime(editedTime);
     }

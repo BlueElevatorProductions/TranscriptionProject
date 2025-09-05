@@ -110,6 +110,14 @@ export interface ClipData {
   clipSettings: ClipSettings;
 }
 
+export interface ClipStyle {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  highlightColor?: string;
+}
+
 export interface Clip {
   id: string;
   speaker: string;
@@ -125,12 +133,22 @@ export interface Clip {
   modifiedAt: number;
   order: number;                // For clip reordering
   status: 'active' | 'deleted'; // For clip deletion/restoration
+  style?: ClipStyle;            // Optional styling for the clip
 }
 
 export interface ClipSettings {
   defaultDuration: number;
   autoExport: boolean;
   exportFormat: 'mp3' | 'wav' | 'flac';
+  
+  // Segment grouping settings for natural clip creation
+  grouping: {
+    pauseThreshold: number;    // seconds - break on long pauses
+    maxClipDuration: number;   // seconds - max duration per clip
+    minWordsPerClip: number;   // minimum words to form a clip
+    maxWordsPerClip: number;   // maximum words per clip
+    sentenceTerminators: string[]; // punctuation that can end clips
+  };
 }
 
 export interface ProjectData {

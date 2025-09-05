@@ -5,7 +5,8 @@ import { fileURLToPath, URL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+// Allow Vite to choose dev/prod transforms automatically based on command.
+export default defineConfig(({ command }) => ({
   plugins: [react()],
   root: 'src/renderer',
   base: './',
@@ -15,27 +16,25 @@ export default defineConfig({
     minify: 'esbuild',
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, 'src/renderer/index.html')
-      }
-    }
+        main: path.resolve(__dirname, 'src/renderer/index.html'),
+      },
+    },
   },
-  mode: 'production',
+  // Use a consistent dev port that matches main.ts when USE_LOCALHOST=true
   server: {
-    port: 5174, // Changed to avoid conflicts
+    port: 3000,
     strictPort: false,
     open: false,
-    host: 'localhost',
+    host: true,
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src/renderer'),
       '@shared': path.resolve(__dirname, 'src/shared'),
-    }
+    },
   },
-  define: {
-    'process.env.NODE_ENV': JSON.stringify('production'),
-  },
+  // Do not force NODE_ENV here; let Vite/plugin-react pick the right JSX runtime
   optimizeDeps: {
-    exclude: ['electron']
+    exclude: ['electron'],
   },
-});
+}));
