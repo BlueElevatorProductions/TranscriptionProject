@@ -42,7 +42,7 @@ TranscriptionProject is a desktop application designed for content creators, jou
 ### Professional Editing (Enhanced 2025)
 - **Word-Level Editing**: Double-click individual words to correct transcription errors
 - **Dynamic Clip System**: Visual boundaries for organizing transcript content
-- **Speaker Management**: Assign and manage speaker names with automatic persistence
+- **Speaker Management**: Assign and manage speaker names with automatic persistence; edit mode limits clip speaker changes to a dropdown of project-defined names
 - **Context Menus**: Right-click for editing options (Edit Word, Delete Word, Split Clip Here)
 - **Clip Operations**: Split, merge, reorder, and delete clips with undo support
 - **Font Controls**: Customize transcript display with font panel

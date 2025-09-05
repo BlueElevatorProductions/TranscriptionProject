@@ -51,21 +51,6 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
 
   // Get visible clips based on current mode
   const visibleClips = audioActions.getVisibleClips();
-  
-  // Debug what clips SimpleTranscript is rendering
-  console.log('[SimpleTranscript] Rendering with clips:', {
-    visibleClipCount: visibleClips.length,
-    visibleClipTypes: visibleClips.map(c => c.type),
-    visibleClipIds: visibleClips.map(c => c.id),
-    audioStateMode: audioState.mode,
-    audioStateClipCount: audioState.clips?.length || 0,
-    firstVisibleClip: visibleClips[0] ? {
-      id: visibleClips[0].id,
-      type: visibleClips[0].type,
-      wordCount: visibleClips[0].words?.length || 0,
-      text: visibleClips[0].text?.substring(0, 50) + (visibleClips[0].text?.length > 50 ? '...' : '')
-    } : null
-  });
 
   // Handle word click - different behavior for Listen vs Edit mode
   const handleWordClick = useCallback((clip: Clip, wordIndex: number) => {
@@ -237,14 +222,38 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
 
   // Render speaker label
   const renderSpeakerLabel = (clip: Clip) => {
-    const speakerName = speakerNames[clip.speaker] || clip.speaker || 'Unknown';
+    const speakerId = clip.speaker || '';
+    const displayName = speakerNames[speakerId] || speakerId || 'Unknown';
     const isActiveClip = audioState.currentClipId === clip.id;
-    
+
+    // Ensure the current clip's speaker is always present as an option
+    const options = Object.entries(speakerNames);
+    if (options.every(([id]) => id !== speakerId)) {
+      options.push([speakerId, displayName]);
+    }
+
     return (
       <div className={`flex items-center mb-2 ${isActiveClip ? 'font-semibold' : ''}`}>
-        <span className="text-sm font-medium text-gray-600 mr-3 min-w-0 flex-shrink-0">
-          {speakerName}:
-        </span>
+        {audioState.mode === 'edit' ? (
+          <>
+            <select
+              className="text-sm font-medium text-gray-600 mr-3 bg-white border border-gray-300 rounded"
+              value={speakerId}
+              onChange={e => handleSpeakerChange(clip.id, e.target.value)}
+            >
+              {options.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <span className="text-sm font-medium text-gray-600 mr-3">:</span>
+          </>
+        ) : (
+          <span className="text-sm font-medium text-gray-600 mr-3 min-w-0 flex-shrink-0">
+            {displayName}:
+          </span>
+        )}
       </div>
     );
   };
