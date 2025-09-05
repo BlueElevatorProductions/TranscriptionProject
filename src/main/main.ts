@@ -100,6 +100,12 @@ class App {
   }
 
   private createMainWindow(): void {
+    // FIXED: Use static preload path instead of function
+    const preloadPath = path.resolve(__dirname, 'preload.js');
+    console.log('🔧 MAIN: FIXED - static preload path:', preloadPath);
+    console.log('🔧 MAIN: __dirname:', __dirname);
+    console.log('🔧 MAIN: File exists:', fs.existsSync(preloadPath));
+    
     // Create the browser window
     this.mainWindow = new BrowserWindow({
       width: 1200,
@@ -108,23 +114,54 @@ class App {
       minHeight: 600,
       webPreferences: {
         nodeIntegration: false,
-        contextIsolation: true,
-        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true, // RESTORE contextIsolation for security
+        sandbox: false,
+        webSecurity: false, // Keep disabled for debugging
+        devTools: true,
+        preload: preloadPath, // FIXED: Static path
       },
-      titleBarStyle: 'hiddenInset', // Hidden title bar but still draggable - perfect for transparent windows
-      transparent: true, // Enable window transparency
-      vibrancy: 'sidebar', // macOS vibrancy effect - try 'sidebar', 'window', 'content' for different effects
-      backgroundColor: '#00000000', // Fully transparent background
-      movable: true, // Explicitly enable window movement
-      resizable: true, // Ensure resizing is enabled
-      show: false, // Don't show until ready-to-show
+      // Restore original window configuration  
+      titleBarStyle: 'hiddenInset',
+      transparent: true,
+      vibrancy: 'sidebar',
+      backgroundColor: '#00000000',
+      movable: true,
+      resizable: true,
+      show: false // Don't show until ready-to-show
     });
 
-    // Load the app
-    if (isDev()) {
+    // Add window event logging
+    this.mainWindow.webContents.on('did-start-loading', () => {
+      console.log('🔧 MAIN: Window started loading');
+    });
+    
+    this.mainWindow.webContents.on('did-finish-load', () => {
+      console.log('🔧 MAIN: Window finished loading');
+      // Show window after content loads
+      this.mainWindow?.show();
+      // Only open DevTools if explicitly enabled
+      if (process.env.DEVTOOLS_ENABLED === 'true') {
+        this.mainWindow?.webContents.openDevTools();
+      }
+    });
+    
+    this.mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
+      console.log('🔧 MAIN: PRELOAD ERROR:', preloadPath, error);
+    });
+
+    // Load the app - use built files but allow testing on localhost in dev
+    if (isDev() && process.env.USE_LOCALHOST === 'true') {
+      console.log('🔧 MAIN: Loading from localhost for testing...');
       this.mainWindow.loadURL('http://localhost:3000');
-      
-      // Check environment variable to control DevTools
+    } else {
+      const rendererPath = path.join(__dirname, '../../renderer/index.html');
+      console.log('🔧 MAIN: Loading renderer from:', rendererPath);
+      console.log('🔧 MAIN: Renderer file exists:', fs.existsSync(rendererPath));
+      this.mainWindow.loadFile(rendererPath);
+    }
+    
+    // Check environment variable to control DevTools (only in dev mode)
+    if (isDev()) {
       const devToolsEnabled = process.env.DEVTOOLS_ENABLED === 'true';
       if (devToolsEnabled) {
         console.log('🧪 Opening DevTools (DEVTOOLS_ENABLED=true)');
@@ -132,8 +169,6 @@ class App {
       } else {
         console.log('✨ DevTools disabled (DEVTOOLS_ENABLED=false or not set)');
       }
-    } else {
-      this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     }
     
     // Add event listeners for error handling
@@ -292,7 +327,12 @@ class App {
 
     // Start transcription
     ipcMain.handle('start-transcription', async (event, filePath: string, modelSize: string = 'base') => {
-      console.log('Starting transcription:', { filePath, modelSize });
+      console.log('🚀 Starting transcription:', { filePath, modelSize });
+      
+      // Enhanced logging to trace service selection
+      console.log('🔍 Transcription service analysis:');
+      console.log('  - Received modelSize parameter:', modelSize);
+      console.log('  - Service type:', modelSize.startsWith('cloud-') ? 'CLOUD' : 'LOCAL');
       
       // Send debug info to renderer
       this.mainWindow?.webContents.send('debug-log', `Main: Starting transcription with model ${modelSize}`);
@@ -751,13 +791,21 @@ class App {
       }
     });
 
-    ipcMain.handle('get-transcription-service', async (event, preferences: any) => {
+    ipcMain.handle('get-transcription-service', async (event, uiSettings: any) => {
       try {
-        const service = this.userPreferences.getTranscriptionService(preferences);
-        console.log('Generated transcription service:', service);
+        console.log('🎯 get-transcription-service IPC called with UI settings:', uiSettings);
+        
+        // Load stored preferences as fallback
+        const storedPreferences = await this.userPreferences.loadPreferences();
+        console.log('📂 Loaded stored preferences for fallback:', storedPreferences);
+        
+        // Get service name using UI settings first, stored preferences as fallback
+        const service = this.userPreferences.getTranscriptionService(uiSettings, storedPreferences);
+        console.log('✅ Generated transcription service:', service);
+        
         return service;
       } catch (error) {
-        console.error('Failed to get transcription service:', error);
+        console.error('❌ Failed to get transcription service:', error);
         throw new Error(`Failed to get transcription service: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     });
@@ -1068,14 +1116,17 @@ class App {
       }
 
       // Handle local transcription
-      const whisperServicePath = path.join(__dirname, '../../../whisper_service.py');
+      // In development: __dirname is build/main/main, so we need to go up to project root
+      // In production: __dirname is build/main, so we need to go up to project root
+      const projectRoot = app.getAppPath();
+      const whisperServicePath = path.join(projectRoot, 'whisper_service.py');
       
       console.log('Main process __dirname:', __dirname);
       console.log('Whisper service path:', whisperServicePath);
       console.log('File exists:', fs.existsSync(whisperServicePath));
       
-      console.log('DEBUG: Spawning Python process with args:', [whisperServicePath, 'transcribe', filePath, modelSize, 'en']);
-      const pythonProcess = spawn('python3', [whisperServicePath, 'transcribe', filePath, modelSize, 'en'], {
+      console.log('DEBUG: Spawning Python process with args:', [whisperServicePath, 'transcribe', filePath, '--model', modelSize, '--language', 'en']);
+      const pythonProcess = spawn('python3', [whisperServicePath, 'transcribe', filePath, '--model', modelSize, '--language', 'en'], {
         env: process.env,
       });
       console.log('DEBUG: Python process spawned with PID:', pythonProcess.pid);
@@ -1131,12 +1182,26 @@ class App {
             } else {
               job.status = 'error';
               job.error = result.message || 'Transcription failed with unknown error';
+              
+              // Show error dialog to user
+              dialog.showErrorBox(
+                'Transcription Failed',
+                `Failed to transcribe "${job.fileName}":\n\n${job.error}`
+              );
+              
               this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
             }
           } catch (parseError) {
             console.error('JSON parse error:', parseError);
             job.status = 'error';
             job.error = 'Failed to parse transcription result. Raw output: ' + output.substring(0, 300);
+            
+            // Show error dialog to user
+            dialog.showErrorBox(
+              'Transcription Parse Error',
+              `Failed to parse transcription result for "${job.fileName}":\n\n${job.error}`
+            );
+            
             this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
           }
         } else {
@@ -1158,6 +1223,13 @@ class App {
           }
           
           job.error = errorMessage;
+          
+          // Show error dialog to user
+          dialog.showErrorBox(
+            'Transcription Process Failed',
+            `Failed to transcribe "${job.fileName}":\n\n${errorMessage}`
+          );
+          
           this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
         }
       });
@@ -1165,6 +1237,13 @@ class App {
     } catch (error) {
       job.status = 'error';
       job.error = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Show error dialog to user
+      dialog.showErrorBox(
+        'Transcription Error',
+        `An unexpected error occurred while transcribing "${job.fileName}":\n\n${job.error}`
+      );
+      
       this.mainWindow?.webContents.send('transcription-error', this.serializeJob(job));
     }
   }

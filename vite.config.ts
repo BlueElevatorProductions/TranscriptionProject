@@ -12,12 +12,14 @@ export default defineConfig({
   build: {
     outDir: '../../build/renderer',
     emptyOutDir: true,
+    minify: 'esbuild',
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'src/renderer/index.html')
       }
     }
   },
+  mode: 'production',
   server: {
     port: 5174, // Changed to avoid conflicts
     strictPort: false,
@@ -31,7 +33,7 @@ export default defineConfig({
     }
   },
   define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+    'process.env.NODE_ENV': JSON.stringify('production'),
   },
   optimizeDeps: {
     exclude: ['electron']

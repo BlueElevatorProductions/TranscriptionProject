@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-console.log('Preload script loading...');
+console.log('🔧 PRELOAD SCRIPT LOADING...');
+console.log('🔧 Process info:', {
+  platform: process.platform,
+  pid: process.pid,
+  versions: process.versions
+});
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -114,7 +119,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getTranscriptionService: (preferences: any) => ipcRenderer.invoke('get-transcription-service', preferences),
 });
 
-console.log('Preload script loaded successfully, electronAPI exposed');
+console.log('🔧 PRELOAD SCRIPT LOADED SUCCESSFULLY!');
+console.log('🔧 electronAPI exposed to renderer process');
+console.log('🔧 Available methods:', Object.keys({
+  loadProject: true,
+  loadProjectLegacy: true,
+  // ... other methods
+}));
 
 // Type definitions for the exposed API
 export interface ElectronAPI {
