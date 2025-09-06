@@ -17,8 +17,10 @@ export default function ClipDndPlugin() {
 
     const refreshDraggables = () => {
       const els = rootEl.querySelectorAll('.lexical-clip-container');
+      console.log('[ClipDndPlugin] refreshDraggables count=', els.length);
       els.forEach((el) => {
         el.setAttribute('draggable', 'true');
+        (el as any).draggable = true;
       });
     };
 

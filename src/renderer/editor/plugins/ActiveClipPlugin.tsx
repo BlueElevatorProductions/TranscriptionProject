@@ -39,15 +39,12 @@ export default function ActiveClipPlugin() {
         // Safer approach: query DOM elements for clip containers
         const containerEls = editor.getRootElement()?.querySelectorAll('.lexical-clip-container');
         containerEls?.forEach((el) => {
-          // Default: non-active
-          el.setAttribute('contenteditable', 'false');
           el.classList.remove('active-clip');
         });
 
         if (activeKey) {
           const activeEl = editor.getElementByKey(activeKey);
           if (activeEl) {
-            activeEl.setAttribute('contenteditable', 'true');
             activeEl.classList.add('active-clip');
           }
         }
@@ -59,4 +56,3 @@ export default function ActiveClipPlugin() {
 
   return null;
 }
-

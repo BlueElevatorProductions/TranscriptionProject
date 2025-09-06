@@ -399,8 +399,14 @@ export default function EditingPlugin({
         if (event.key === 'Enter') {
           let handled = false;
           editor.update(() => {
+            const target = event.target as HTMLElement;
+            console.log('[EditingPlugin] Enter keydown target:', {
+              tag: target?.tagName,
+              classes: target?.className,
+            });
             const selection = $getSelection();
             if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
+            console.log('[EditingPlugin] Selection anchor:', selection.anchor.getNode().getKey());
             // Find containing ClipContainerNode
             let node: LexicalNode | null = selection.anchor.getNode();
             let container: any = node;
@@ -409,11 +415,13 @@ export default function EditingPlugin({
             }
             if (!(container instanceof ClipContainerNode)) {
               // Not inside a clip container; let default Lexical behavior run
+              console.log('[EditingPlugin] Not inside a clip container; letting default behavior run');
               return;
             }
             const containerNode: ClipContainerNode = container as ClipContainerNode;
 
             const children = containerNode.getChildren();
+            console.log('[EditingPlugin] Container children count:', children.length);
 
             // Compute split index relative to children[]
             const anchorNode = selection.anchor.getNode();
@@ -436,8 +444,14 @@ export default function EditingPlugin({
             }
 
             // Guard bounds and avoid splitting off the speaker label if present at index 0
-            if (splitIndex < 1) return; // Avoid splitting off speaker label/empty
-            if (splitIndex >= children.length) return;
+            if (splitIndex < 1) {
+              console.log('[EditingPlugin] splitIndex < 1; abort split');
+              return;
+            }
+            if (splitIndex >= children.length) {
+              console.log('[EditingPlugin] splitIndex >= children.length; abort split');
+              return;
+            }
 
             const newClipId = `clip_${Date.now()}`;
             const newContainer = new ClipContainerNode(
@@ -458,6 +472,7 @@ export default function EditingPlugin({
               firstDesc.select();
             }
             handled = true;
+            console.log('[EditingPlugin] Split created new clip:', { newClipId, splitIndex });
             onParagraphBreak?.(0);
           });
           if (handled) {
