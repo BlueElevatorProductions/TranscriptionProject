@@ -63,7 +63,9 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
 
   // Segments source for Lexical editor
   const segments = useMemo(() => {
-    return projectState.projectData?.transcription?.segments || [];
+    const segs = projectState.projectData?.transcription?.segments || [];
+    console.log('[AudioSystemIntegration] Segments from project:', segs.length);
+    return segs;
   }, [projectState.projectData?.transcription?.segments]);
 
   // Initialize audio editor
@@ -451,6 +453,13 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
             },
           };
           projectActions.updateProjectData(next);
+          // Also keep ProjectContext.editedSegments in sync for save flow
+          try {
+            // @ts-ignore optional action
+            projectActions.updateSegments(updated);
+          } catch (e) {
+            console.warn('updateSegments not available?', e);
+          }
         }}
         onWordClick={(ts) => {
           // Seek audio and play if in listen mode

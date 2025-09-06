@@ -217,6 +217,7 @@ export class ProjectFileService {
         speakers: speakersJson ? JSON.parse(speakersJson) : { speakers: {}, speakerMappings: {} },
         clips: clipsJson ? JSON.parse(clipsJson) : { clips: [] }
       };
+      console.log('Loaded transcription segments:', Array.isArray(projectData.transcription?.segments) ? projectData.transcription.segments.length : 'N/A');
       
       // Add optional data
       if (historyJson) {
@@ -237,6 +238,7 @@ export class ProjectFileService {
       
       console.log(`Project loaded successfully from: ${filePath}`);
       console.log('Project audio data:', projectData.project.audio);
+      console.log('Final transcription segment count:', Array.isArray(projectData.transcription?.segments) ? projectData.transcription.segments.length : 0);
       return projectData;
     } catch (error: any) {
       console.error('Error loading project:', error);

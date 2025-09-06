@@ -302,7 +302,8 @@ export const useProject = (): UseProjectReturn => {
           },
           transcription: {
             ...state.projectData.transcription,
-            segments: state.editedSegments,
+            // Prefer the segments already stored on projectData (kept in sync by editor)
+            segments: state.projectData.transcription?.segments || state.editedSegments,
           },
           speakers: {
             ...state.projectData.speakers,

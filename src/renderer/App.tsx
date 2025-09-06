@@ -164,6 +164,21 @@ const AppMain: React.FC = () => {
     initializeApp();
   }, []);
 
+  // Test helper: allow Playwright to inject a loaded project directly
+  useEffect(() => {
+    const handler = (e: any) => {
+      try {
+        const data = e.detail;
+        console.log('[TEST] Loading project via test-load-project event. Segments:', data?.transcription?.segments?.length);
+        projectActions.loadProject(data);
+      } catch (err) {
+        console.error('[TEST] Failed to load project via event:', err);
+      }
+    };
+    window.addEventListener('test-load-project', handler as EventListener);
+    return () => window.removeEventListener('test-load-project', handler as EventListener);
+  }, [projectActions]);
+
   // Event listeners for project actions
   useEffect(() => {
     const handleNewProject = () => {
