@@ -49,8 +49,8 @@ export default function ClipDndPlugin() {
         const srcNode = $getNodeByKey(srcKey);
         const tgtNode = $getNodeByKey(tgtKey);
         if (!(srcNode instanceof ClipContainerNode) || !(tgtNode instanceof ClipContainerNode)) return;
-        // Move src before target by default
-        srcNode.insertBefore(tgtNode);
+        // Move src BEFORE target: use target.insertBefore(source)
+        tgtNode.insertBefore(srcNode);
       });
     };
 
@@ -71,4 +71,3 @@ export default function ClipDndPlugin() {
 
   return null;
 }
-

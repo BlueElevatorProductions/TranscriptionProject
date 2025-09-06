@@ -448,8 +448,14 @@ export default function EditingPlugin({
             const tail = children.slice(splitIndex);
             tail.forEach((child) => newContainer.append(child));
 
-            // Insert new segment after current
+            // Insert new clip container after current
             containerNode.insertAfter(newContainer);
+
+            // Move caret to start of new container if possible
+            const firstDesc: any = (newContainer as any).getFirstDescendant && (newContainer as any).getFirstDescendant();
+            if (firstDesc && typeof firstDesc.select === 'function') {
+              firstDesc.select();
+            }
 
             onParagraphBreak?.(0);
           });
