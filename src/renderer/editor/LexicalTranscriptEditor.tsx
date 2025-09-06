@@ -19,6 +19,7 @@ import {
 
 import { WordNode } from './nodes/WordNode';
 import { SegmentNode } from './nodes/SegmentNode';
+import { ClipContainerNode } from './nodes/ClipContainerNode';
 import { SpeakerNode } from './nodes/SpeakerNode';
 import { ClipNode } from './nodes/ClipNode';
 
@@ -31,13 +32,16 @@ import FormattingPlugin from './plugins/FormattingPlugin';
 import { 
   segmentsToEditorState,
   editorStateToSegments,
+  clipsToEditorState,
+  editorStateToClips,
 } from './utils/converters';
 
 import { Segment } from '../types';
 import './lexical-editor.css';
 
 interface LexicalTranscriptEditorProps {
-  segments: Segment[];
+  segments?: Segment[];
+  clips?: import('../types').Clip[];
   currentTime?: number;
   onSegmentsChange: (segments: Segment[]) => void;
   onWordClick?: (timestamp: number) => void;
@@ -62,8 +66,10 @@ interface LexicalTranscriptEditorProps {
 // Inner component that has access to the Lexical editor context
 function LexicalTranscriptEditorContent({
   segments,
+  clips,
   currentTime,
   onSegmentsChange,
+  onClipsChange,
   onWordClick,
   getSpeakerDisplayName,
   onSpeakerNameChange,
@@ -78,13 +84,23 @@ function LexicalTranscriptEditorContent({
   onSpeakerAdd,
   getSpeakerColor,
   readOnly = false,
-}: Omit<LexicalTranscriptEditorProps, 'className' | 'readOnly'> & { readOnly?: boolean }) {
+}: Omit<LexicalTranscriptEditorProps, 'className' | 'readOnly'> & { readOnly?: boolean; clips?: any[]; onClipsChange?: (clips: any[]) => void }) {
   const [editor] = useLexicalComposerContext();
   const initializedRef = useRef(false);
 
   // Initialize editor with segments data
   useEffect(() => {
-    if (!initializedRef.current && segments.length > 0) {
+    if (initializedRef.current) return;
+    if (clips && clips.length > 0) {
+      clipsToEditorState(editor, clips, {
+        includeSpeakerLabels: true,
+        getSpeakerDisplayName,
+        getSpeakerColor,
+      });
+      initializedRef.current = true;
+      return;
+    }
+    if (segments && segments.length > 0) {
       segmentsToEditorState(editor, segments, {
         includeSpeakerLabels: true,
         groupBySpeaker: true,
@@ -94,13 +110,18 @@ function LexicalTranscriptEditorContent({
       });
       initializedRef.current = true;
     }
-  }, [editor, segments, getSpeakerDisplayName, getSpeakerColor]);
+  }, [editor, clips, segments, getSpeakerDisplayName, getSpeakerColor]);
 
   // Handle editor state changes
   const handleEditorChange = useCallback((editorState: EditorState, editor: LexicalEditor) => {
-    const updatedSegments = editorStateToSegments(editor);
-    onSegmentsChange(updatedSegments);
-  }, [onSegmentsChange]);
+    if (clips && clips.length > 0 && onClipsChange) {
+      const updatedClips = editorStateToClips(editor);
+      onClipsChange(updatedClips);
+    } else {
+      const updatedSegments = editorStateToSegments(editor);
+      onSegmentsChange(updatedSegments);
+    }
+  }, [onSegmentsChange, onClipsChange, clips]);
 
   // Ensure editability matches readOnly prop
   useEffect(() => {
@@ -204,6 +225,7 @@ export function LexicalTranscriptEditor({
     nodes: [
       WordNode,
       SegmentNode,
+      ClipContainerNode,
       SpeakerNode,
       ClipNode,
       ParagraphNode,
@@ -225,7 +247,9 @@ export function LexicalTranscriptEditor({
     },
   }), [readOnly]);
 
-  if (segments.length === 0) {
+  const hasClips = (Array.isArray((clips as any)) && (clips as any)!.length > 0);
+  const safeSegments = segments || [];
+  if (!hasClips && safeSegments.length === 0) {
     return (
       <main className="flex-1 p-8 bg-white font-transcript overflow-y-auto">
         <div className="max-w-4xl mx-auto">
@@ -243,7 +267,8 @@ export function LexicalTranscriptEditor({
         <LexicalComposer initialConfig={editorConfig}>
           <div className="lexical-transcript-editor-wrapper">
             <LexicalTranscriptEditorContent
-              segments={segments}
+              segments={safeSegments}
+              clips={clips}
               currentTime={currentTime}
               onSegmentsChange={onSegmentsChange}
               onWordClick={onWordClick}
@@ -260,6 +285,9 @@ export function LexicalTranscriptEditor({
               onSpeakerAdd={onSpeakerAdd}
               getSpeakerColor={getSpeakerColor}
               readOnly={readOnly}
+              onClipsChange={(updated) => {
+                // default no-op; parent may override by passing a handler
+              }}
             />
           </div>
         </LexicalComposer>

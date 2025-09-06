@@ -61,12 +61,6 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     return projectState.globalSpeakers || {};
   }, [projectState.globalSpeakers]);
 
-  // Segments source for Lexical editor
-  const segments = useMemo(() => {
-    const segs = projectState.projectData?.transcription?.segments || [];
-    console.log('[AudioSystemIntegration] Segments from project:', segs.length);
-    return segs;
-  }, [projectState.projectData?.transcription?.segments]);
 
   // Initialize audio editor
   const [audioState, audioActions] = useAudioEditor({
@@ -433,33 +427,27 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     } : null,
     audioStateIsInitialized: audioState.isInitialized,
     audioStateIsReady: audioState.isReady,
-    segmentCount: segments.length
+    // segmentCount removed in clip-first mode
   });
 
   return (
     <AudioErrorBoundary onRecoveryAttempt={handleRecoveryAttempt}>
       <LexicalTranscriptEditor
-        segments={segments}
+        clips={clips}
         currentTime={audioState.currentTime}
         isPlaying={audioState.isPlaying}
         readOnly={mode === 'listen'}
-        onSegmentsChange={(updated) => {
+        onSegmentsChange={() => { /* not used in clip mode */ }}
+        onClipsChange={(updatedClips) => {
           if (!projectState.projectData) return;
           const next = {
             ...projectState.projectData,
-            transcription: {
-              ...projectState.projectData.transcription,
-              segments: updated,
+            clips: {
+              ...projectState.projectData.clips,
+              clips: updatedClips,
             },
-          };
+          } as any;
           projectActions.updateProjectData(next);
-          // Also keep ProjectContext.editedSegments in sync for save flow
-          try {
-            // @ts-ignore optional action
-            projectActions.updateSegments(updated);
-          } catch (e) {
-            console.warn('updateSegments not available?', e);
-          }
         }}
         onWordClick={(ts) => {
           // Seek audio and play if in listen mode

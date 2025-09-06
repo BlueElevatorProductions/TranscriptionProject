@@ -39,6 +39,15 @@
   margin-top: 2rem;
 }
 
+/* Clip container styling (top-level blocks) */
+.lexical-clip-container {
+  position: relative;
+  padding-top: 1rem;
+  margin-top: 1.25rem;
+  /* elegant dashed divider */
+  border-top: 2px dashed rgba(148, 163, 184, 0.6); /* slate-400 */
+}
+
 /* Editor content area */
 .transcript-editor-content {
   position: relative;

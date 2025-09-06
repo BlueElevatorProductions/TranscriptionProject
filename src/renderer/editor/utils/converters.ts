@@ -160,6 +160,112 @@ export function segmentsToEditorState(
   });
 }
 
+// ==================== Clip Converters ====================
+import { Clip } from '../../types';
+import { ClipContainerNode, $createClipContainerNode } from '../nodes/ClipContainerNode';
+
+/**
+ * Convert clips to Lexical EditorState as ClipContainerNode blocks
+ */
+export function clipsToEditorState(
+  editor: LexicalEditor,
+  clips: Clip[],
+  options: ConversionOptions = {}
+): void {
+  const {
+    includeSpeakerLabels = true,
+    getSpeakerDisplayName = (id) => id,
+    getSpeakerColor,
+  } = options;
+
+  editor.update(() => {
+    const root = $getRoot();
+    root.clear();
+
+    clips
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .forEach((clip, index) => {
+        const container = $createClipContainerNode(clip.id, clip.speaker);
+
+        // Optional visible break at top via CSS (container class handles it)
+
+        // Speaker label
+        if (includeSpeakerLabels) {
+          const speakerDisplayName = getSpeakerDisplayName(clip.speaker);
+          const speakerColor = getSpeakerColor?.(clip.speaker);
+          const speakerNode = $createSpeakerNode(clip.speaker, speakerDisplayName, speakerColor);
+          container.append(speakerNode);
+        }
+
+        // Words
+        (clip.words || []).forEach((w, wi) => {
+          const wordNode = $createWordNode(w.word, w.start, w.end, clip.speaker, w.score);
+          container.append(wordNode);
+          if (wi < clip.words.length - 1) {
+            container.append($createTextNode(' '));
+          }
+        });
+
+        root.append(container);
+      });
+  });
+}
+
+/**
+ * Convert editor ClipContainerNodes back to Clip[]
+ */
+export function editorStateToClips(editor: LexicalEditor): Clip[] {
+  const result: Clip[] = [];
+  editor.getEditorState().read(() => {
+    const root = $getRoot();
+    const children = root.getChildren();
+    let order = 0;
+    children.forEach((child) => {
+      if (child instanceof ClipContainerNode) {
+        const clipId = (child as ClipContainerNode).getClipId();
+        const speakerId = (child as ClipContainerNode).getSpeakerId();
+        const wordsNodes = (child as ClipContainerNode).getWordNodes();
+        const words = wordsNodes
+          .map((n) => {
+            if ((n as any).getType && (n as any).getType() === 'word') {
+              const w: any = n;
+              return {
+                word: w.getTextContent(),
+                start: w.getStart(),
+                end: w.getEnd(),
+                score: w.getConfidence?.() || 1.0,
+              };
+            }
+            return null;
+          })
+          .filter(Boolean) as any[];
+        const text = words.map((w) => w.word).join(' ');
+        const startTime = words.length ? words[0].start : 0;
+        const endTime = words.length ? words[words.length - 1].end : startTime;
+        result.push({
+          id: clipId,
+          speaker: speakerId,
+          startTime,
+          endTime,
+          startWordIndex: 0,
+          endWordIndex: words.length - 1,
+          words: words as any,
+          text,
+          confidence: 1.0,
+          type: 'transcribed' as const,
+          duration: endTime - startTime,
+          order: order++,
+          createdAt: Date.now(),
+          modifiedAt: Date.now(),
+          status: 'active',
+        });
+      }
+    });
+  });
+  return result;
+}
+
 /**
  * Convert Lexical EditorState to segment data
  * Extracts segments with timing and speaker information
