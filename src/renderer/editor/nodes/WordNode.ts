@@ -64,8 +64,10 @@ export class WordNode extends TextNode {
     return element;
   }
 
-  updateDOM(prevNode: WordNode, element: HTMLElement): boolean {
-    const updated = super.updateDOM(prevNode, element);
+  updateDOM(prevNode: WordNode, element: HTMLElement, config?: EditorConfig): boolean {
+    // Pass config to super if available to ensure theme is present
+    // @ts-ignore Lexical may accept config in this version
+    const updated = super.updateDOM(prevNode, element, config);
     
     // Update timing attributes if they changed
     if (prevNode.__startTime !== this.__startTime) {

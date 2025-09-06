@@ -836,12 +836,23 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         {openPanel === 'speakers' && (
           <div className="p-4">
             <h2 className="text-lg font-semibold text-white mb-4">Speakers</h2>
-            <p className="text-white opacity-70 mb-4">Speaker management will be restored in a future update.</p>
-            {speakers.map((speaker) => (
-              <div key={speaker.id} className="mb-2 p-2 bg-white bg-opacity-10 rounded">
-                <span className="text-white">{speaker.name}</span>
-              </div>
-            ))}
+            <p className="text-white opacity-70 mb-2">Edit speaker names below. Changes persist to the project.</p>
+            <div className="space-y-2">
+              {speakers.map((speaker) => (
+                <div key={speaker.id} className="flex items-center gap-2">
+                  <span className="text-white text-sm w-28 opacity-70">{speaker.id}</span>
+                  <input
+                    className="flex-1 px-2 py-1 rounded bg-white bg-opacity-10 text-white border border-white border-opacity-20 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50"
+                    value={(projectState.globalSpeakers as any)[speaker.id] || speaker.name || ''}
+                    onChange={(e) => {
+                      const next = { ...projectState.globalSpeakers, [speaker.id]: e.target.value } as any;
+                      projectActions.updateSpeakers(next);
+                    }}
+                    placeholder={speaker.name || speaker.id}
+                  />
+                </div>
+              ))}
+            </div>
             <button
               onClick={() => setOpenPanel(null)}
               className="mt-4 px-3 py-1 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30"

@@ -11,7 +11,10 @@ import {
   $isRangeSelection,
   $createTextNode,
   $setSelection,
-  $createRangeSelection
+  $createRangeSelection,
+  $isElementNode,
+  LexicalNode,
+  ElementNode,
 } from 'lexical';
 import { WordNode, $isWordNode, $createWordNode } from '../nodes/WordNode';
 import { SegmentNode, $isSegmentNode } from '../nodes/SegmentNode';
@@ -64,7 +67,7 @@ export default function EditingPlugin({
       let wordNode: WordNode | null = null;
       
       // Find the WordNode corresponding to this element
-      const findWordNode = (node: any): WordNode | null => {
+      const findWordNode = (node: LexicalNode): WordNode | null => {
         if ($isWordNode(node)) {
           const nodeElement = editor.getElementByKey(node.getKey());
           if (nodeElement === element) {
@@ -72,10 +75,12 @@ export default function EditingPlugin({
           }
         }
 
-        const children = node.getChildren();
-        for (const child of children) {
-          const found = findWordNode(child);
-          if (found) return found;
+        if ($isElementNode(node)) {
+          const children = (node as ElementNode).getChildren();
+          for (const child of children) {
+            const found = findWordNode(child);
+            if (found) return found;
+          }
         }
         return null;
       };
@@ -322,7 +327,7 @@ export default function EditingPlugin({
       let targetWordNode: WordNode | null = null;
       
       // Find the target word node
-      const findWordNode = (node: any): WordNode | null => {
+      const findWordNode = (node: LexicalNode): WordNode | null => {
         if ($isWordNode(node)) {
           const nodeElement = editor.getElementByKey(node.getKey());
           if (nodeElement === element) {
@@ -330,10 +335,12 @@ export default function EditingPlugin({
           }
         }
 
-        const children = node.getChildren();
-        for (const child of children) {
-          const found = findWordNode(child);
-          if (found) return found;
+        if ($isElementNode(node)) {
+          const children = (node as ElementNode).getChildren();
+          for (const child of children) {
+            const found = findWordNode(child);
+            if (found) return found;
+          }
         }
         return null;
       };
@@ -386,7 +393,7 @@ export default function EditingPlugin({
       let targetWordNode: WordNode | null = null;
       
       // Find and remove the word node
-      const findAndDeleteWordNode = (node: any): boolean => {
+      const findAndDeleteWordNode = (node: LexicalNode): boolean => {
         if ($isWordNode(node)) {
           const nodeElement = editor.getElementByKey(node.getKey());
           if (nodeElement === element) {
@@ -402,10 +409,12 @@ export default function EditingPlugin({
           }
         }
 
-        const children = node.getChildren();
-        for (const child of children) {
-          if (findAndDeleteWordNode(child)) {
-            return true;
+        if ($isElementNode(node)) {
+          const children = (node as ElementNode).getChildren();
+          for (const child of children) {
+            if (findAndDeleteWordNode(child)) {
+              return true;
+            }
           }
         }
         return false;
