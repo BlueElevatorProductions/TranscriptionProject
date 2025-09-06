@@ -27,6 +27,7 @@ import AudioSyncPlugin from './plugins/AudioSyncPlugin';
 import SpeakerPlugin from './plugins/SpeakerPlugin';
 import EditingPlugin from './plugins/EditingPlugin';
 import ClipCreationPlugin from './plugins/ClipCreationPlugin';
+import ActiveClipPlugin from './plugins/ActiveClipPlugin';
 import FormattingPlugin from './plugins/FormattingPlugin';
 
 import { 
@@ -195,6 +196,8 @@ function LexicalTranscriptEditorContent({
         fontFamily={fontFamily}
         fontSize={fontSize}
       />
+      {/* Highlight and scope editing to active clip */}
+      {!readOnly && <ActiveClipPlugin />}
     </>
   );
 }
