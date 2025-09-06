@@ -201,6 +201,7 @@ function LexicalTranscriptEditorContent({
 
 export function LexicalTranscriptEditor({
   segments,
+  clips,
   currentTime,
   onSegmentsChange,
   onWordClick,
