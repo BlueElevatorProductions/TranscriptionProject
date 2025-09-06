@@ -18,6 +18,7 @@ import {
 } from 'lexical';
 import { WordNode, $isWordNode, $createWordNode } from '../nodes/WordNode';
 import { SegmentNode, $isSegmentNode } from '../nodes/SegmentNode';
+import { ClipContainerNode } from '../nodes/ClipContainerNode';
 
 interface EditingPluginProps {
   onWordEdit?: (segmentIndex: number, wordIndex: number, oldWord: string, newWord: string) => void;
@@ -400,17 +401,16 @@ export default function EditingPlugin({
           editor.update(() => {
             const selection = $getSelection();
             if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
-
-            // Find containing SegmentNode
+            // Find containing ClipContainerNode
             let node: LexicalNode | null = selection.anchor.getNode();
-            let segment: LexicalNode | null = node;
-            while (segment && !$isSegmentNode(segment)) {
-              segment = (segment.getParent && segment.getParent()) as LexicalNode | null;
+            let container: any = node;
+            while (container && !(container instanceof ClipContainerNode)) {
+              container = container.getParent && container.getParent();
             }
-            if (!segment || !$isSegmentNode(segment)) return;
-            const segmentNode = segment as SegmentNode;
+            if (!(container instanceof ClipContainerNode)) return;
+            const containerNode: ClipContainerNode = container as ClipContainerNode;
 
-            const children = segmentNode.getChildren();
+            const children = containerNode.getChildren();
 
             // Compute split index relative to children[]
             const anchorNode = selection.anchor.getNode();
@@ -432,40 +432,24 @@ export default function EditingPlugin({
               }
             }
 
-            // Guard bounds
-            if (splitIndex < 1) {
-              // Avoid creating empty segment at the very start
-              return;
-            }
+            // Guard bounds and avoid splitting off the speaker label if present at index 0
+            if (splitIndex < 1) return;
             if (splitIndex >= children.length) {
               return;
             }
 
-            const newSegmentId = `segment_${Date.now()}`;
-            const newSegment = new SegmentNode(
-              newSegmentId,
-              segmentNode.getStartTime(),
-              segmentNode.getEndTime(),
-              segmentNode.getSpeakerId(),
-              true // show paragraph break indicator
+            const newClipId = `clip_${Date.now()}`;
+            const newContainer = new ClipContainerNode(
+              newClipId,
+              containerNode.getSpeakerId()
             );
 
             // Move trailing nodes from splitIndex onward (use a snapshot array)
             const tail = children.slice(splitIndex);
-            tail.forEach((child) => newSegment.append(child));
+            tail.forEach((child) => newContainer.append(child));
 
             // Insert new segment after current
-            segmentNode.insertAfter(newSegment);
-
-            // Recompute timings based on word nodes
-            const updateTiming = (seg: SegmentNode) => {
-              const words = seg.getWordNodes().filter($isWordNode) as WordNode[];
-              if (words.length > 0) {
-                seg.setTiming(words[0].getStart(), words[words.length - 1].getEnd());
-              }
-            };
-            updateTiming(segmentNode);
-            updateTiming(newSegment);
+            containerNode.insertAfter(newContainer);
 
             onParagraphBreak?.(0);
           });

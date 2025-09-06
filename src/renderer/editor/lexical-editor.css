@@ -55,6 +55,11 @@
   border-radius: 6px;
 }
 
+/* Hide dividers in listen mode */
+.lexical-transcript-editor-wrapper.listen-mode .lexical-clip-container {
+  border-top-color: transparent;
+}
+
 /* Editor content area */
 .transcript-editor-content {
   position: relative;

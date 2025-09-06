@@ -28,6 +28,7 @@ import SpeakerPlugin from './plugins/SpeakerPlugin';
 import EditingPlugin from './plugins/EditingPlugin';
 import ClipCreationPlugin from './plugins/ClipCreationPlugin';
 import ActiveClipPlugin from './plugins/ActiveClipPlugin';
+import ClipDndPlugin from './plugins/ClipDndPlugin';
 import FormattingPlugin from './plugins/FormattingPlugin';
 
 import { 
@@ -198,6 +199,7 @@ function LexicalTranscriptEditorContent({
       />
       {/* Highlight and scope editing to active clip */}
       {!readOnly && <ActiveClipPlugin />}
+      {!readOnly && <ClipDndPlugin />}
     </>
   );
 }
@@ -267,7 +269,7 @@ export function LexicalTranscriptEditor({
 
   return (
     <main className={`flex-1 bg-white font-transcript overflow-y-auto ${className}`}>
-      <div className="max-w-4xl mx-auto relative">
+      <div className={`max-w-4xl mx-auto relative lexical-transcript-editor-wrapper ${readOnly ? 'listen-mode' : 'edit-mode'}`}>
         <LexicalComposer initialConfig={editorConfig}>
           <div className="lexical-transcript-editor-wrapper">
             <LexicalTranscriptEditorContent
