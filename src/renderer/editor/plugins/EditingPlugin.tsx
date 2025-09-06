@@ -47,61 +47,13 @@ export default function EditingPlugin({
   });
 
   // Handle double-click to edit words
+  // Disable custom double-click editing to allow native Lexical editing behavior
   const handleDoubleClick = useCallback((event: MouseEvent) => {
-    if (readOnly) return;
-
-    const target = event.target as HTMLElement;
-    
-    if (target.classList.contains('lexical-word-node')) {
-      event.preventDefault();
-      event.stopPropagation();
-      
-      startWordEdit(target);
-    }
+    // no-op: let Lexical handle selection/editing
   }, [readOnly]);
 
   // Start editing a word
-  const startWordEdit = (element: HTMLElement) => {
-    editor.update(() => {
-      const root = $getRoot();
-      let wordNode: WordNode | null = null;
-      
-      // Find the WordNode corresponding to this element
-      const findWordNode = (node: LexicalNode): WordNode | null => {
-        if ($isWordNode(node)) {
-          const nodeElement = editor.getElementByKey(node.getKey());
-          if (nodeElement === element) {
-            return node;
-          }
-        }
-
-        if ($isElementNode(node)) {
-          const children = (node as ElementNode).getChildren();
-          for (const child of children) {
-            const found = findWordNode(child);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-
-      wordNode = findWordNode(root);
-      
-      if (wordNode) {
-        const originalText = wordNode.getTextContent();
-        
-        // Set editing state
-        editingStateRef.current = {
-          isEditing: true,
-          editingNode: wordNode,
-          originalText
-        };
-
-        // Create inline input element
-        createInlineEditor(element, originalText);
-      }
-    });
-  };
+  // Remove inline replacement editor in favor of native Lexical text editing
 
   // Create inline input for word editing
   const createInlineEditor = (element: HTMLElement, originalText: string) => {

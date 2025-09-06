@@ -102,6 +102,11 @@ function LexicalTranscriptEditorContent({
     onSegmentsChange(updatedSegments);
   }, [onSegmentsChange]);
 
+  // Ensure editability matches readOnly prop
+  useEffect(() => {
+    editor.setEditable(!readOnly);
+  }, [editor, readOnly]);
+
   return (
     <>
       <RichTextPlugin
@@ -109,6 +114,7 @@ function LexicalTranscriptEditorContent({
           <ContentEditable 
             className="transcript-editor-content outline-none text-[35px] leading-[1.4] text-gray-900 font-transcript p-8" 
             style={{ minHeight: '400px' }}
+            autoFocus
           />
         }
         placeholder={
@@ -253,6 +259,7 @@ export function LexicalTranscriptEditor({
               onParagraphBreak={onParagraphBreak}
               onSpeakerAdd={onSpeakerAdd}
               getSpeakerColor={getSpeakerColor}
+              readOnly={readOnly}
             />
           </div>
         </LexicalComposer>

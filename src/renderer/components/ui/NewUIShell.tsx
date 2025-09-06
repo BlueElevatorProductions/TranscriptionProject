@@ -843,7 +843,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
                   <span className="text-white text-sm w-28 opacity-70">{speaker.id}</span>
                   <input
                     className="flex-1 px-2 py-1 rounded bg-white bg-opacity-10 text-white border border-white border-opacity-20 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50"
-                    value={(projectState.globalSpeakers as any)[speaker.id] || speaker.name || ''}
+                    value={((projectState.globalSpeakers as any)[speaker.id] ?? '') as string}
                     onChange={(e) => {
                       const next = { ...projectState.globalSpeakers, [speaker.id]: e.target.value } as any;
                       projectActions.updateSpeakers(next);
