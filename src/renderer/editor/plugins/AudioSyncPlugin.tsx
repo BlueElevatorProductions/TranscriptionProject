@@ -90,6 +90,10 @@ export default function AudioSyncPlugin({
   // Handle word clicks for seeking
   useEffect(() => {
     const handleWordClick = (event: MouseEvent) => {
+      // In edit mode, allow Lexical to place the caret and handle editing
+      if (editor.isEditable()) {
+        return;
+      }
       const target = event.target as HTMLElement;
       
       // Check if clicked element is a word node
