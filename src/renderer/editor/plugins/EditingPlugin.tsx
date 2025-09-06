@@ -397,7 +397,7 @@ export default function EditingPlugin({
       const handleKeyDown = (event: KeyboardEvent) => {
         if (readOnly) return;
         if (event.key === 'Enter') {
-          event.preventDefault();
+          let handled = false;
           editor.update(() => {
             const selection = $getSelection();
             if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
@@ -407,7 +407,10 @@ export default function EditingPlugin({
             while (container && !(container instanceof ClipContainerNode)) {
               container = container.getParent && container.getParent();
             }
-            if (!(container instanceof ClipContainerNode)) return;
+            if (!(container instanceof ClipContainerNode)) {
+              // Not inside a clip container; let default Lexical behavior run
+              return;
+            }
             const containerNode: ClipContainerNode = container as ClipContainerNode;
 
             const children = containerNode.getChildren();
@@ -433,10 +436,8 @@ export default function EditingPlugin({
             }
 
             // Guard bounds and avoid splitting off the speaker label if present at index 0
-            if (splitIndex < 1) return;
-            if (splitIndex >= children.length) {
-              return;
-            }
+            if (splitIndex < 1) return; // Avoid splitting off speaker label/empty
+            if (splitIndex >= children.length) return;
 
             const newClipId = `clip_${Date.now()}`;
             const newContainer = new ClipContainerNode(
@@ -456,9 +457,12 @@ export default function EditingPlugin({
             if (firstDesc && typeof firstDesc.select === 'function') {
               firstDesc.select();
             }
-
+            handled = true;
             onParagraphBreak?.(0);
           });
+          if (handled) {
+            event.preventDefault();
+          }
         }
       };
       editorElement.addEventListener('keydown', handleKeyDown);

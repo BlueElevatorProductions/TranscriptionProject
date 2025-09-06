@@ -25,11 +25,12 @@ export default function ClipDndPlugin() {
     const onDragStart = (e: DragEvent) => {
       const target = (e.target as HTMLElement)?.closest('.lexical-clip-container') as HTMLElement | null;
       if (!target) return;
-      const key = target.getAttribute('data-lexical-node-key') || target.getAttribute('data-lexical-key');
+      const key = target.getAttribute('data-lexical-node-key');
       if (!key) return;
       dragKeyRef.current = key;
       e.dataTransfer?.setData('text/plain', key);
       e.dataTransfer?.setDragImage(target, 10, 10);
+      console.log('[ClipDndPlugin] dragstart key=', key);
     };
 
     const onDragOver = (e: DragEvent) => {
@@ -42,7 +43,7 @@ export default function ClipDndPlugin() {
       e.preventDefault();
       const srcKey = dragKeyRef.current;
       const tgtEl = (e.target as HTMLElement)?.closest('.lexical-clip-container') as HTMLElement | null;
-      const tgtKey = tgtEl?.getAttribute('data-lexical-node-key') || tgtEl?.getAttribute('data-lexical-key') || null;
+      const tgtKey = tgtEl?.getAttribute('data-lexical-node-key') || null;
       if (!srcKey || !tgtKey || srcKey === tgtKey) return;
 
       editor.update(() => {
@@ -51,6 +52,7 @@ export default function ClipDndPlugin() {
         if (!(srcNode instanceof ClipContainerNode) || !(tgtNode instanceof ClipContainerNode)) return;
         // Move src BEFORE target: use target.insertBefore(source)
         tgtNode.insertBefore(srcNode);
+        console.log('[ClipDndPlugin] drop reordered', { srcKey, tgtKey });
       });
     };
 
