@@ -401,25 +401,45 @@ export default function EditingPlugin({
             const selection = $getSelection();
             if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
 
-            // Ascend to WordNode
-            let node: any = selection.anchor.getNode();
-            while (node && !$isWordNode(node)) {
-              node = node.getParent && node.getParent();
+            // Find containing SegmentNode
+            let node: LexicalNode | null = selection.anchor.getNode();
+            let segment: LexicalNode | null = node;
+            while (segment && !$isSegmentNode(segment)) {
+              segment = (segment.getParent && segment.getParent()) as LexicalNode | null;
             }
-            if (!node || !$isWordNode(node)) return;
-            const wordNode = node as WordNode;
-
-            // Ascend to SegmentNode
-            let parent: any = wordNode.getParent();
-            while (parent && !$isSegmentNode(parent)) {
-              parent = parent.getParent && parent.getParent();
-            }
-            if (!parent || !$isSegmentNode(parent)) return;
-            const segmentNode = parent as SegmentNode;
+            if (!segment || !$isSegmentNode(segment)) return;
+            const segmentNode = segment as SegmentNode;
 
             const children = segmentNode.getChildren();
-            const splitIndex = children.findIndex((c) => c.getKey() === wordNode.getKey());
-            if (splitIndex <= 0 || splitIndex >= children.length) return;
+
+            // Compute split index relative to children[]
+            const anchorNode = selection.anchor.getNode();
+            let splitIndex = -1;
+
+            // If anchor is a WordNode, split before it
+            if ($isWordNode(anchorNode as any)) {
+              splitIndex = children.findIndex((c) => c.getKey() === (anchorNode as WordNode).getKey());
+            } else {
+              // If anchor is a TextNode (likely a space) or other child, split at that position
+              const anchorKey = anchorNode.getKey();
+              const idx = children.findIndex((c) => c.getKey() === anchorKey);
+              if (idx !== -1) {
+                splitIndex = idx;
+              } else {
+                // Fallback: find the next WordNode in order; otherwise split at end
+                const firstWordIdx = children.findIndex((c) => ($isWordNode(c as any)));
+                splitIndex = firstWordIdx !== -1 ? firstWordIdx : children.length;
+              }
+            }
+
+            // Guard bounds
+            if (splitIndex < 1) {
+              // Avoid creating empty segment at the very start
+              return;
+            }
+            if (splitIndex >= children.length) {
+              return;
+            }
 
             const newSegmentId = `segment_${Date.now()}`;
             const newSegment = new SegmentNode(
@@ -430,10 +450,9 @@ export default function EditingPlugin({
               true // show paragraph break indicator
             );
 
-            // Move trailing nodes from splitIndex onward
-            for (let i = splitIndex; i < children.length; i++) {
-              newSegment.append(children[i]);
-            }
+            // Move trailing nodes from splitIndex onward (use a snapshot array)
+            const tail = children.slice(splitIndex);
+            tail.forEach((child) => newSegment.append(child));
 
             // Insert new segment after current
             segmentNode.insertAfter(newSegment);
