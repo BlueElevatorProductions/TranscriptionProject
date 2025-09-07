@@ -46,6 +46,7 @@ interface LexicalTranscriptEditorProps {
   clips?: import('../types').Clip[];
   currentTime?: number;
   onSegmentsChange: (segments: Segment[]) => void;
+  onClipsChange?: (clips: import('../types').Clip[]) => void;
   onWordClick?: (timestamp: number) => void;
   getSpeakerDisplayName: (speakerId: string) => string;
   onSpeakerNameChange?: (speakerId: string, newName: string) => void;
@@ -89,6 +90,8 @@ function LexicalTranscriptEditorContent({
 }: Omit<LexicalTranscriptEditorProps, 'className' | 'readOnly'> & { readOnly?: boolean; clips?: any[]; onClipsChange?: (clips: any[]) => void }) {
   const [editor] = useLexicalComposerContext();
   const initializedRef = useRef(false);
+  const suppressOnChangeRef = useRef(false);
+  const lastClipsHashRef = useRef<string | null>(null);
 
   // Initialize editor with segments data
   useEffect(() => {
@@ -116,8 +119,13 @@ function LexicalTranscriptEditorContent({
 
   // Handle editor state changes
   const handleEditorChange = useCallback((editorState: EditorState, editor: LexicalEditor) => {
+    if (suppressOnChangeRef.current) {
+      // Ignore synthetic changes caused by external rebuilds
+      return;
+    }
     if (clips && clips.length > 0 && onClipsChange) {
       const updatedClips = editorStateToClips(editor);
+      console.log('[LexicalTranscriptEditor] onClipsChange fired:', { count: updatedClips.length });
       onClipsChange(updatedClips);
     } else {
       const updatedSegments = editorStateToSegments(editor);
@@ -129,6 +137,23 @@ function LexicalTranscriptEditorContent({
   useEffect(() => {
     editor.setEditable(!readOnly);
   }, [editor, readOnly]);
+
+  // Rebuild editor when external clips change (e.g., programmatic split/reorder)
+  useEffect(() => {
+    if (!clips || clips.length === 0) return;
+    // Compute a lightweight hash of clips order and lengths to detect external updates
+    const hash = clips.map((c: any) => `${c.id}:${c.order}:${c.words?.length ?? 0}`).join('|');
+    if (hash === lastClipsHashRef.current) return;
+    lastClipsHashRef.current = hash;
+    suppressOnChangeRef.current = true;
+    clipsToEditorState(editor, clips, {
+      includeSpeakerLabels: true,
+      getSpeakerDisplayName: () => '',
+      getSpeakerColor: undefined,
+    });
+    // Allow onChange again on next tick
+    setTimeout(() => { suppressOnChangeRef.current = false; }, 0);
+  }, [editor, clips]);
 
   return (
     <>
@@ -209,6 +234,7 @@ export function LexicalTranscriptEditor({
   clips,
   currentTime,
   onSegmentsChange,
+  onClipsChange,
   onWordClick,
   getSpeakerDisplayName,
   onSpeakerNameChange,
@@ -277,6 +303,7 @@ export function LexicalTranscriptEditor({
               clips={clips}
               currentTime={currentTime}
               onSegmentsChange={onSegmentsChange}
+              onClipsChange={onClipsChange}
               onWordClick={onWordClick}
               getSpeakerDisplayName={getSpeakerDisplayName}
               onSpeakerNameChange={onSpeakerNameChange}
@@ -291,9 +318,6 @@ export function LexicalTranscriptEditor({
               onSpeakerAdd={onSpeakerAdd}
               getSpeakerColor={getSpeakerColor}
               readOnly={readOnly}
-              onClipsChange={(updated) => {
-                // default no-op; parent may override by passing a handler
-              }}
             />
           </div>
         </LexicalComposer>

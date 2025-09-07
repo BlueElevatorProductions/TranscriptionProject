@@ -135,6 +135,91 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     }
   }, [clips, audioState.isInitialized]);
 
+  // Handle clip split requests from editor
+  useEffect(() => {
+    const onClipSplit = (e: any) => {
+      const { clipId, wordIndex } = e.detail || {};
+      if (!clipId || typeof wordIndex !== 'number') return;
+      const current = projectState.projectData?.clips?.clips as Clip[];
+      if (!current) return;
+
+      const idx = current.findIndex((c) => c.id === clipId);
+      if (idx === -1) return;
+      const clip = current[idx];
+      const words = clip.words || [];
+      if (wordIndex <= 0 || wordIndex >= words.length) return;
+
+      const aWords = words.slice(0, wordIndex);
+      const bWords = words.slice(wordIndex);
+      const now = Date.now();
+      const a: Clip = {
+        ...clip,
+        id: clip.id, // keep id for first part
+        words: aWords as any,
+        startTime: aWords[0]?.start ?? clip.startTime,
+        endTime: aWords[aWords.length - 1]?.end ?? clip.startTime,
+        text: aWords.map((w: any) => w.word).join(' '),
+        duration: (aWords[aWords.length - 1]?.end ?? clip.startTime) - (aWords[0]?.start ?? clip.startTime),
+        modifiedAt: now,
+        type: clip.type === 'transcribed' ? 'user-created' : clip.type,
+      };
+      const newId = `clip_${now}`;
+      const b: Clip = {
+        ...clip,
+        id: newId,
+        words: bWords as any,
+        startTime: bWords[0]?.start ?? clip.endTime,
+        endTime: bWords[bWords.length - 1]?.end ?? clip.endTime,
+        text: bWords.map((w: any) => w.word).join(' '),
+        duration: (bWords[bWords.length - 1]?.end ?? clip.endTime) - (bWords[0]?.start ?? clip.endTime),
+        createdAt: now,
+        modifiedAt: now,
+        type: 'user-created',
+      };
+
+      // Build new clips array: replace clip at idx with [a, b]
+      const next = [...current.slice(0, idx), a, b, ...current.slice(idx + 1)];
+      // Reindex order
+      next.forEach((c, i) => (c.order = i));
+
+      const updated = {
+        ...projectState.projectData!,
+        clips: { ...projectState.projectData!.clips, clips: next },
+      } as any;
+      projectActions.updateProjectData(updated);
+      if (audioState.isInitialized) audioActions.updateClips(next);
+    };
+
+    window.addEventListener('clip-split' as any, onClipSplit as any);
+    return () => window.removeEventListener('clip-split' as any, onClipSplit as any);
+  }, [projectState.projectData, audioState.isInitialized]);
+
+  // Handle clip reorder from DnD plugin
+  useEffect(() => {
+    const onClipReorder = (e: any) => {
+      const { srcClipId, targetClipId, placeBefore } = e.detail || {};
+      const current = projectState.projectData?.clips?.clips as Clip[];
+      if (!current || !srcClipId || !targetClipId) return;
+      if (srcClipId === targetClipId) return;
+      const srcIdx = current.findIndex((c) => c.id === srcClipId);
+      const tgtIdx = current.findIndex((c) => c.id === targetClipId);
+      if (srcIdx === -1 || tgtIdx === -1) return;
+      const arr = current.slice();
+      const [moved] = arr.splice(srcIdx, 1);
+      const insertIdx = tgtIdx + (placeBefore ? 0 : 1) - (srcIdx < tgtIdx ? 1 : 0);
+      arr.splice(Math.max(0, Math.min(arr.length, insertIdx)), 0, moved);
+      arr.forEach((c, i) => (c.order = i));
+      const updated = {
+        ...projectState.projectData!,
+        clips: { ...projectState.projectData!.clips, clips: arr },
+      } as any;
+      projectActions.updateProjectData(updated);
+      if (audioState.isInitialized) audioActions.updateClips(arr);
+    };
+    window.addEventListener('clip-reorder' as any, onClipReorder as any);
+    return () => window.removeEventListener('clip-reorder' as any, onClipReorder as any);
+  }, [projectState.projectData, audioState.isInitialized]);
+
   // Update mode when prop changes
   useEffect(() => {
     if (audioState.isInitialized && audioState.mode !== mode) {
@@ -433,13 +518,17 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   return (
     <AudioErrorBoundary onRecoveryAttempt={handleRecoveryAttempt}>
       <LexicalTranscriptEditor
-        clips={clips}
+        clips={mode === 'listen' ? clips.filter(c => c.status !== 'deleted') : clips}
         currentTime={audioState.currentTime}
         isPlaying={audioState.isPlaying}
         readOnly={mode === 'listen'}
         onSegmentsChange={() => { /* not used in clip mode */ }}
         onClipsChange={(updatedClips) => {
           if (!projectState.projectData) return;
+          console.log('[AudioSystemIntegration] onClipsChange received:', {
+            count: updatedClips.length,
+            deletedCount: updatedClips.filter(c => c.status === 'deleted').length,
+          });
           const next = {
             ...projectState.projectData,
             clips: {
@@ -448,6 +537,9 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
             },
           } as any;
           projectActions.updateProjectData(next);
+          if (audioState.isInitialized) {
+            audioActions.updateClips(updatedClips);
+          }
         }}
         onWordClick={(ts) => {
           // Seek audio and play if in listen mode

@@ -46,6 +46,21 @@
   margin-top: 1.25rem;
   /* elegant dashed divider */
   border-top: 2px dashed rgba(148, 163, 184, 0.6); /* slate-400 */
+  border-bottom: 2px dashed rgba(148, 163, 184, 0.6); /* slate-400 */
+  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Deleted clips styling in Edit Mode */
+.edit-mode .lexical-clip-container.is-deleted .lexical-word-node,
+.edit-mode .lexical-clip-container[data-status="deleted"] .lexical-word-node {
+  color: #9ca3af; /* gray-400 */
+  text-decoration: line-through;
+}
+
+.edit-mode .lexical-clip-container.is-deleted .lexical-speaker-node,
+.edit-mode .lexical-clip-container[data-status="deleted"] .lexical-speaker-node {
+  color: #9ca3af;
 }
 
 /* Highlight the active clip container */

@@ -15,9 +15,11 @@ import {
   $isElementNode,
   LexicalNode,
   ElementNode,
+  ParagraphNode,
 } from 'lexical';
 import { WordNode, $isWordNode, $createWordNode } from '../nodes/WordNode';
 import { SegmentNode, $isSegmentNode } from '../nodes/SegmentNode';
+import { $isSpeakerNode } from '../nodes/SpeakerNode';
 import { ClipContainerNode } from '../nodes/ClipContainerNode';
 
 interface EditingPluginProps {
@@ -400,80 +402,193 @@ export default function EditingPlugin({
           let handled = false;
           editor.update(() => {
             const target = event.target as HTMLElement;
-            console.log('[EditingPlugin] Enter keydown target:', {
-              tag: target?.tagName,
-              classes: target?.className,
-            });
             const selection = $getSelection();
             if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
-            console.log('[EditingPlugin] Selection anchor:', selection.anchor.getNode().getKey());
-            // Find containing ClipContainerNode
+
+            // Try to resolve ClipContainerNode via Lexical parent chain
             let node: LexicalNode | null = selection.anchor.getNode();
             let container: any = node;
+            const chain: string[] = [];
             while (container && !(container instanceof ClipContainerNode)) {
+              chain.push((container as any)?.getType?.() || (container as any)?.constructor?.name || 'unknown');
               container = container.getParent && container.getParent();
             }
+
+            // Fallback: resolve via DOM selection
             if (!(container instanceof ClipContainerNode)) {
-              // Not inside a clip container; let default Lexical behavior run
-              console.log('[EditingPlugin] Not inside a clip container; letting default behavior run');
+              const domSel = window.getSelection();
+              const anchorNode = domSel?.anchorNode as Node | null;
+              const anchorEl = (anchorNode as any)?.nodeType === 1
+                ? (anchorNode as HTMLElement)
+                : (anchorNode?.parentElement as HTMLElement | null);
+              const containerEl = anchorEl?.closest?.('.lexical-clip-container') as HTMLElement | null;
+              if (containerEl) {
+                const clipId = containerEl.getAttribute('data-clip-id');
+                // Find ClipContainerNode by matching clipId
+                const root = $getRoot();
+                const children = root.getChildren();
+                for (const child of children) {
+                  if (child instanceof ClipContainerNode) {
+                    if ((child as ClipContainerNode).getClipId() === clipId) {
+                      container = child;
+                      break;
+                    }
+                  }
+                }
+                // If still not found, last resort: try to map via DOM element of children
+                if (!(container instanceof ClipContainerNode)) {
+                  for (const child of children) {
+                    if (child instanceof ClipContainerNode) {
+                      const el = editor.getElementByKey(child.getKey());
+                      if (el === containerEl) {
+                        container = child;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if (!(container instanceof ClipContainerNode)) {
+              console.log('[EditingPlugin] Enter: no ClipContainerNode found. chain=', chain);
+              // Fallback: create a new clip after the nearest/last clip container
+              const root = $getRoot();
+              const topChildren = root.getChildren();
+              const clipNodes = topChildren.filter((c) => c instanceof ClipContainerNode) as ClipContainerNode[];
+              if (clipNodes.length === 0) {
+                // Nothing to do; let default behavior run
+                return;
+              }
+              // Choose nearest by DOM vertical distance if possible
+              let chosen: ClipContainerNode | null = null;
+              try {
+                const domSel = window.getSelection();
+                const anchorDomNode = domSel?.anchorNode as Node | null;
+                const anchorElement = (anchorDomNode as any)?.nodeType === 1
+                  ? (anchorDomNode as HTMLElement)
+                  : (anchorDomNode?.parentElement as HTMLElement | null);
+                const anchorTop = anchorElement?.getBoundingClientRect?.().top ?? Number.POSITIVE_INFINITY;
+                let bestDist = Number.POSITIVE_INFINITY;
+                clipNodes.forEach((n) => {
+                  const el = editor.getElementByKey(n.getKey());
+                  const top = el?.getBoundingClientRect?.().top ?? Number.NEGATIVE_INFINITY;
+                  const dist = Math.abs((anchorTop as number) - (top as number));
+                  if (dist < bestDist) {
+                    bestDist = dist;
+                    chosen = n;
+                  }
+                });
+              } catch {
+                // ignore and fallback to last clip
+              }
+              if (!chosen) chosen = clipNodes[clipNodes.length - 1];
+
+              const newClipId = `clip_${Date.now()}`;
+              const newContainer = new ClipContainerNode(
+                newClipId,
+                chosen.getSpeakerId(),
+                chosen.getStatus?.() ?? 'active'
+              );
+              chosen.insertAfter(newContainer);
+              const firstDesc: any = (newContainer as any).getFirstDescendant && (newContainer as any).getFirstDescendant();
+              if (firstDesc && typeof firstDesc.select === 'function') {
+                firstDesc.select();
+              }
+              handled = true;
+              console.log('[EditingPlugin] Enter: created new empty clip after nearest container', { newClipId });
               return;
             }
             const containerNode: ClipContainerNode = container as ClipContainerNode;
 
             const children = containerNode.getChildren();
-            console.log('[EditingPlugin] Container children count:', children.length);
+            console.log('[EditingPlugin] Enter: container clipId=', containerNode.getClipId?.(), 'children count:', children.length);
+
+            // Prefer splitting within the first paragraph inside the container
+            let paragraphNode: any = children.find((c) => (c as any).getType && (c as any).getType() === 'paragraph');
+            if (!paragraphNode) {
+              // Create a paragraph if missing and move existing children into it
+              paragraphNode = new ParagraphNode();
+              children.forEach((c) => paragraphNode.append(c));
+              containerNode.append(paragraphNode);
+            }
+            const paraChildren = paragraphNode.getChildren();
+            console.log('[EditingPlugin] Enter: paragraph children types:', paraChildren.map((c: any) => c.getType?.()));
 
             // Compute split index relative to children[]
             const anchorNode = selection.anchor.getNode();
             let splitIndex = -1;
 
-            // If anchor is a WordNode, split before it
-            if ($isWordNode(anchorNode as any)) {
-              splitIndex = children.findIndex((c) => c.getKey() === (anchorNode as WordNode).getKey());
-            } else {
-              // If anchor is a TextNode (likely a space) or other child, split at that position
-              const anchorKey = anchorNode.getKey();
-              const idx = children.findIndex((c) => c.getKey() === anchorKey);
-              if (idx !== -1) {
-                splitIndex = idx;
-              } else {
-                // Fallback: find the next WordNode in order; otherwise split at end
-                const firstWordIdx = children.findIndex((c) => ($isWordNode(c as any)));
-                splitIndex = firstWordIdx !== -1 ? firstWordIdx : children.length;
+            // Compute split index using Lexical ancestry + anchor offset
+            {
+              let child: any = anchorNode;
+              while (child && child.getParent && child.getParent() !== paragraphNode) {
+                child = child.getParent && child.getParent();
               }
+              if (child && typeof child.getKey === 'function') {
+                splitIndex = paraChildren.findIndex((c: any) => c.getKey() === child.getKey());
+                // If caret at end of a word/text, split after it; otherwise split before
+                const isWord = $isWordNode(child as any);
+                const isText = (child as any).getType && (child as any).getType() === 'text';
+                const textLen = (isWord || isText) ? ((child as any).getTextContent?.() || '').length : 0;
+                const anchorOffset = selection.anchor.offset;
+                if (textLen > 0 && anchorOffset >= textLen) {
+                  splitIndex = splitIndex + 1;
+                }
+                console.log('[EditingPlugin] Enter: resolved child type=', (child as any).getType?.(), 'splitIndex(pre-boundary)=', splitIndex, 'anchorOffset=', anchorOffset, 'textLen=', textLen);
+              }
+              if (splitIndex === -1) {
+                // Fallback: find first word or end
+                const firstWordIdx = paraChildren.findIndex((c: any) => ($isWordNode(c as any)));
+                splitIndex = firstWordIdx !== -1 ? firstWordIdx : paraChildren.length;
+              }
+              console.log('[EditingPlugin] Enter: splitIndex(final before guard)=', splitIndex);
             }
 
-            // Guard bounds and avoid splitting off the speaker label if present at index 0
-            if (splitIndex < 1) {
-              console.log('[EditingPlugin] splitIndex < 1; abort split');
+            // Ensure we don't split off the speaker label (keep at least it in the first part)
+            const minIndex = (paraChildren.length > 0 && $isSpeakerNode(paraChildren[0] as any)) ? 1 : 0;
+            if (splitIndex < minIndex) {
+              const firstWordIdx = paraChildren.findIndex((c: any) => ($isWordNode(c as any)));
+              splitIndex = firstWordIdx !== -1 ? Math.max(firstWordIdx, minIndex) : minIndex;
+            }
+            console.log('[EditingPlugin] Enter: splitIndex(after minIndex guard)=', splitIndex);
+            if (splitIndex >= paraChildren.length) {
+              console.log('[EditingPlugin] Enter: splitIndex >= children.length; abort split');
               return;
             }
-            if (splitIndex >= children.length) {
-              console.log('[EditingPlugin] splitIndex >= children.length; abort split');
-              return;
-            }
 
-            const newClipId = `clip_${Date.now()}`;
-            const newContainer = new ClipContainerNode(
-              newClipId,
-              containerNode.getSpeakerId()
-            );
-
-            // Move trailing nodes from splitIndex onward (use a snapshot array)
-            const tail = children.slice(splitIndex);
-            tail.forEach((child) => newContainer.append(child));
-
-            // Insert new clip container after current
-            containerNode.insertAfter(newContainer);
-
-            // Move caret to start of new container if possible
-            const firstDesc: any = (newContainer as any).getFirstDescendant && (newContainer as any).getFirstDescendant();
-            if (firstDesc && typeof firstDesc.select === 'function') {
-              firstDesc.select();
-            }
+            // Instead of mutating Lexical tree, request a project-level clip split
+            // Prefer DOM-based word index from the actual caret position
+            const clipId = containerNode.getClipId?.();
+            let localWordIndex = 0;
+            try {
+              const domSel = window.getSelection();
+              const anchorDomNode = domSel?.anchorNode as Node | null;
+              const anchorEl = (anchorDomNode as any)?.nodeType === 1
+                ? (anchorDomNode as HTMLElement)
+                : (anchorDomNode?.parentElement as HTMLElement | null);
+              const containerEl = anchorEl?.closest?.('.lexical-clip-container') as HTMLElement | null;
+              const wordEls = containerEl ? Array.from(containerEl.querySelectorAll('.lexical-word-node')) as HTMLElement[] : [];
+              const currentWordEl = anchorEl?.closest?.('.lexical-word-node') as HTMLElement | null;
+              if (currentWordEl && wordEls.length > 0) {
+                const idx = wordEls.findIndex((el) => el === currentWordEl);
+                if (idx >= 0) localWordIndex = idx;
+                // If caret is at end of the word element's text, split after it
+                const textLen = currentWordEl.textContent?.length || 0;
+                const anchorOffset = domSel?.anchorOffset || 0;
+                if (textLen > 0 && anchorOffset >= textLen) localWordIndex = idx + 1;
+              } else {
+                // Fallback: count WordNodes before splitIndex
+                for (let i = 0; i < splitIndex; i++) {
+                  if ($isWordNode(paraChildren[i] as any)) localWordIndex++;
+                }
+              }
+            } catch {}
+            console.log('[EditingPlugin] Enter: dispatch clip-split', { clipId, localWordIndex });
+            window.dispatchEvent(new CustomEvent('clip-split', {
+              detail: { clipId, wordIndex: localWordIndex }
+            }));
             handled = true;
-            console.log('[EditingPlugin] Split created new clip:', { newClipId, splitIndex });
-            onParagraphBreak?.(0);
           });
           if (handled) {
             event.preventDefault();

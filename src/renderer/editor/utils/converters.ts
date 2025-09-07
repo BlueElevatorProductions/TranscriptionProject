@@ -186,24 +186,26 @@ export function clipsToEditorState(
       .slice()
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .forEach((clip, index) => {
-        const container = $createClipContainerNode(clip.id, clip.speaker);
+        const container = $createClipContainerNode(clip.id, clip.speaker, (clip as any).status ?? 'active');
 
-        // Optional visible break at top via CSS (container class handles it)
+        // Paragraph wrapper inside each clip container to ensure valid text structure
+        const paragraph = $createParagraphNode();
+        container.append(paragraph);
 
         // Speaker label
         if (includeSpeakerLabels) {
           const speakerDisplayName = getSpeakerDisplayName(clip.speaker);
           const speakerColor = getSpeakerColor?.(clip.speaker);
           const speakerNode = $createSpeakerNode(clip.speaker, speakerDisplayName, speakerColor);
-          container.append(speakerNode);
+          paragraph.append(speakerNode);
         }
 
         // Words
         (clip.words || []).forEach((w, wi) => {
           const wordNode = $createWordNode(w.word, w.start, w.end, clip.speaker, w.score);
-          container.append(wordNode);
+          paragraph.append(wordNode);
           if (wi < clip.words.length - 1) {
-            container.append($createTextNode(' '));
+            paragraph.append($createTextNode(' '));
           }
         });
 
@@ -225,6 +227,7 @@ export function editorStateToClips(editor: LexicalEditor): Clip[] {
       if (child instanceof ClipContainerNode) {
         const clipId = (child as ClipContainerNode).getClipId();
         const speakerId = (child as ClipContainerNode).getSpeakerId();
+        const status = (child as ClipContainerNode).getStatus?.() ?? 'active';
         const wordsNodes = (child as ClipContainerNode).getWordNodes();
         const words = wordsNodes
           .map((n) => {
@@ -258,7 +261,7 @@ export function editorStateToClips(editor: LexicalEditor): Clip[] {
           order: order++,
           createdAt: Date.now(),
           modifiedAt: Date.now(),
-          status: 'active',
+          status: status,
         });
       }
     });
