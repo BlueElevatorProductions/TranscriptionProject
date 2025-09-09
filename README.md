@@ -50,11 +50,12 @@ TranscriptionProject is a desktop application designed for content creators, jou
   - **Listen Mode**: Click words → immediate seek + play, deleted content hidden
   - **Edit Mode**: Click words → position cursor, deleted content visible with strikethrough
 
-### Project Management
+### Project Management (2025)
 - **Project-First Workflow**: Create named projects before importing audio
-- **ZIP-based Format**: `.transcript` files contain all project data
+- **Folder-Based Format**: A JSON `.transcript` file plus an adjacent `Audio Files/` directory (no ZIP)
+- **WAV Pipeline**: Imported audio is converted to WAV (48 kHz, 16‑bit) and saved to `Audio Files/<ProjectName>.wav`
+- **Streaming Playback**: Renderer streams directly from disk via `file://` (no large blobs held in memory)
 - **Auto-save**: Automatic project saving with unsaved changes tracking
-- **Import/Export**: Support for various audio formats
 - **Recent Projects**: Quick access to recently opened projects
 
 ### Error Handling & Recovery
@@ -63,6 +64,37 @@ TranscriptionProject is a desktop application designed for content creators, jou
 - **Graceful Degradation**: System continues working even with partial failures
 - **Memory Monitoring**: Active memory usage tracking and cleanup
 - **Debug Information**: Detailed error logs for troubleshooting
+
+## Audio Editor (Isolated) + Media Server (New)
+
+To provide a robust waveform editing experience while keeping the main UI stable, the audio editor now runs in an isolated window and uses a lightweight internal media server.
+
+### Isolated Audio Editor
+- **Separate Renderer**: Launched via “Open Audio Editor (isolated)” to contain failures
+- **Minimal Transport**: Play/Pause + Zoom, with time/seek planned next
+- **Waveform Rendering**: Uses Wavesurfer (MediaElement backend) with precomputed peaks
+
+### Internal Media Server
+- **Local HTTP Server**: `http://127.0.0.1:<port>` started on app launch
+- **Endpoints**:
+  - `GET /media?src=/absolute/path` – Streams audio with proper MIME + Range support
+  - `GET /peaks?src=/absolute/path&samplesPerPixel=1024` – Computes mono min/max peaks via ffmpeg (s16le) and returns JSON
+- **Peaks Caching**: Peaks are cached to `.waveforms/<filename>.peaks.<spp>.json` next to the audio for instant re-open
+- **Renderer CSP**: Updated to allow `http:` for connect/media/img to fetch peaks/audio safely
+
+### Stability Measures
+- **Gated Pipelines**: Main AudioManager is disabled during conversion and when the editor is open
+- **Resilient Init**: AudioManager uses `preload='auto'`, explicit `load()`, richer event logging, and one-shot retry on transient failures
+- **Crash Reporting**: CrashReporter enabled; process-gone events logged
+- **Structured Logs**: Vite/Electron logs are written under `./logs/`
+
+## Import Flow (Simplified)
+
+The import dialog has been simplified for stability during the beta phase:
+
+- **WAV Only**: Imports convert to WAV (48 kHz, 16‑bit); future formats can be added later
+- **Smart Choice Removed**: MP3/FLAC “smart recommendation” UI and logic were removed
+- **Consistent Output**: Ensures a single, stable playback pipeline and consistent waveform generation
 
 ## Technology Stack
 
