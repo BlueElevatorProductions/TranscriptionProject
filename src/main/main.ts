@@ -1,4 +1,8 @@
-import { app, BrowserWindow, Menu, shell, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, Menu, shell, ipcMain, dialog, crashReporter } from 'electron';
+import * as http from 'http';
+import * as url from 'url';
+import { pathToFileURL } from 'url';
+import { lookup as mimeLookup } from 'mime-types';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
@@ -40,6 +44,8 @@ class App {
   private readonly audioAnalyzer: AudioAnalyzer;
   private readonly audioConverter: AudioConverter;
   private readonly userPreferences: UserPreferencesService;
+  private mediaServer: http.Server | null = null;
+  private mediaPort: number | null = null;
 
   constructor() {
     // Initialize encryption key (derived from machine-specific info)
@@ -59,10 +65,163 @@ class App {
     this.initialize();
   }
 
+  private startMediaServer(): void {
+    try {
+      const server = http.createServer((req, res) => {
+        const parsed = url.parse(req.url || '', true);
+        if (parsed.pathname === '/media') {
+          const src = parsed.query.src as string;
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          if (!src) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            return res.end('Missing src');
+          }
+          const filePath = decodeURIComponent(src);
+          if (!fs.existsSync(filePath)) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            return res.end('Not found');
+          }
+          const stat = fs.statSync(filePath);
+          const mime = (mimeLookup(path.extname(filePath)) as string) || 'application/octet-stream';
+          const range = req.headers.range;
+          if (range) {
+            const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
+            const start = parseInt(startStr, 10);
+            const end = endStr ? parseInt(endStr, 10) : stat.size - 1;
+            const chunk = fs.createReadStream(filePath, { start, end });
+            res.writeHead(206, {
+              'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+              'Accept-Ranges': 'bytes',
+              'Content-Length': end - start + 1,
+              'Content-Type': mime,
+            });
+            chunk.pipe(res);
+          } else {
+            res.writeHead(200, {
+              'Content-Length': stat.size,
+              'Content-Type': mime,
+            });
+            fs.createReadStream(filePath).pipe(res);
+          }
+          return;
+        } else if (parsed.pathname === '/peaks') {
+          // Compute or serve cached mono peaks for the given file path
+          const src = parsed.query.src as string;
+          const spp = Math.max(256, parseInt((parsed.query.samplesPerPixel as string) || '1024', 10));
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          if (!src) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Missing src' }));
+          }
+          const filePath = decodeURIComponent(src);
+          if (!fs.existsSync(filePath)) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Not found' }));
+          }
+          // Cache path: same folder, hidden .waveforms directory
+          const dir = path.dirname(filePath);
+          const base = path.basename(filePath);
+          const cacheDir = path.join(dir, '.waveforms');
+          const cachePath = path.join(cacheDir, `${base}.peaks.${spp}.json`);
+          try {
+            if (fs.existsSync(cachePath)) {
+              const json = fs.readFileSync(cachePath, 'utf8');
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(json);
+            }
+          } catch {}
+
+          try {
+            try { fs.mkdirSync(cacheDir, { recursive: true }); } catch {}
+            const ff = spawn('ffmpeg', [
+              '-v', 'error',
+              '-i', filePath,
+              '-f', 's16le',
+              '-acodec', 'pcm_s16le',
+              '-ac', '1', // mono simplifies peaks
+              '-ar', '48000',
+              'pipe:1',
+            ]);
+
+            const peaks: number[] = [];
+            let buffer = Buffer.alloc(0);
+            let totalSamplesCount = 0;
+            ff.stdout.on('data', (chunk) => {
+              buffer = Buffer.concat([buffer, chunk as Buffer]);
+              const sampleSize = 2; // s16le
+              const totalSamples = Math.floor(buffer.length / sampleSize);
+              const windowSize = spp;
+              const windows = Math.floor(totalSamples / windowSize);
+              let offset = 0;
+              for (let w = 0; w < windows; w++) {
+                let min = 1.0; let max = -1.0;
+                for (let i = 0; i < windowSize; i++) {
+                  const s = buffer.readInt16LE(offset) / 32768;
+                  if (s < min) min = s;
+                  if (s > max) max = s;
+                  offset += sampleSize;
+                }
+                peaks.push(min, max);
+                totalSamplesCount += windowSize;
+              }
+              buffer = buffer.slice(offset);
+            });
+
+            ff.on('close', () => {
+              if (buffer.length >= 2) {
+                let min = 1.0; let max = -1.0;
+                for (let off = 0; off + 2 <= buffer.length; off += 2) {
+                  const s = buffer.readInt16LE(off) / 32768;
+                  if (s < min) min = s;
+                  if (s > max) max = s;
+                }
+                peaks.push(min, max);
+                totalSamplesCount += Math.floor(buffer.length / 2);
+              }
+              const durationSec = totalSamplesCount / 48000;
+              const payload = JSON.stringify({ samplesPerPixel: spp, channels: 1, sampleRate: 48000, durationSec, peaks });
+              try { fs.writeFileSync(cachePath, payload, 'utf8'); } catch {}
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(payload);
+            });
+
+            ff.on('error', (e) => {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: String(e) }));
+            });
+          } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: String(e) }));
+          }
+          return;
+        }
+        res.writeHead(404, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+        res.end('Not found');
+      });
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address();
+        if (typeof addr === 'object' && addr && addr.port) {
+          this.mediaServer = server;
+          this.mediaPort = addr.port;
+          console.log(`🎧 Media server listening on http://127.0.0.1:${addr.port}`);
+        }
+      });
+    } catch (e) {
+      console.error('Failed to start media server:', e);
+    }
+  }
+
   private initialize(): void {
     // Handle app ready
     app.whenReady().then(() => {
+      try {
+        crashReporter.start({ submitURL: '', uploadToServer: false });
+        console.log('🧪 CrashReporter started. Dumps at:', app.getPath('crashDumps'));
+      } catch (e) {
+        console.error('Failed to start CrashReporter:', e);
+      }
       this.createMainWindow();
+      this.startMediaServer();
       this.setupMenu();
       this.setupIPC();
 
@@ -88,6 +247,7 @@ class App {
     app.on('before-quit', () => {
       // Clean up resources before app quits
       this.audioConverter.cleanup().catch(console.error);
+      try { this.mediaServer?.close(); } catch {}
     });
 
     // Security: Prevent new window creation
@@ -96,6 +256,22 @@ class App {
         shell.openExternal(url);
         return { action: 'deny' };
       });
+
+      contents.on('render-process-gone', (_event, details) => {
+        console.error('🚨 Renderer process gone:', details);
+      });
+      // child-process-gone is available at the app level; keep renderer-only here
+      contents.on('unresponsive', () => {
+        console.error('⚠️ Renderer became unresponsive');
+      });
+      contents.on('responsive', () => {
+        console.log('✅ Renderer responsive again');
+      });
+    });
+
+    // Capture GPU/utility process exits at the app level
+    (app as any).on('child-process-gone', (_event: Electron.Event, details: any) => {
+      console.error('🚨 Child process gone:', details);
     });
   }
 
@@ -250,6 +426,13 @@ class App {
           { role: 'forceReload' },
           { role: 'toggleDevTools' },
           { type: 'separator' },
+          {
+            label: 'Open Audio Editor',
+            accelerator: 'CmdOrCtrl+Shift+E',
+            click: () => {
+              this.mainWindow?.webContents.send('open-audio-editor-menu');
+            }
+          },
           { role: 'resetZoom' },
           { role: 'zoomIn' },
           { role: 'zoomOut' },
@@ -627,23 +810,142 @@ class App {
       }
     });
 
-    ipcMain.handle('project:save', async (event, projectData, filePath) => {
+    ipcMain.handle('project:save', async (_event, projectData: any, filePath: string) => {
       try {
-        await ProjectFileService.saveProject(projectData, filePath);
+        if (!filePath) throw new Error('No project file path provided');
+
+        const dir = path.dirname(filePath);
+        const baseName = path.basename(filePath, path.extname(filePath));
+        const audioDir = path.join(dir, 'Audio Files');
+        await fs.promises.mkdir(dir, { recursive: true });
+        await fs.promises.mkdir(audioDir, { recursive: true });
+
+        // Determine source audio path from projectData
+        const srcAudio = projectData?.project?.audio?.extractedPath 
+          || projectData?.project?.audio?.embeddedPath 
+          || projectData?.project?.audio?.path 
+          || projectData?.project?.audio?.originalFile;
+
+        let targetWavPath: string | null = null;
+        if (srcAudio && fs.existsSync(srcAudio)) {
+          targetWavPath = path.join(audioDir, `${baseName}.wav`);
+          try {
+            const result = await this.audioConverter.resampleAudio(
+              srcAudio,
+              48000,
+              16,
+              'wav',
+              {
+                outputPath: targetWavPath,
+                onProgress: (percent) => {
+                  this.mainWindow?.webContents.send('audio-conversion-progress', {
+                    percent,
+                    status: 'Converting to WAV 48k/16bit',
+                  });
+                }
+              }
+            );
+            console.log('Saved WAV to:', result.outputPath);
+            targetWavPath = result.outputPath;
+          } catch (e) {
+            console.error('WAV conversion failed, copying original:', e);
+            const copyTarget = path.join(audioDir, path.basename(srcAudio));
+            await fs.promises.copyFile(srcAudio, copyTarget);
+            targetWavPath = copyTarget;
+          }
+        } else {
+          console.warn('No source audio found in projectData; saving metadata only');
+        }
+
+        // Update projectData to point to WAV path
+        projectData = projectData || {};
+        projectData.project = projectData.project || {};
+        projectData.project.audio = projectData.project.audio || {};
+        if (targetWavPath) {
+          projectData.project.audio.path = targetWavPath;
+          delete projectData.project.audio.embeddedPath;
+          delete projectData.project.audio.extractedPath;
+        }
+
+        // Write JSON .transcript file
+        await fs.promises.writeFile(filePath, JSON.stringify(projectData, null, 2), 'utf8');
         return { success: true };
       } catch (error) {
         console.error('Failed to save project:', error);
-        throw error;
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     });
 
-    ipcMain.handle('project:load', async (event, filePath) => {
+    ipcMain.handle('project:load', async (_event, filePath: string) => {
       try {
-        const projectData = await ProjectFileService.loadProject(filePath);
+        if (!fs.existsSync(filePath)) throw new Error('Project file does not exist');
+        const json = await fs.promises.readFile(filePath, 'utf8');
+        const projectData = JSON.parse(json);
+        // Ensure absolute audio path is resolved if relative
+        const audio = projectData?.project?.audio;
+        if (audio?.path && !path.isAbsolute(audio.path)) {
+          const dir = path.dirname(filePath);
+          const resolved = path.join(dir, audio.path);
+          projectData.project.audio.path = resolved;
+        }
         return projectData;
       } catch (error) {
         console.error('Failed to load project:', error);
-        throw error;
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Open/close isolated Audio Editor window
+    ipcMain.handle('open-audio-editor', async (_event, audioPath: string) => {
+      try {
+        if (!audioPath || typeof audioPath !== 'string') {
+          throw new Error('audioPath is required');
+        }
+
+        // Reuse editor window if already open
+        const existing = BrowserWindow.getAllWindows().find(w => w.getTitle() === 'Audio Editor');
+        if (existing && !existing.isDestroyed()) {
+          existing.focus();
+          return { success: true };
+        }
+
+        const editorWin = new BrowserWindow({
+          width: 1100,
+          height: 600,
+          title: 'Audio Editor',
+          parent: this.mainWindow || undefined,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false,
+            preload: path.resolve(__dirname, 'preload.js'),
+            webSecurity: false,
+          },
+        });
+
+        const mediaUrl = (this.mediaPort)
+          ? `http://127.0.0.1:${this.mediaPort}/media?src=${encodeURIComponent(audioPath)}`
+          : pathToFileURL(audioPath).toString();
+        const editorUrl = (isDev() && process.env.USE_LOCALHOST === 'true')
+          ? `http://localhost:3000/?audioEditor=1&src=${encodeURIComponent(mediaUrl)}`
+          : `file://${path.join(__dirname, '../../renderer/index.html')}?audioEditor=1&src=${encodeURIComponent(mediaUrl)}`;
+
+        await editorWin.loadURL(editorUrl);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to open audio editor:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    ipcMain.handle('close-audio-editor', async () => {
+      try {
+        const existing = BrowserWindow.getAllWindows().find(w => w.getTitle() === 'Audio Editor');
+        if (existing && !existing.isDestroyed()) existing.close();
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to close audio editor:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     });
 
@@ -730,24 +1032,16 @@ class App {
         };
 
         let result;
-        if (options.action === 'convert-to-flac') {
-          result = await this.audioConverter.convertToFLAC(inputPath, {
-            targetSampleRate: options.targetSampleRate,
-            targetBitDepth: options.targetBitDepth,
-            onProgress
-          });
-        } else if (options.action === 'resample') {
-          result = await this.audioConverter.resampleAudio(
-            inputPath,
-            options.targetSampleRate,
-            options.targetBitDepth,
-            'flac',
-            { onProgress }
-          );
-        } else {
-          // Keep original
-          result = await this.audioConverter.copyOriginal(inputPath);
-        }
+        // Force WAV (48k/16-bit) for the simplified import flow
+        const sr = options.targetSampleRate || 48000;
+        const bd = options.targetBitDepth || 16;
+        result = await this.audioConverter.resampleAudio(
+          inputPath,
+          sr,
+          bd,
+          'wav',
+          { onProgress }
+        );
 
         console.log('Audio conversion complete:', result);
         return result;

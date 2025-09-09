@@ -222,7 +222,10 @@ export class AudioConverter {
     if (resampleOptions.format === 'flac') {
       args.push('-c:a', 'flac', '-compression_level', '8');
     } else if (resampleOptions.format === 'wav') {
-      args.push('-c:a', 'pcm_s24le'); // 24-bit WAV
+      // Choose PCM codec based on desired bit depth (default 16-bit)
+      const bd = resampleOptions.bitDepth || 16;
+      const pcmCodec = bd >= 32 ? 'pcm_s32le' : bd >= 24 ? 'pcm_s24le' : 'pcm_s16le';
+      args.push('-c:a', pcmCodec);
     }
     
     // Set bit depth

@@ -117,6 +117,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveUserPreferences: (preferences: any) => ipcRenderer.invoke('save-user-preferences', preferences),
   resetUserPreferences: () => ipcRenderer.invoke('reset-user-preferences'),
   getTranscriptionService: (preferences: any) => ipcRenderer.invoke('get-transcription-service', preferences),
+  // Open/close audio editor child window
+  openAudioEditor: (audioPath: string) => ipcRenderer.invoke('open-audio-editor', audioPath),
+  closeAudioEditor: () => ipcRenderer.invoke('close-audio-editor'),
 });
 
 console.log('🔧 PRELOAD SCRIPT LOADED SUCCESSFULLY!');

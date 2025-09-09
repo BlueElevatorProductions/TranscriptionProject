@@ -22,12 +22,14 @@ interface AudioSystemIntegrationProps {
     lineHeight: number;
   };
   audioUrl?: string;
+  disableAudio?: boolean;
 }
 
 export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   mode,
   fontSettings,
   audioUrl,
+  disableAudio = false,
 }) => {
   const { state: projectState, actions: projectActions } = useProject();
   const [initializationError, setInitializationError] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
 
   // Initialize audio system when clips and audio URL are available
   useEffect(() => {
+    if (disableAudio) return;
     if (clips.length > 0 && audioUrl && !audioState.isInitialized && !initializationAttemptRef.current) {
       console.log('[AudioSystemIntegration] Initializing audio system with audioUrl:', audioUrl);
       console.log({ clipCount: clips.length, isInitialized: audioState.isInitialized });
@@ -120,7 +123,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
           initializationAttemptRef.current = false;
         });
     }
-  }, [clips.length, audioUrl, audioState.isInitialized]);
+  }, [clips.length, audioUrl, audioState.isInitialized, disableAudio]);
 
   // Update clips when they change (after initialization)
   useEffect(() => {

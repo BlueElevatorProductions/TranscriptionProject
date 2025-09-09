@@ -36,7 +36,7 @@ export class AudioManager {
     this.callbacks = callbacks;
     this.sequencer = new SimpleClipSequencer([]);
     this.audioElement = new Audio();
-    this.audioElement.preload = 'none'; // Don't preload until we have a source
+    this.audioElement.preload = 'auto';
     this.setupAudioElement();
   }
 
@@ -429,56 +429,41 @@ export class AudioManager {
 
   // Public API
   async initialize(audioUrl: string, clips: Clip[]): Promise<void> {
-    try {
-      this.audioUrl = audioUrl;
-      // Prefix file URLs when loading local audio files
-      const src = audioUrl.startsWith('http') || audioUrl.startsWith('blob:') || audioUrl.startsWith('file://')
-        ? audioUrl
-        : `file://${audioUrl}`;
-      console.log('[AudioManager] Audio element src set to:', src);
-      this.audioElement.src = src;
-      
-      await new Promise<void>((resolve, reject) => {
-        console.log('[AudioManager] Setting up audio loading promise...');
-        
-        const handleLoad = () => {
-          console.log('[AudioManager] Audio loadeddata event fired');
-          this.audioElement.removeEventListener('loadeddata', handleLoad);
-          this.audioElement.removeEventListener('error', handleError);
-          clearTimeout(timeoutId);
-          resolve();
-        };
-        
-        const handleError = (e: any) => {
-          console.error('[AudioManager] Audio error event fired:', e);
-          this.audioElement.removeEventListener('loadeddata', handleLoad);
-          this.audioElement.removeEventListener('error', handleError);
-          clearTimeout(timeoutId);
-          reject(new Error(`Failed to load audio: ${e.message || 'Unknown error'}`));
-        };
-        
-        const handleTimeout = () => {
-          console.error('[AudioManager] Audio loading timed out after 10 seconds');
-          this.audioElement.removeEventListener('loadeddata', handleLoad);
-          this.audioElement.removeEventListener('error', handleError);
-          reject(new Error('Audio loading timed out'));
-        };
-        
-        // Add timeout to prevent hanging
-        const timeoutId = setTimeout(handleTimeout, 10000); // 10 second timeout
-        
-        console.log('[AudioManager] Adding event listeners for loadeddata and error');
-        this.audioElement.addEventListener('loadeddata', handleLoad);
-        this.audioElement.addEventListener('error', handleError);
-        
-        console.log('[AudioManager] Audio element src set to:', audioUrl.substring(0, 50) + '...');
-      });
+    const attempt = (n: number) => new Promise<void>((resolve, reject) => {
+      try {
+        this.audioUrl = audioUrl;
+        const src = audioUrl.startsWith('http') || audioUrl.startsWith('blob:') || audioUrl.startsWith('file://')
+          ? audioUrl
+          : `file://${audioUrl}`;
+        console.log(`[AudioManager] [attempt ${n}] set src:`, src);
+        this.audioElement.src = src;
+        try { this.audioElement.load(); } catch {}
 
-      this.dispatch({ type: 'INITIALIZE_AUDIO', payload: { audioUrl, clips } });
-    } catch (error) {
-      this.callbacks.onError(`Failed to initialize audio: ${error}`);
-      throw error;
+        const onLoad = () => { cleanup(); resolve(); };
+        const onError = (e: any) => { console.error(`[AudioManager] [attempt ${n}] error`, e); cleanup(); reject(e); };
+        const onTimeout = () => { console.error(`[AudioManager] [attempt ${n}] timeout`); cleanup(); reject(new Error('timeout')); };
+        const cleanup = () => {
+          this.audioElement.removeEventListener('loadeddata', onLoad);
+          this.audioElement.removeEventListener('error', onError);
+          clearTimeout(tid);
+        };
+        const tid = setTimeout(onTimeout, 20000);
+        this.audioElement.addEventListener('loadeddata', onLoad);
+        this.audioElement.addEventListener('error', onError);
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    try {
+      await attempt(1);
+    } catch (e) {
+      console.warn('[AudioManager] initial load failed, retrying...');
+      await new Promise(r => setTimeout(r, 500));
+      await attempt(2);
     }
+
+    this.dispatch({ type: 'INITIALIZE_AUDIO', payload: { audioUrl, clips } });
   }
 
   async play(): Promise<void> {

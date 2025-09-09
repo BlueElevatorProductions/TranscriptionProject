@@ -223,6 +223,7 @@ const SimpleSegmentDisplay: React.FC<{ segments: Segment[] }> = ({ segments }) =
 // Main Shell Component
 const NewUIShell: React.FC<NewUIShellProps> = () => {
   const [mode, setMode] = useState<'listen' | 'edit'>('listen');
+  const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [openPanel, setOpenPanel] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   
@@ -241,6 +242,10 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   // Get contexts
   const { state: projectState, actions: projectActions } = useProject();
   const { selectedJob } = useSelectedJob();
+  const isConverting = useMemo(() => {
+    const status = (selectedJob as any)?.status || (selectedJob as any)?.state || (selectedJob as any)?.progress?.status;
+    return status === 'processing' || status === 'pending';
+  }, [selectedJob]);
   const { theme, setTheme } = useTheme();
 
   // Get audio file path from project and convert to blob URL
@@ -259,63 +264,15 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     );
   }, [projectState.projectData]);
 
-  // Convert audio file path to blob URL for web playback
+  // Use direct file:// URL for audio playback (stream from disk)
   useEffect(() => {
-    let blobUrl: string | null = null;
-    
-    const loadAudioBlob = async () => {
-      if (!audioFilePath) {
-        setAudioBlobUrl(null);
-        return;
-      }
-
-      try {
-        console.log('Converting audio file to blob URL:', audioFilePath);
-        
-        // Read audio file as ArrayBuffer through IPC
-        const audioBuffer = await (window as any).electronAPI.readAudioFile(audioFilePath);
-        
-        if (!audioBuffer || audioBuffer.byteLength === 0) {
-          throw new Error('Audio file is empty or could not be read');
-        }
-        
-        // Get audio MIME type based on file extension
-        const getAudioMimeType = (filePath: string): string => {
-          const ext = filePath.toLowerCase().split('.').pop();
-          switch (ext) {
-            case 'mp3': return 'audio/mpeg';
-            case 'wav': return 'audio/wav';
-            case 'm4a': return 'audio/mp4';
-            case 'flac': return 'audio/flac';
-            case 'ogg': return 'audio/ogg';
-            case 'webm': return 'audio/webm';
-            default: return 'audio/wav';
-          }
-        };
-        
-        // Create blob from buffer
-        const mimeType = getAudioMimeType(audioFilePath);
-        const blob = new Blob([audioBuffer], { type: mimeType });
-        blobUrl = URL.createObjectURL(blob);
-        
-        console.log('Audio blob URL created successfully');
-        setAudioBlobUrl(blobUrl);
-        
-      } catch (error) {
-        console.error('Failed to load audio file:', error);
-        setAudioBlobUrl(null);
-      }
-    };
-
-    loadAudioBlob();
-    
-    // Cleanup blob URL on unmount or path change
-    return () => {
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
-    };
-  }, [audioFilePath]);
+    if (!audioFilePath || isConverting) {
+      setAudioBlobUrl(null);
+      return;
+    }
+    const fileUrl = `file://${encodeURI(audioFilePath)}`;
+    setAudioBlobUrl(fileUrl);
+  }, [audioFilePath, isConverting]);
 
   // Update font settings when project data changes
   useEffect(() => {
@@ -754,6 +711,17 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
     window.dispatchEvent(event);
   };
 
+  // Open isolated audio editor window (child BrowserWindow)
+  const handleOpenAudioEditor = () => {
+    const audio = projectState.projectData?.project?.audio as any;
+    const filePath = audio?.extractedPath || audio?.embeddedPath || audio?.path || audio?.originalFile;
+    if (!filePath) {
+      console.warn('No audio file available for editor');
+      return;
+    }
+    (window as any).electronAPI.openAudioEditor(filePath);
+  };
+
   // Font settings handlers
   const handleFontChange = (newSettings: FontSettings) => {
     setFontSettings(newSettings);
@@ -782,6 +750,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           mode={mode as 'listen' | 'edit'}
           fontSettings={fontSettings}
           audioUrl={audioBlobUrl || undefined}
+          disableAudio={isEditorOpen || isConverting}
         />
       );
     }
@@ -801,6 +770,15 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         projectName={projectState.projectData?.project?.name}
         projectStatus="Ready"
       />
+      {/* Quick control bar (temporary) */}
+      <div className="px-3 py-2 text-xs text-white/70 flex gap-2 items-center border-b border-white/10">
+        <button
+          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/20"
+          onClick={handleOpenAudioEditor}
+        >
+          Open Audio Editor (isolated)
+        </button>
+      </div>
       
       {/* Main horizontal layout */}
       <div className="flex flex-1 overflow-hidden">

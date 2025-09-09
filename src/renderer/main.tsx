@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import WaveSurferMinimal from './components/audio/WaveSurferMinimal';
 import './index.css';
 
 // Error Boundary Component
@@ -92,12 +93,33 @@ if (!rootElement) {
   throw new Error('Root element not found');
 }
 
+const params = new URLSearchParams(window.location.search);
+const isAudioEditor = params.get('audioEditor') === '1';
+const audioSrc = params.get('src') || undefined; // already URL-encoded from main
+
+function AudioEditorWindow() {
+  const src = audioSrc; // use encoded URL directly
+  return (
+    <div style={{ padding: 16, color: 'white', fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' }}>
+      <h3 style={{ marginTop: 0, marginBottom: 8 }}>Audio Editor (Isolated Window)</h3>
+      {src ? (
+        <>
+          <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 8 }}>Source: {src}</div>
+          <WaveSurferMinimal src={src} />
+        </>
+      ) : (
+        <p>No audio source provided.</p>
+      )}
+    </div>
+  );
+}
+
 const root = ReactDOM.createRoot(rootElement);
 
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {isAudioEditor ? <AudioEditorWindow /> : <App />}
     </ErrorBoundary>
   </React.StrictMode>
 );

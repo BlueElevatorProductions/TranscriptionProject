@@ -56,14 +56,14 @@ const EnhancedImportDialog: React.FC<EnhancedImportDialogProps> = ({
   const [filePath, setFilePath] = useState(preselectedFile || '');
   const [fileName, setFileName] = useState('');
   const [analysis, setAnalysis] = useState<AudioAnalysis | null>(null);
-  const [recommendation, setRecommendation] = useState<ConversionRecommendation | null>(null);
+  // Smart recommendation removed in simplified flow
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState('');
   
   // Audio settings (smart defaults from analysis)
   const [audioSettings, setAudioSettings] = useState<ProjectAudioSettings>({
     masterSampleRate: 48000,
-    masterBitDepth: 24,
+    masterBitDepth: 16,
     storageFormat: 'flac',
     normalizeOnImport: false
   });
@@ -84,12 +84,13 @@ const EnhancedImportDialog: React.FC<EnhancedImportDialogProps> = ({
         console.log('Loaded user preferences:', preferences);
         
         // Update defaults from user preferences
+        // For the simplified import flow, force WAV 48k/16-bit regardless of stored prefs
         setAudioSettings(prev => ({
           ...prev,
-          masterSampleRate: preferences.defaultSampleRate,
-          masterBitDepth: preferences.defaultBitDepth,
-          storageFormat: preferences.defaultAudioFormat,
-          normalizeOnImport: preferences.normalizeOnImport
+          masterSampleRate: 48000,
+          masterBitDepth: 16,
+          storageFormat: 'flac', // ignored in new pipeline, kept for compatibility
+          normalizeOnImport: false
         }));
         
         setTranscriptionSettings({
@@ -117,12 +118,13 @@ const EnhancedImportDialog: React.FC<EnhancedImportDialogProps> = ({
       setAnalysis(audioAnalysis);
       
       // Get smart recommendation
-      const smartRecommendation = await (window as any).electronAPI.getAudioRecommendation(audioAnalysis);
-      setRecommendation(smartRecommendation);
-      
-      // Update settings with smart defaults
-      const smartSettings = await (window as any).electronAPI.getSmartProjectSettings(audioAnalysis);
-      setAudioSettings(smartSettings);
+      // Smart recommendation removed; enforce fixed WAV settings
+      setAudioSettings({
+        masterSampleRate: 48000,
+        masterBitDepth: 16,
+        storageFormat: 'flac', // ignored in new pipeline
+        normalizeOnImport: false,
+      });
       
       setFileName(audioAnalysis.fileName);
     } catch (err) {
@@ -276,26 +278,7 @@ const EnhancedImportDialog: React.FC<EnhancedImportDialogProps> = ({
               </div>
             </div>
 
-            {/* Smart Recommendation */}
-            {recommendation && (
-              <div className="bg-green-500 bg-opacity-20 border border-green-400 border-opacity-30 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <Zap className="text-green-400 mt-0.5" size={18} />
-                  <div>
-                    <h4 className="text-green-400 font-medium mb-1">Smart Recommendation</h4>
-                    <p className="text-white text-sm mb-2">{recommendation.reason}</p>
-                    <div className="text-xs text-white text-opacity-70">
-                      Estimated size: {formatFileSize(recommendation.estimatedSize)}
-                      {recommendation.estimatedSize !== analysis.fileSize && (
-                        <span className="text-green-400 ml-2">
-                          ({Math.round((1 - recommendation.estimatedSize / analysis.fileSize) * 100)}% smaller)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Smart Recommendation removed in simplified flow */}
 
             {/* Transcription Method Selection */}
             <div className="bg-white bg-opacity-10 border border-white border-opacity-20 rounded-lg p-3">
@@ -363,101 +346,10 @@ const EnhancedImportDialog: React.FC<EnhancedImportDialogProps> = ({
                   <Settings size={16} />
                   Project Audio Settings
                 </h4>
-                
-                {/* Storage Format */}
-                <div>
-                  <label className="block text-white text-sm font-medium mb-2">Storage Format</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="storageFormat"
-                        value="original"
-                        checked={audioSettings.storageFormat === 'original'}
-                        onChange={(e) => setAudioSettings({...audioSettings, storageFormat: e.target.value as any})}
-                        className="text-blue-500"
-                      />
-                      <div className="flex-1">
-                        <span className="text-white text-sm">Keep Original ({analysis.format.toUpperCase()})</span>
-                        <p className="text-xs text-white text-opacity-60">
-                          {formatFileSize(analysis.fileSize)} - No conversion
-                        </p>
-                      </div>
-                    </label>
-                    
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="storageFormat"
-                        value="flac"
-                        checked={audioSettings.storageFormat === 'flac'}
-                        onChange={(e) => setAudioSettings({...audioSettings, storageFormat: e.target.value as any})}
-                        className="text-blue-500"
-                      />
-                      <div className="flex-1">
-                        <span className="text-white text-sm">Convert to FLAC (Lossless)</span>
-                        <p className="text-xs text-white text-opacity-60">
-                          ~{formatFileSize(analysis.fileSize * 0.6)} - {analysis.isLossy ? 'Quality preserved' : '40% smaller'}
-                        </p>
-                      </div>
-                    </label>
-                  </div>
+                <div className="bg-white bg-opacity-5 border border-white/10 rounded p-2 text-xs text-white/80">
+                  For stability during beta, imports are converted to WAV (48 kHz, 16-bit).
+                  Additional formats and settings will be available in a future update.
                 </div>
-
-                {/* Sample Rate - Hidden for lossy formats to avoid conversion */}
-                {!analysis.isLossy && (
-                  <div>
-                    <label className="block text-white text-sm font-medium mb-2">Project Sample Rate</label>
-                    <select
-                      value={audioSettings.masterSampleRate}
-                      onChange={(e) => setAudioSettings({...audioSettings, masterSampleRate: parseInt(e.target.value) as any})}
-                      className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-lg p-2 text-white text-sm"
-                    >
-                      <option value={44100}>44.1 kHz (CD Quality)</option>
-                      <option value={48000}>48 kHz (Professional)</option>
-                      <option value={96000}>96 kHz (High Resolution)</option>
-                      <option value={192000}>192 kHz (Ultra High Res)</option>
-                    </select>
-                  </div>
-                )}
-
-                {/* Bit Depth - Hidden for lossy formats to avoid conversion */}
-                {!analysis.isLossy && (
-                  <div>
-                    <label className="block text-white text-sm font-medium mb-2">Project Bit Depth</label>
-                    <select
-                      value={audioSettings.masterBitDepth}
-                      onChange={(e) => setAudioSettings({...audioSettings, masterBitDepth: parseInt(e.target.value) as any})}
-                      className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-lg p-2 text-white text-sm"
-                    >
-                      <option value={16}>16-bit (Standard)</option>
-                      <option value={24}>24-bit (Professional)</option>
-                      <option value={32}>32-bit (Maximum Quality)</option>
-                    </select>
-                  </div>
-                )}
-
-                {/* Warning for lossy formats */}
-                {analysis.isLossy && (
-                  <div className="bg-amber-500 bg-opacity-20 border border-amber-400 border-opacity-30 rounded-lg p-2">
-                    <p className="text-amber-400 text-xs">
-                      ⚠️ Sample rate and bit depth settings are disabled for {analysis.format.toUpperCase()} files to avoid unnecessary conversion. The audio will be stored in its original format.
-                    </p>
-                  </div>
-                )}
-
-                {/* Apply to future imports */}
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={audioSettings.normalizeOnImport}
-                    onChange={(e) => setAudioSettings({...audioSettings, normalizeOnImport: e.target.checked})}
-                    className="text-blue-500"
-                  />
-                  <span className="text-white text-sm">
-                    Apply these settings to future imports
-                  </span>
-                </label>
               </div>
             )}
           </div>

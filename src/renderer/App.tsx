@@ -407,15 +407,13 @@ const AppMain: React.FC = () => {
               const fileName = filePath.split('/').pop() || 'unknown_file';
               console.log('Processing audio file:', fileName, 'with settings:', audioSettings);
               
-              // First, convert/prepare the audio according to settings
+              // Convert to WAV (48k/16-bit) during import for stability
               const conversionOptions = {
-                action: audioSettings.storageFormat === 'flac' ? 'convert-to-flac' : 
-                       audioSettings.storageFormat === 'always-convert' ? 'convert-to-flac' : 'keep-original',
-                targetSampleRate: audioSettings.masterSampleRate,
-                targetBitDepth: audioSettings.masterBitDepth
-              };
-              
-              console.log('Converting audio with options:', conversionOptions);
+                action: 'convert-to-wav',
+                targetSampleRate: 48000,
+                targetBitDepth: 16,
+              } as any;
+              console.log('Converting audio with options (forced WAV):', conversionOptions);
               const conversionResult = await (window as any).electronAPI.convertAudio(filePath, conversionOptions);
               console.log('Audio conversion result:', conversionResult);
               
@@ -428,7 +426,7 @@ const AppMain: React.FC = () => {
                   originalFormat: filePath.split('.').pop()?.toLowerCase() || 'unknown',
                   originalSampleRate: audioSettings.masterSampleRate,
                   originalSize: conversionResult.originalSize,
-                  embeddedFormat: conversionResult.outputPath.split('.').pop()?.toLowerCase() || 'flac',
+                  embeddedFormat: conversionResult.outputPath.split('.').pop()?.toLowerCase() || 'wav',
                   embeddedSize: conversionResult.convertedSize,
                   duration: conversionResult.duration,
                   channels: 2, // Default, will be updated by analysis
