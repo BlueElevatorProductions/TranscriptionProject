@@ -101,13 +101,9 @@ export function segmentsToEditorState(
         currentSegmentNode.append(speakerNode);
       }
 
-      // Add words to segment
+      // Add words to segment (only if provided by model)
       if (segment.words && segment.words.length > 0) {
-        console.log(`🔧 Converting segment ${segmentIndex} with ${segment.words.length} words:`, 
-          segment.words.slice(0, 3).map(w => ({ word: w.word, start: w.start, end: w.end })));
-        
         segment.words.forEach((word, wordIndex) => {
-          // Create word node
           const wordNode = $createWordNode(
             word.word,
             word.start,
@@ -115,43 +111,14 @@ export function segmentsToEditorState(
             segment.speaker,
             word.score
           );
-
           currentSegmentNode!.append(wordNode);
-
-          // Add space between words (except for last word)
           if (wordIndex < segment.words.length - 1) {
             currentSegmentNode!.append($createTextNode(' '));
           }
         });
-      } else {
-        // Fallback: create word nodes from segment text
-        console.log(`⚠️  Segment ${segmentIndex} has no word timing data, using fallback for text: "${segment.text.substring(0, 50)}..."`);
-        
-        const words = segment.text.trim().split(/\s+/);
-        const segmentDuration = segment.end - segment.start;
-        const avgWordDuration = segmentDuration / words.length;
-
-        console.log(`📊 Fallback timing: ${words.length} words, ${segmentDuration}s duration, ${avgWordDuration.toFixed(3)}s per word`);
-
-        words.forEach((wordText, wordIndex) => {
-          const wordStart = segment.start + (wordIndex * avgWordDuration);
-          const wordEnd = wordStart + avgWordDuration;
-
-          const wordNode = $createWordNode(
-            wordText,
-            wordStart,
-            wordEnd,
-            segment.speaker,
-            1.0
-          );
-
-          currentSegmentNode!.append(wordNode);
-
-          // Add space between words (except for last word)
-          if (wordIndex < words.length - 1) {
-            currentSegmentNode!.append($createTextNode(' '));
-          }
-        });
+      } else if (segment.text) {
+        // No word timing data: insert raw text only (no synthetic timings)
+        currentSegmentNode.append($createTextNode(segment.text));
       }
 
       root.append(currentSegmentNode);
@@ -184,6 +151,7 @@ export function clipsToEditorState(
 
     clips
       .slice()
+      .filter(clip => clip.type !== 'audio-only') // Skip audio-only gaps in UI rendering
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .forEach((clip, index) => {
         const container = $createClipContainerNode(clip.id, clip.speaker, (clip as any).status ?? 'active');

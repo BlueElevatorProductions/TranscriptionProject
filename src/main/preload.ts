@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { JuceEvent, EdlClip } from '../shared/types/transport';
 
 console.log('🔧 PRELOAD SCRIPT LOADING...');
 console.log('🔧 Process info:', {
@@ -120,6 +121,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open/close audio editor child window
   openAudioEditor: (audioPath: string) => ipcRenderer.invoke('open-audio-editor', audioPath),
   closeAudioEditor: () => ipcRenderer.invoke('close-audio-editor'),
+  // Audio peaks (dev utility)
+  getAudioPeaks: (filePath: string, samplesPerPixel?: number) => ipcRenderer.invoke('audio:peaks', filePath, samplesPerPixel),
 });
 
 console.log('🔧 PRELOAD SCRIPT LOADED SUCCESSFULLY!');
@@ -178,5 +181,44 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+    juceTransport: {
+      load: (id: string, path: string) => Promise<{ success: boolean; error?: string }>;
+      updateEdl: (id: string, clips: EdlClip[]) => Promise<{ success: boolean; error?: string }>;
+      play: (id: string) => Promise<{ success: boolean; error?: string }>;
+      pause: (id: string) => Promise<{ success: boolean; error?: string }>;
+      stop: (id: string) => Promise<{ success: boolean; error?: string }>;
+      seek: (id: string, timeSec: number) => Promise<{ success: boolean; error?: string }>;
+      setRate: (id: string, rate: number) => Promise<{ success: boolean; error?: string }>;
+      setVolume: (id: string, value: number) => Promise<{ success: boolean; error?: string }>;
+      queryState: (id: string) => Promise<{ success: boolean; error?: string }>;
+      dispose: () => Promise<{ success: boolean; error?: string }>;
+      onEvent: (cb: (evt: JuceEvent) => void) => void;
+      offEvent: (cb: (evt: JuceEvent) => void) => void;
+      removeAllListeners: () => void;
+    };
   }
 }
+
+// JUCE transport API exposed separately for clarity
+const juceEventListeners = new Set<(evt: JuceEvent) => void>();
+ipcRenderer.on('juce:event', (_event, evt: JuceEvent) => {
+  for (const cb of juceEventListeners) {
+    try { cb(evt); } catch {}
+  }
+});
+
+contextBridge.exposeInMainWorld('juceTransport', {
+  load: (id: string, path: string) => ipcRenderer.invoke('juce:load', id, path),
+  updateEdl: (id: string, clips: EdlClip[]) => ipcRenderer.invoke('juce:updateEdl', id, clips),
+  play: (id: string) => ipcRenderer.invoke('juce:play', id),
+  pause: (id: string) => ipcRenderer.invoke('juce:pause', id),
+  stop: (id: string) => ipcRenderer.invoke('juce:stop', id),
+  seek: (id: string, timeSec: number) => ipcRenderer.invoke('juce:seek', id, timeSec),
+  setRate: (id: string, rate: number) => ipcRenderer.invoke('juce:setRate', id, rate),
+  setVolume: (id: string, value: number) => ipcRenderer.invoke('juce:setVolume', id, value),
+  queryState: (id: string) => ipcRenderer.invoke('juce:queryState', id),
+  dispose: () => ipcRenderer.invoke('juce:dispose'),
+  onEvent: (cb: (evt: JuceEvent) => void) => { juceEventListeners.add(cb); },
+  offEvent: (cb: (evt: JuceEvent) => void) => { juceEventListeners.delete(cb); },
+  removeAllListeners: () => { juceEventListeners.clear(); },
+});

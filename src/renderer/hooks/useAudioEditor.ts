@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Clip } from '../types';
 import { AudioManager } from '../audio/AudioManager';
+import JuceAudioManager from '../audio/JuceAudioManager';
 import { AudioAppState, TimelinePosition, generateWordId } from '../audio/AudioAppState';
 
 export interface AudioEditorState {
@@ -18,6 +19,7 @@ export interface AudioEditorState {
   // Playback state
   isPlaying: boolean;
   currentTime: number;
+  currentOriginalTime?: number;
   duration: number;
   volume: number;
   playbackRate: number;
@@ -47,6 +49,7 @@ export interface AudioEditorActions {
   pause: () => void;
   togglePlayPause: () => Promise<void>;
   seekToTime: (editedTime: number) => void;
+  seekToOriginalTime: (originalTime: number) => void;
   seekToWord: (clipId: string, wordIndex: number) => void;
   setVolume: (volume: number) => void;
   setPlaybackRate: (rate: number) => void;
@@ -86,6 +89,8 @@ export interface UseAudioEditorOptions {
 }
 
 export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEditorState, AudioEditorActions] => {
+  // Keep this quiet by default. Only emit traces when VITE_AUDIO_TRACE=true
+  const AUDIO_TRACE = (import.meta as any).env?.VITE_AUDIO_TRACE === 'true';
   const managerRef = useRef<AudioManager | null>(null);
   const optionsRef = useRef(options);
   
@@ -100,6 +105,7 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
     error: null,
     isPlaying: false,
     currentTime: 0,
+    currentOriginalTime: 0,
     duration: 0,
     volume: 0.8,
     playbackRate: 1.0,
@@ -124,6 +130,7 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
       error: appState.error,
       isPlaying: appState.playback.isPlaying,
       currentTime: appState.playback.currentTime,
+      currentOriginalTime: appState.playback.currentOriginalTime ?? 0,
       duration: appState.playback.duration,
       volume: appState.playback.volume,
       playbackRate: appState.playback.playbackRate,
@@ -148,7 +155,7 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
   }, []);
 
   const stableOnStateChange = useCallback((appState: AudioAppState) => {
-    console.log('[useAudioEditor] AudioManager state change received:', {
+    if (AUDIO_TRACE) console.log('[useAudioEditor] AudioManager state change received:', {
       clipCount: appState.timeline.clips.length,
       clipTypes: appState.timeline.clips.map(c => c.type),
       activeClipIds: Array.from(appState.timeline.activeClipIds),
@@ -179,13 +186,19 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
   // Initialize manager lazily when actually needed
   const getOrCreateManager = useCallback(() => {
     if (!managerRef.current) {
-      console.log('Creating new AudioManager');
-      managerRef.current = new AudioManager({
+      const useJuce = (import.meta as any).env?.VITE_USE_JUCE === 'true' && (window as any).juceTransport;
+      if (AUDIO_TRACE) console.log('Creating new', useJuce ? 'JuceAudioManager' : 'AudioManager');
+      managerRef.current = (useJuce ? new JuceAudioManager({
         onStateChange: stableOnStateChange,
         onError: stableOnError,
         onWordHighlight: stableOnWordHighlight,
         onClipChange: stableOnClipChange,
-      });
+      }) : new AudioManager({
+        onStateChange: stableOnStateChange,
+        onError: stableOnError,
+        onWordHighlight: stableOnWordHighlight,
+        onClipChange: stableOnClipChange,
+      })) as any;
     }
     return managerRef.current;
   }, [stableOnStateChange, stableOnError, stableOnWordHighlight, stableOnClipChange]);
@@ -194,7 +207,7 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
   useEffect(() => {
     return () => {
       if (managerRef.current) {
-        console.log('Destroying AudioManager');
+        if (AUDIO_TRACE) console.log('Destroying AudioManager');
         managerRef.current.destroy();
         managerRef.current = null;
       }
@@ -236,18 +249,18 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
     },
 
     togglePlayPause: async () => {
-      console.log('[useAudioEditor] togglePlayPause called');
-      console.log('[useAudioEditor] managerRef.current exists:', !!managerRef.current);
+      if (AUDIO_TRACE) console.log('[useAudioEditor] togglePlayPause called');
+      if (AUDIO_TRACE) console.log('[useAudioEditor] managerRef.current exists:', !!managerRef.current);
       if (!managerRef.current) {
-        console.log('[useAudioEditor] No manager found, creating one...');
+        if (AUDIO_TRACE) console.log('[useAudioEditor] No manager found, creating one...');
         const manager = getOrCreateManager();
-        console.log('[useAudioEditor] Manager created:', !!manager);
+        if (AUDIO_TRACE) console.log('[useAudioEditor] Manager created:', !!manager);
         return;
       }
       try {
-        console.log('[useAudioEditor] Calling manager.togglePlayPause...');
+        if (AUDIO_TRACE) console.log('[useAudioEditor] Calling manager.togglePlayPause...');
         await managerRef.current.togglePlayPause();
-        console.log('[useAudioEditor] manager.togglePlayPause completed');
+        if (AUDIO_TRACE) console.log('[useAudioEditor] manager.togglePlayPause completed');
       } catch (error) {
         console.error('[useAudioEditor] Toggle playback failed:', error);
         options.onError?.(`Toggle playback failed: ${error}`);
@@ -256,6 +269,10 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
 
     seekToTime: (editedTime: number) => {
       managerRef.current?.seekToEditedTime(editedTime);
+    },
+    // New: seek using original time
+    seekToOriginalTime: (originalTime: number) => {
+      (managerRef.current as any)?.seekToOriginalTime?.(originalTime);
     },
 
     seekToWord: (clipId: string, wordIndex: number) => {
@@ -277,7 +294,7 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
 
     // Editing operations
     updateClips: (clips: Clip[]) => {
-      console.log('[useAudioEditor] updateClips called with:', {
+      if (AUDIO_TRACE) console.log('[useAudioEditor] updateClips called with:', {
         clipCount: clips.length,
         clipTypes: clips.map(c => c.type),
         clipIds: clips.map(c => c.id),
@@ -291,11 +308,11 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
       });
       
       if (managerRef.current) {
-        console.log('[useAudioEditor] Calling AudioManager.updateClips...');
+        if (AUDIO_TRACE) console.log('[useAudioEditor] Calling AudioManager.updateClips...');
         managerRef.current.updateClips(clips);
-        console.log('[useAudioEditor] AudioManager.updateClips completed');
+        if (AUDIO_TRACE) console.log('[useAudioEditor] AudioManager.updateClips completed');
       } else {
-        console.warn('[useAudioEditor] No AudioManager instance available for updateClips');
+        if (AUDIO_TRACE) console.warn('[useAudioEditor] No AudioManager instance available for updateClips');
       }
     },
 

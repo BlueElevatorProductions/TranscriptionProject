@@ -44,7 +44,8 @@ import './lexical-editor.css';
 interface LexicalTranscriptEditorProps {
   segments?: Segment[];
   clips?: import('../types').Clip[];
-  currentTime?: number;
+  currentTime?: number; // edited time (UI)
+  currentOriginalTime?: number; // original time (for highlighting)
   onSegmentsChange: (segments: Segment[]) => void;
   onClipsChange?: (clips: import('../types').Clip[]) => void;
   onWordClick?: (timestamp: number) => void;
@@ -71,6 +72,7 @@ function LexicalTranscriptEditorContent({
   segments,
   clips,
   currentTime,
+  currentOriginalTime,
   onSegmentsChange,
   onClipsChange,
   onWordClick,
@@ -125,8 +127,16 @@ function LexicalTranscriptEditorContent({
     }
     if (clips && clips.length > 0 && onClipsChange) {
       const updatedClips = editorStateToClips(editor);
-      console.log('[LexicalTranscriptEditor] onClipsChange fired:', { count: updatedClips.length });
-      onClipsChange(updatedClips);
+      // Preserve audio-only clips that were filtered out from rendering
+      const audioOnlyClips = clips.filter(c => c.type === 'audio-only');
+      const allClips = [...updatedClips, ...audioOnlyClips].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) console.log('[LexicalTranscriptEditor] onClipsChange fired:', { 
+        editorClips: updatedClips.length, 
+        audioOnlyClips: audioOnlyClips.length,
+        total: allClips.length 
+      });
+      onClipsChange(allClips);
     } else {
       const updatedSegments = editorStateToSegments(editor);
       onSegmentsChange(updatedSegments);
@@ -177,7 +187,7 @@ function LexicalTranscriptEditorContent({
       
       {/* Audio synchronization plugin */}
       <AudioSyncPlugin
-        currentTime={currentTime || 0}
+        currentOriginalTime={currentOriginalTime}
         onSeekAudio={onWordClick}
         isPlaying={isPlaying}
       />
@@ -203,15 +213,15 @@ function LexicalTranscriptEditorContent({
       {/* Clip creation plugin */}
       <ClipCreationPlugin
         onClipCreate={(clip) => {
-          console.log('Clip created:', clip);
+          if (UI_DEBUG) console.log('Clip created:', clip);
           // Handle clip creation
         }}
         onClipEdit={(clipId, updates) => {
-          console.log('Clip edited:', clipId, updates);
+          if (UI_DEBUG) console.log('Clip edited:', clipId, updates);
           // Handle clip editing
         }}
         onClipDelete={(clipId) => {
-          console.log('Clip deleted:', clipId);
+          if (UI_DEBUG) console.log('Clip deleted:', clipId);
           // Handle clip deletion
         }}
         onClipPlay={onWordClick}
@@ -233,6 +243,7 @@ export function LexicalTranscriptEditor({
   segments,
   clips,
   currentTime,
+  currentOriginalTime,
   onSegmentsChange,
   onClipsChange,
   onWordClick,
@@ -302,6 +313,7 @@ export function LexicalTranscriptEditor({
               segments={safeSegments}
               clips={clips}
               currentTime={currentTime}
+              currentOriginalTime={currentOriginalTime}
               onSegmentsChange={onSegmentsChange}
               onClipsChange={onClipsChange}
               onWordClick={onWordClick}

@@ -472,9 +472,138 @@ ZIP archives containing:
 - **Responsive Design**: Mobile-friendly layouts where applicable
 - **Dark Theme**: Professional dark green color scheme
 
-## Recent Updates (August 2025 - Latest)
+## Recent Updates (September 2025 - Latest)
 
-### ✅ macOS-Style Top Bar Implementation (Latest)
+### ✅ JUCE Audio Backend Integration & Critical Bug Fixes (Latest)
+
+**Major System Integration**: Complete JUCE C++ audio backend integration with comprehensive bug fixes for seamless transcription editing experience.
+
+#### **🎯 Key Achievements**
+- **JUCE Audio Backend**: Native C++ audio processing via line-delimited JSON IPC over stdio
+- **Seamless Playback**: Continuous audio playback across all clip boundaries including intro music, speech gaps, and outro sections
+- **Real-time Word Highlighting**: Precise word-level highlighting synchronized with spoken audio during playback
+- **Gap Clip Generation**: Intelligent audio-only clips for non-speech regions ensuring complete timeline coverage
+- **Timeline Management**: Robust EDL (Edit Decision List) handling with proper time domain conversions
+- **Error Recovery**: Comprehensive crash fixes and graceful error handling
+
+#### **🔧 Critical Bug Fixes**
+
+**1. Application Crash Fix**
+- **Issue**: `ReferenceError: currentTime is not defined` in AudioSyncPlugin after incomplete JUCE migration
+- **Solution**: Fixed all undefined variable references in AudioSyncPlugin.tsx:34-171
+- **Impact**: Application now launches without crashes and audio system initializes properly
+
+**2. Continuous Playback Implementation**
+- **Issue**: Audio playback stopped at the end of each clip instead of continuing seamlessly
+- **Root Cause**: Gap clips (intro, between speech, outro) were being filtered out, creating discontinuous EDL
+- **Solution**: Enhanced gap generation in AudioAppState.ts:114-191 and preserved audio-only clips in filtering logic
+- **Result**: Perfect continuous playback through entire audio file including music and pauses
+
+**3. Word Highlighting Synchronization**
+- **Issue**: Word highlights completely missing during audio playback
+- **Root Cause**: React prop flow broken - `currentOriginalTime` not passed through component hierarchy
+- **Solution**: Fixed missing parameter in LexicalTranscriptEditor function destructuring (line 264) and component prop passing (line 316)
+- **Result**: Real-time word highlighting now works perfectly, synchronized with spoken audio
+
+#### **🏗️ Technical Implementation**
+
+**JUCE Backend Integration**:
+```typescript
+// Native C++ audio backend communication
+const juceProcess = spawn(juceBinaryPath, args);
+juceProcess.stdout.on('data', (data) => {
+  // Line-delimited JSON protocol
+  const messages = data.toString().split('\n').filter(Boolean);
+  messages.forEach(processJUCEMessage);
+});
+```
+
+**Gap Clip Generation**:
+```typescript
+// Intelligent gap detection for continuous playback
+export const generateGapClips = (speechClips: Clip[], audioDuration: number): Clip[] => {
+  const gaps: Clip[] = [];
+  const eps = 0.0005; // Precision epsilon
+  
+  // Create intro, inter-speech, and outro gaps
+  for (const speechClip of sorted) {
+    if (speechClip.startTime - cursor > eps) {
+      gaps.push({
+        type: 'audio-only',
+        startTime: cursor,
+        endTime: speechClip.startTime,
+        // ... gap clip properties
+      });
+    }
+  }
+};
+```
+
+**Word Highlighting Fix**:
+```typescript
+// Proper prop flow through React component hierarchy
+<LexicalTranscriptEditorContent
+  currentOriginalTime={currentOriginalTime}  // CRITICAL: This was missing
+  // ... other props
+/>
+
+<AudioSyncPlugin
+  currentOriginalTime={currentOriginalTime}  // Now receives valid time values
+  isPlaying={isPlaying}
+  onSeekAudio={onWordClick}
+/>
+```
+
+#### **🎵 Audio Highlighting System**
+
+**How It Works**:
+1. **Time Domain Separation**: Original audio time (JUCE backend) vs edited timeline (UI display)
+2. **Word-Level Timestamps**: Each WordNode contains precise start/end times from transcription
+3. **50fps Updates**: AudioSyncPlugin updates word highlighting every 20ms for smooth visual feedback
+4. **Boundary Detection**: Smart detection of first/last words to avoid highlighting during intro/outro music
+5. **Debug Logging**: Comprehensive logging system for troubleshooting timing issues
+
+**Visual Feedback**:
+- **Active Word**: Highlighted with distinct background color during playback
+- **Smooth Transitions**: No skipped words or visual glitches
+- **Speaker Awareness**: Highlighting respects speaker boundaries and clip organization
+- **Mode Sensitivity**: Different behavior for Listen vs Edit modes
+
+#### **🔄 Timeline Management**
+
+**Edit Decision List (EDL)**:
+- **Continuous Coverage**: Gap clips ensure no audio regions are skipped during playback
+- **Proper Ordering**: Sequential clip ordering maintained through reordering operations
+- **Time Conversion**: Robust mapping between original audio time and edited timeline positions
+- **Deletion Handling**: Deleted clips filtered appropriately while preserving gaps
+
+**State Synchronization**:
+- **AudioAppState**: Centralized state management for all audio operations
+- **React Context**: Proper state flow through component hierarchy
+- **Memory Efficiency**: Cleanup of unused audio resources and state objects
+
+#### **🛠️ Developer Experience**
+
+**Debug Environment**:
+```bash
+# Enable comprehensive audio debugging
+VITE_AUDIO_DEBUG=true npm run start-dev
+
+# Console output shows:
+# - Time synchronization details
+# - Word highlighting events  
+# - Gap generation statistics
+# - Prop flow validation
+# - JUCE backend communication
+```
+
+**Error Recovery**:
+- **Graceful Degradation**: Audio system continues working even with partial failures
+- **Automatic Retry**: Transient failures trigger automatic recovery attempts
+- **User Feedback**: Clear error messages with actionable recovery options
+- **Memory Cleanup**: Proper resource cleanup during error recovery
+
+### ✅ macOS-Style Top Bar Implementation (August 2025)
 
 **Professional macOS Integration**: Complete top bar implementation following Day One app design patterns for native macOS experience.
 

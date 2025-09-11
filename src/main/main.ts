@@ -15,6 +15,8 @@ import { ProjectPackageService } from './services/ProjectPackageService';
 import AudioAnalyzer from './services/AudioAnalyzer';
 import AudioConverter from './services/AudioConverter';
 import UserPreferencesService from './services/UserPreferences';
+import JuceClient from './services/JuceClient';
+import type { JuceEvent, EdlClip } from '../shared/types/transport';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -46,6 +48,7 @@ class App {
   private readonly userPreferences: UserPreferencesService;
   private mediaServer: http.Server | null = null;
   private mediaPort: number | null = null;
+  private juceClient: JuceClient | null = null;
 
   constructor() {
     // Initialize encryption key (derived from machine-specific info)
@@ -224,6 +227,7 @@ class App {
       this.startMediaServer();
       this.setupMenu();
       this.setupIPC();
+      this.setupJuceTransport();
 
       app.on('activate', () => {
         // On macOS it's common to re-create a window in the app when the
@@ -273,6 +277,76 @@ class App {
     (app as any).on('child-process-gone', (_event: Electron.Event, details: any) => {
       console.error('🚨 Child process gone:', details);
     });
+  }
+
+  private setupJuceTransport(): void {
+    try {
+      this.juceClient = new JuceClient();
+      // Forward JUCE events to renderer(s)
+      const forward = (evt: JuceEvent) => {
+        try {
+          // send to all windows to avoid tight coupling
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              win.webContents.send('juce:event', evt);
+            }
+          }
+        } catch (e) {
+          console.error('Failed forwarding JUCE event:', e);
+        }
+      };
+      this.juceClient.setEventHandlers({
+        onLoaded: forward,
+        onState: forward,
+        onPosition: forward,
+        onEnded: forward,
+        onError: forward,
+      });
+
+      // IPC command handlers
+      ipcMain.handle('juce:load', async (_e, id: string, filePath: string) => {
+        try { await this.juceClient!.load(id, filePath); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:updateEdl', async (_e, id: string, clips: EdlClip[]) => {
+        try { await this.juceClient!.updateEdl(id, clips); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:play', async (_e, id: string) => {
+        try { await this.juceClient!.play(id); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:pause', async (_e, id: string) => {
+        try { await this.juceClient!.pause(id); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:stop', async (_e, id: string) => {
+        try { await this.juceClient!.stop(id); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:seek', async (_e, id: string, timeSec: number) => {
+        try { await this.juceClient!.seek(id, timeSec); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:setRate', async (_e, id: string, rate: number) => {
+        try { await this.juceClient!.setRate(id, rate); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:setVolume', async (_e, id: string, value: number) => {
+        try { await this.juceClient!.setVolume(id, value); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:queryState', async (_e, id: string) => {
+        try { await this.juceClient!.queryState(id); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:dispose', async () => {
+        try { await this.juceClient?.dispose(); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+    } catch (e) {
+      console.error('Failed to initialize JUCE transport:', e);
+    }
   }
 
   private createMainWindow(): void {
@@ -956,6 +1030,67 @@ class App {
       } catch (error) {
         console.error('Error checking file existence:', error);
         return false;
+      }
+    });
+
+    // Compute audio peaks via ffmpeg (IPC version of /peaks route)
+    ipcMain.handle('audio:peaks', async (_event, filePath: string, samplesPerPixel?: number) => {
+      try {
+        if (!filePath || !fs.existsSync(filePath)) throw new Error('File not found');
+        const spp = Math.max(256, parseInt(String(samplesPerPixel || 1024), 10));
+        const ff = spawn('ffmpeg', [
+          '-v', 'error',
+          '-i', filePath,
+          '-f', 's16le',
+          '-acodec', 'pcm_s16le',
+          '-ac', '1',
+          '-ar', '48000',
+          'pipe:1',
+        ]);
+        const peaks: number[] = [];
+        let buffer = Buffer.alloc(0);
+        let totalSamplesCount = 0;
+        await new Promise<void>((resolve, reject) => {
+          ff.stdout.on('data', (chunk) => {
+            buffer = Buffer.concat([buffer, chunk as Buffer]);
+            const sampleSize = 2;
+            const totalSamples = Math.floor(buffer.length / sampleSize);
+            const windowSize = spp;
+            const windows = Math.floor(totalSamples / windowSize);
+            let offset = 0;
+            for (let w = 0; w < windows; w++) {
+              let min = 1.0; let max = -1.0;
+              for (let i = 0; i < windowSize; i++) {
+                const s = buffer.readInt16LE(offset) / 32768;
+                if (s < min) min = s;
+                if (s > max) max = s;
+                offset += sampleSize;
+              }
+              peaks.push(min, max);
+              totalSamplesCount += windowSize;
+            }
+            buffer = buffer.slice(offset);
+          });
+          ff.on('close', () => {
+            if (buffer.length >= 2) {
+              let min = 1.0; let max = -1.0;
+              for (let off = 0; off + 2 <= buffer.length; off += 2) {
+                const s = buffer.readInt16LE(off) / 32768;
+                if (s < min) min = s;
+                if (s > max) max = s;
+              }
+              peaks.push(min, max);
+              totalSamplesCount += Math.floor(buffer.length / 2);
+            }
+            resolve();
+          });
+          ff.on('error', (e) => reject(e));
+        });
+        const durationSec = totalSamplesCount / 48000;
+        return { samplesPerPixel: spp, channels: 1, sampleRate: 48000, durationSec, peaks };
+      } catch (e) {
+        console.error('audio:peaks failed:', e);
+        return { error: String(e) };
       }
     });
     

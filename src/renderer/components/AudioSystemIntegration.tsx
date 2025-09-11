@@ -31,7 +31,10 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   audioUrl,
   disableAudio = false,
 }) => {
+  const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
   const { state: projectState, actions: projectActions } = useProject();
+  // Keep noisy logs off by default; only enable with VITE_AUDIO_TRACE=true
+  const AUDIO_TRACE = (import.meta as any).env?.VITE_AUDIO_TRACE === 'true';
   const [initializationError, setInitializationError] = useState<string | null>(null);
   const [cursorPosition, setCursorPosition] = useState<TimelinePosition | null>(null);
   const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
@@ -39,11 +42,38 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   // Get clips from project data
   const clips = useMemo(() => {
     if (!projectState.projectData?.clips?.clips) {
-      console.log('[AudioSystemIntegration] No clips found in project data');
+      if (AUDIO_TRACE) console.log('[AudioSystemIntegration] No clips found in project data');
       return [];
     }
     const projectClips = projectState.projectData.clips.clips as Clip[];
-    console.log('[AudioSystemIntegration] Clips from project data:', {
+    
+    const speechClips = projectClips.filter(c => c.type !== 'audio-only');
+    const gapClips = projectClips.filter(c => c.type === 'audio-only');
+    
+    if (AUDIO_DEBUG) {
+      console.log('[AudioSystemIntegration] Clips analysis:', {
+        totalClips: projectClips.length,
+        speechClips: speechClips.length,
+        gapClips: gapClips.length,
+        speechRange: speechClips.length > 0 ? `${speechClips[0]?.startTime?.toFixed(2)} - ${speechClips[speechClips.length-1]?.endTime?.toFixed(2)}s` : 'none',
+        gapRange: gapClips.length > 0 ? `${gapClips[0]?.startTime?.toFixed(2)} - ${gapClips[gapClips.length-1]?.endTime?.toFixed(2)}s` : 'none'
+      });
+      
+      // Additional debug: log when gaps disappear
+      if (gapClips.length === 0 && speechClips.length > 0) {
+        console.warn('🚨 [AudioSystemIntegration] GAP CLIPS MISSING! Speech clips exist but no gaps found');
+        console.log('Full project data structure:', {
+          hasProjectData: !!projectState.projectData,
+          hasClips: !!projectState.projectData?.clips,
+          hasClipsArray: !!projectState.projectData?.clips?.clips,
+          clipsLength: projectState.projectData?.clips?.clips?.length,
+          firstClip: projectState.projectData?.clips?.clips?.[0],
+          clipTypes: projectState.projectData?.clips?.clips?.map(c => c.type)
+        });
+      }
+    }
+    
+    if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Clips from project data:', {
       clipCount: projectClips.length,
       clipTypes: projectClips.map(c => c.type),
       clipIds: projectClips.map(c => c.id),
@@ -57,6 +87,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     });
     return projectClips;
   }, [projectState.projectData]);
+
 
   // Get speakers from project data
   const speakers = useMemo(() => {
@@ -85,10 +116,10 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     },
     onClipChange: (clipId) => {
       // Optional: Add feedback for clip changes
-      console.log('Current clip changed to:', clipId);
+      if (AUDIO_TRACE) console.log('Current clip changed to:', clipId);
     },
     onStateChange: (newState) => {
-      console.log('[AudioSystemIntegration] Audio state changed:', {
+      if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Audio state changed:', {
         isInitialized: newState.isInitialized,
         isPlaying: newState.isPlaying,
         currentTime: newState.currentTime,
@@ -105,15 +136,15 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   useEffect(() => {
     if (disableAudio) return;
     if (clips.length > 0 && audioUrl && !audioState.isInitialized && !initializationAttemptRef.current) {
-      console.log('[AudioSystemIntegration] Initializing audio system with audioUrl:', audioUrl);
-      console.log({ clipCount: clips.length, isInitialized: audioState.isInitialized });
+      if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Initializing audio system with audioUrl:', audioUrl);
+      if (AUDIO_TRACE) console.log({ clipCount: clips.length, isInitialized: audioState.isInitialized });
       
       initializationAttemptRef.current = true;
       setInitializationError(null);
       
       audioActions.initialize(audioUrl, clips)
         .then(() => {
-          console.log('[AudioSystemIntegration] Audio system initialized successfully');
+          if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Audio system initialized successfully');
         })
         .catch((error) => {
           console.error('Failed to initialize audio system:', error);
@@ -128,7 +159,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   // Update clips when they change (after initialization)
   useEffect(() => {
     if (audioState.isInitialized && clips.length > 0) {
-      console.log('[AudioSystemIntegration] Updating clips in audio system:', {
+      if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Updating clips in audio system:', {
         clipCount: clips.length,
         clipTypes: clips.map(c => c.type),
         hasTranscribedClips: clips.some(c => c.type === 'transcribed')
@@ -504,7 +535,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   }
 
   // Debug what's being passed to editor
-  console.log('[AudioSystemIntegration] Rendering Transcript Editor with audio state:', {
+  if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Rendering Transcript Editor with audio state:', {
     audioStateClipCount: audioState.clips?.length || 0,
     audioStateClipTypes: audioState.clips?.map(c => c.type) || [],
     audioStateFirstClip: audioState.clips?.[0] ? {
@@ -521,14 +552,33 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   return (
     <AudioErrorBoundary onRecoveryAttempt={handleRecoveryAttempt}>
       <LexicalTranscriptEditor
-        clips={mode === 'listen' ? clips.filter(c => c.status !== 'deleted') : clips}
+        clips={mode === 'listen'
+          ? clips.filter(c => c.status !== 'deleted')  // Keep gaps for preservation
+          : clips}                                       // Keep all clips including gaps
         currentTime={audioState.currentTime}
+        currentOriginalTime={(() => {
+          const time = typeof audioState.currentOriginalTime === 'number' ? audioState.currentOriginalTime : 0;
+          if (AUDIO_DEBUG && audioState.isPlaying) {
+            console.log('[AudioSystemIntegration] Passing currentOriginalTime to editor:', {
+              originalValue: audioState.currentOriginalTime,
+              actualValue: time,
+              isPlaying: audioState.isPlaying
+            });
+          }
+          return time;
+        })()}
         isPlaying={audioState.isPlaying}
         readOnly={mode === 'listen'}
         onSegmentsChange={() => { /* not used in clip mode */ }}
         onClipsChange={(updatedClips) => {
           if (!projectState.projectData) return;
-          console.log('[AudioSystemIntegration] onClipsChange received:', {
+          
+          if (AUDIO_DEBUG) console.log('[AudioSystemIntegration] onClipsChange called:', {
+            updatedClips: updatedClips.length,
+            speechClips: updatedClips.filter(c => c.type !== 'audio-only').length,
+            gapClips: updatedClips.filter(c => c.type === 'audio-only').length
+          });
+          if (AUDIO_TRACE) console.log('[AudioSystemIntegration] onClipsChange received:', {
             count: updatedClips.length,
             deletedCount: updatedClips.filter(c => c.status === 'deleted').length,
           });
@@ -545,8 +595,8 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
           }
         }}
         onWordClick={(ts) => {
-          // Seek audio and play if in listen mode
-          audioActions.seekToTime(ts);
+          // ts is original time from WordNode; map to edited seek
+          audioActions.seekToOriginalTime(ts);
           if (mode === 'listen' && !audioState.isPlaying) {
             audioActions.play().catch(() => {});
           }

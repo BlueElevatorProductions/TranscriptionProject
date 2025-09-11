@@ -5,6 +5,7 @@ import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, User
 import { useProject, useSelectedJob } from '../../contexts';
 import { useTheme } from '../theme-provider';
 import { Segment, ClipSettings } from '../../types';
+import { generateClipId, createContinuousClips } from '../../audio/AudioAppState';
 import SecondaryPanel from '../SecondaryPanel';
 import SpeakersPanel from '../shared/SpeakersPanel';
 import { AudioSystemIntegration } from '../AudioSystemIntegration';
@@ -378,7 +379,8 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
       groups.push(currentGroup);
     }
     
-    console.log('Segment grouping results:', {
+    const UI_DEBUG = (import.meta as any).env?.VITE_UI_DEBUG === 'true';
+    if (UI_DEBUG) console.log('Segment grouping results:', {
       originalSegments: segments.length,
       groups: groups.length,
       averageSegmentsPerGroup: segments.length / groups.length,
@@ -390,7 +392,8 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
 
   // Convert transcription segments to clips when transcription completes
   useEffect(() => {
-    console.log('Transcription conversion effect triggered with:', {
+    const UI_DEBUG = (import.meta as any).env?.VITE_UI_DEBUG === 'true';
+    if (UI_DEBUG) console.log('Transcription conversion effect triggered with:', {
       hasSelectedJob: !!selectedJob,
       jobStatus: selectedJob?.status,
       hasSegments: !!selectedJob?.result?.segments,
@@ -398,131 +401,131 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
       hasProjectData: !!projectState.projectData,
       jobId: selectedJob?.id
     });
-
-    if (selectedJob?.result?.segments && selectedJob.status === 'completed' && projectState.projectData) {
-      // Check if we already have clips from transcription (avoid duplicate conversion)
-      const currentClips = projectState.projectData.clips?.clips || [];
-      const hasInitialClipOnly = currentClips.length === 1 && currentClips[0].type === 'initial';
-      const alreadyHasTranscribedClips = currentClips.some(clip => clip.type === 'transcribed');
-      
-      console.log('Transcription conversion check:', {
-        hasInitialClipOnly,
-        alreadyHasTranscribedClips,
-        clipCount: currentClips.length,
-        clipTypes: currentClips.map(c => c.type),
-        jobId: selectedJob.id
-      });
-      
-      if (hasInitialClipOnly && !alreadyHasTranscribedClips) {
-        console.log('Converting transcription segments to clips...');
+    const convertIfNeeded = async () => {
+      if (selectedJob?.result?.segments && selectedJob.status === 'completed' && projectState.projectData) {
+        // Check if we already have clips from transcription (avoid duplicate conversion)
+        const currentClips = projectState.projectData.clips?.clips || [];
+        const hasInitialClipOnly = currentClips.length === 1 && currentClips[0].type === 'initial';
+        const alreadyHasTranscribedClips = currentClips.some(clip => clip.type === 'transcribed');
         
-        // Map word_segments to individual segments
-        const wordSegments = selectedJob.result.word_segments || [];
+        if (UI_DEBUG) console.log('Transcription conversion check:', {
+          hasInitialClipOnly,
+          alreadyHasTranscribedClips,
+          clipCount: currentClips.length,
+          clipTypes: currentClips.map(c => c.type),
+          jobId: selectedJob.id
+        });
         
-        // Group segments into natural paragraphs
-        const segmentGroups = groupSegmentsIntoParagraphs(selectedJob.result.segments, wordSegments);
-        
-        // Convert grouped segments to clips
-        const transcriptionClips = segmentGroups.map((group: any[], groupIndex: number) => {
-          // Combine all words from all segments in this group
-          let allGroupWords = group.flatMap(segment => {
-            return wordSegments.filter((word: any) => 
-              word.start >= segment.start && word.end <= segment.end
-            );
-          });
+        if (hasInitialClipOnly && !alreadyHasTranscribedClips) {
+          if (UI_DEBUG) console.log('Converting transcription segments to clips...');
           
-          // If no word-level data found, create placeholder words from text
-          if (allGroupWords.length === 0) {
-            allGroupWords = group.flatMap(segment => {
-              if (!segment.text) return [];
-              
-              const words = segment.text.split(' ').filter((w: string) => w.trim().length > 0);
-              const segmentDuration = (segment.end || 0) - (segment.start || 0);
-              const wordDuration = segmentDuration / words.length;
-              
-              return words.map((word: string, wordIndex: number) => ({
-                word: word,
-                start: (segment.start || 0) + (wordIndex * wordDuration),
-                end: (segment.start || 0) + ((wordIndex + 1) * wordDuration),
-                confidence: segment.confidence || 0.95
-              }));
+          // Map word_segments to individual segments
+          const wordSegments = selectedJob.result.word_segments || [];
+          
+          // Group segments into natural paragraphs
+          const segmentGroups = groupSegmentsIntoParagraphs(selectedJob.result.segments, wordSegments);
+
+          // Build clips from model-provided word timings, and add transport gap clips for continuous playback
+          const computeClips = () => {
+            // Convert grouped segments to clips
+            const transcriptionClips = segmentGroups.map((group: any[], groupIndex: number) => {
+            // Combine words provided by the model from segments in this group
+            let allGroupWords = group.flatMap((seg: any) => (seg.words || []).map((w: any) => ({
+              word: w.word || w.text || '',
+              start: w.start,
+              end: w.end,
+              confidence: w.score || w.confidence || 1.0,
+            })));
+            // Do not synthesize fallback words; use only model-provided timings
+            // Sort words by start time to ensure proper order
+            allGroupWords.sort((a, b) => a.start - b.start);
+            
+            // Calculate group boundaries
+            const firstSegment = group[0];
+            const lastSegment = group[group.length - 1];
+            let startTime = firstSegment.start || 0;
+            const endTime = lastSegment.end || 0;
+
+            // Combine all text from the group
+            const combinedText = group.map(seg => seg.text).filter(Boolean).join(' ');
+            
+            // Use the most common speaker in the group
+            const speakerCounts = group.reduce((acc: Record<string, number>, seg) => {
+              const speaker = seg.speaker || 'SPEAKER_00';
+              acc[speaker] = (acc[speaker] || 0) + 1;
+              return acc;
+            }, {});
+            const dominantSpeaker = Object.keys(speakerCounts).reduce((a, b) => 
+              speakerCounts[a] > speakerCounts[b] ? a : b
+            );
+            
+            console.log(`Group ${groupIndex}:`, {
+              segmentCount: group.length,
+              text: combinedText.substring(0, 100) + (combinedText.length > 100 ? '...' : ''),
+              wordCount: allGroupWords.length,
+              timeRange: `${startTime}-${endTime}`,
+              duration: endTime - startTime,
+              speaker: dominantSpeaker
             });
             
-            console.log(`Created ${allGroupWords.length} placeholder words for group ${groupIndex}`);
-          }
-          
-          // Sort words by start time to ensure proper order
-          allGroupWords.sort((a, b) => a.start - b.start);
-          
-          // Calculate group boundaries
-          const firstSegment = group[0];
-          const lastSegment = group[group.length - 1];
-          const startTime = firstSegment.start || 0;
-          const endTime = lastSegment.end || 0;
-          
-          // Combine all text from the group
-          const combinedText = group.map(seg => seg.text).filter(Boolean).join(' ');
-          
-          // Use the most common speaker in the group
-          const speakerCounts = group.reduce((acc: Record<string, number>, seg) => {
-            const speaker = seg.speaker || 'SPEAKER_00';
-            acc[speaker] = (acc[speaker] || 0) + 1;
-            return acc;
-          }, {});
-          const dominantSpeaker = Object.keys(speakerCounts).reduce((a, b) => 
-            speakerCounts[a] > speakerCounts[b] ? a : b
-          );
-          
-          console.log(`Group ${groupIndex}:`, {
-            segmentCount: group.length,
-            text: combinedText.substring(0, 100) + (combinedText.length > 100 ? '...' : ''),
-            wordCount: allGroupWords.length,
-            timeRange: `${startTime}-${endTime}`,
-            duration: endTime - startTime,
-            speaker: dominantSpeaker
-          });
-          
-          return {
-            id: `paragraph-${groupIndex}`,
-            startTime,
-            endTime,
-            startWordIndex: groupIndex * 1000, // Rough estimate, will be refined
-            endWordIndex: (groupIndex + 1) * 1000,
-            words: allGroupWords,
-            text: combinedText,
-            speaker: dominantSpeaker,
-            confidence: group.reduce((acc, seg) => acc + (seg.confidence || 0.95), 0) / group.length,
-            type: 'paragraph-break' as const,
-            duration: endTime - startTime,
-            order: groupIndex,
-            status: 'active' as const,
-            createdAt: Date.now(),
-            modifiedAt: Date.now(),
+            return {
+              id: generateClipId('clip'),
+              startTime,
+              endTime,
+              startWordIndex: groupIndex * 1000, // Rough estimate, will be refined
+              endWordIndex: (groupIndex + 1) * 1000,
+              words: allGroupWords,
+              text: combinedText,
+              speaker: dominantSpeaker,
+              confidence: group.reduce((acc, seg) => acc + (seg.confidence || 0.95), 0) / group.length,
+              type: 'user-created' as const,
+              duration: endTime - startTime,
+              order: groupIndex,
+              status: 'active' as const,
+              createdAt: Date.now(),
+              modifiedAt: Date.now(),
+            };
+            });
+            // Create continuous clips with gaps using utility function
+            const audioDuration = (projectState.projectData as any)?.project?.audio?.duration || 0;
+            console.log('Gap generation debug:', {
+              audioDuration,
+              transcriptionClipsCount: transcriptionClips.length,
+              firstClip: transcriptionClips[0] ? `${transcriptionClips[0].startTime}-${transcriptionClips[0].endTime}` : 'none',
+              lastClip: transcriptionClips.length > 0 ? `${transcriptionClips[transcriptionClips.length-1].startTime}-${transcriptionClips[transcriptionClips.length-1].endTime}` : 'none'
+            });
+            const merged = createContinuousClips(transcriptionClips, audioDuration);
+
+            const updatedProject = {
+              ...projectState.projectData,
+              transcription: {
+                ...projectState.projectData.transcription,
+                segments: selectedJob.result.segments,
+              },
+              clips: {
+                ...projectState.projectData.clips,
+                clips: merged,
+              },
+            };
+
+            console.log('Updating project with transcription clips:', {
+              speechCount: merged.filter(c => c.type !== 'audio-only').length,
+              gapCount: merged.filter(c => c.type === 'audio-only').length,
+              totalClips: merged.length,
+              totalWords: merged.reduce((sum, c) => sum + (c.words?.length || 0), 0)
+            });
+            
+            projectActions.updateProjectData(updatedProject);
           };
-        });
 
-        // Update project with transcription clips
-        const updatedProject = {
-          ...projectState.projectData,
-          transcription: {
-            ...projectState.projectData.transcription,
-            segments: selectedJob.result.segments,
-          },
-          clips: {
-            ...projectState.projectData.clips,
-            clips: transcriptionClips,
-          },
-        };
-
-        console.log('Updating project with transcription clips:', {
-          clipCount: transcriptionClips.length,
-          clipsWithText: transcriptionClips.filter(c => c.text.length > 0).length,
-          totalWords: transcriptionClips.reduce((sum, c) => sum + c.words.length, 0)
-        });
-        
-        projectActions.updateProjectData(updatedProject);
+          // Build clips strictly from provided word timings
+          computeClips();
+        }
       }
-    }
+    };
+
+    // kick async conversion
+    convertIfNeeded();
   }, [selectedJob?.id, selectedJob?.status, projectState.projectData?.clips?.clips?.length, projectActions]);
 
   // Load API keys and color preference on component mount

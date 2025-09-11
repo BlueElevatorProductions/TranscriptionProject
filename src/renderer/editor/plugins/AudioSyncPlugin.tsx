@@ -9,13 +9,14 @@ import { $getRoot, $getSelection, $isElementNode, LexicalNode, ElementNode } fro
 import { WordNode, $isWordNode } from '../nodes/WordNode';
 
 interface AudioSyncPluginProps {
-  currentTime: number;
+  // Use original audio time ONLY for highlighting to match WordNode timings
+  currentOriginalTime?: number;
   isPlaying: boolean;
   onSeekAudio?: (timestamp: number) => void;
 }
 
 export default function AudioSyncPlugin({
-  currentTime,
+  currentOriginalTime,
   isPlaying,
   onSeekAudio,
 }: AudioSyncPluginProps) {
@@ -29,17 +30,54 @@ export default function AudioSyncPlugin({
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Word highlighting synchronization - trigger on currentTime changes
+  // Word highlighting synchronization - trigger on currentOriginalTime changes
   useEffect(() => {
     const updateWordHighlights = () => {
       editor.update(() => {
         const root = $getRoot();
+        const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
         let hasUpdates = false;
         let currentlyPlayingWord = null;
+        
+        // Only process when we have valid time data
+        if (typeof currentOriginalTime !== 'number' || currentOriginalTime < 0) {
+          // Skip if time is invalid - this is normal during state transitions
+          return;
+        }
+        
+        if (AUDIO_DEBUG && isPlaying) {
+          console.log('[AudioSyncPlugin] Processing time update:', { 
+            currentOriginalTime, 
+            isPlaying
+          });
+        }
+        const t = currentOriginalTime;
+
+        // Determine first actual word start; don't highlight before the first word
+        let minStart = Number.POSITIVE_INFINITY;
+        root.getChildren().forEach((node: any) => {
+          const stack: any[] = [node];
+          while (stack.length) {
+            const n = stack.pop();
+            if ((n as any).getChildren) {
+              const children = (n as any).getChildren();
+              for (const c of children) stack.push(c);
+            }
+            if ((n as any).getType && (n as any).getType() === 'word') {
+              const start = (n as any).getStart?.();
+              if (typeof start === 'number' && start < minStart) minStart = start;
+            }
+          }
+        });
+        if (!isFinite(minStart)) minStart = 0;
+        if (t < minStart) {
+          // Early stage (e.g., music intro) — avoid highlighting
+          return;
+        }
 
         // Traverse all nodes to find WordNodes
         const updateWordNode = (node: WordNode) => {
-          const shouldHighlight = node.isCurrentlyPlaying(currentTime);
+          const shouldHighlight = node.isCurrentlyPlaying(t);
           const currentlyHighlighted = node.getLatest().__isCurrentlyPlaying;
 
           if (shouldHighlight !== currentlyHighlighted) {
@@ -51,7 +89,7 @@ export default function AudioSyncPlugin({
                 word: node.getTextContent(),
                 startTime: node.getStart(),
                 endTime: node.getEnd(),
-                currentTime
+                currentTime: t
               };
             }
           }
@@ -74,18 +112,75 @@ export default function AudioSyncPlugin({
         traverseNodes(root);
 
         // Debug logging every few updates
-        if (hasUpdates && currentlyPlayingWord) {
-          console.log('🎵 Word highlighting:', currentlyPlayingWord);
-        } else if (isPlaying && currentTime > 0) {
-          // Debug: show why no words are highlighted
-          console.log('🔍 No word highlighted at time:', currentTime);
+        if (AUDIO_DEBUG) {
+          if (hasUpdates && currentlyPlayingWord) {
+            console.log('🎵 Word highlighting:', currentlyPlayingWord);
+          } else if (isPlaying && t > 0) {
+            // Throttle 'no word highlighted' messages to reduce noise
+            (AudioSyncPlugin as any)._lastNoWordLog = (AudioSyncPlugin as any)._lastNoWordLog || 0;
+            const now = Date.now();
+            if (now - (AudioSyncPlugin as any)._lastNoWordLog > 1000) {
+              (AudioSyncPlugin as any)._lastNoWordLog = now;
+              console.log('🔍 No word highlighted at time:', t, 'minStart:', minStart.toFixed(3));
+            }
+          }
+        }
+        
+        // Additional debug logging for highlighting issues
+        if (AUDIO_DEBUG && isPlaying && t > minStart) {
+          let totalWords = 0;
+          let wordsInTimeRange = 0;
+          root.getChildren().forEach((node: any) => {
+            const stack: any[] = [node];
+            while (stack.length) {
+              const n = stack.pop();
+              if ((n as any).getChildren) {
+                const children = (n as any).getChildren();
+                for (const c of children) stack.push(c);
+              }
+              if ((n as any).getType && (n as any).getType() === 'word') {
+                totalWords++;
+                const start = (n as any).getStart?.();
+                const end = (n as any).getEnd?.();
+                if (typeof start === 'number' && typeof end === 'number' && t >= start && t <= end) {
+                  wordsInTimeRange++;
+                }
+              }
+            }
+          });
+          
+          (AudioSyncPlugin as any)._lastWordCountLog = (AudioSyncPlugin as any)._lastWordCountLog || 0;
+          const now = Date.now();
+          if (now - (AudioSyncPlugin as any)._lastWordCountLog > 2000) {
+            (AudioSyncPlugin as any)._lastWordCountLog = now;
+            console.log('🔍 Word search debug:', {
+              time: t.toFixed(3),
+              totalWords,
+              wordsInTimeRange,
+              minStart: minStart.toFixed(3),
+              hasUpdates,
+              currentlyPlayingWord: currentlyPlayingWord ? 'yes' : 'no'
+            });
+          }
         }
       });
     };
 
-    // Update word highlighting whenever currentTime changes
+    // Update word highlighting whenever currentOriginalTime changes
     updateWordHighlights();
-  }, [currentTime, isPlaying, editor]);
+  }, [currentOriginalTime, isPlaying, editor]);
+  
+  // Debug useEffect to track prop changes
+  React.useEffect(() => {
+    const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+    if (AUDIO_DEBUG) {
+      console.log('[AudioSyncPlugin] Props changed:', {
+        currentOriginalTime,
+        type: typeof currentOriginalTime,
+        isPlaying
+      });
+    }
+  }, [currentOriginalTime, isPlaying]);
 
   // Handle word clicks for seeking
   useEffect(() => {
@@ -132,7 +227,7 @@ export default function AudioSyncPlugin({
 
         const findCurrentWord = (node: LexicalNode): boolean => {
           if ($isWordNode(node as any)) {
-            if (node.isCurrentlyPlaying(currentTime)) {
+            if (node.isCurrentlyPlaying(currentOriginalTime)) {
               // Find the DOM element for this node
               const key = node.getKey();
               const element = editor.getElementByKey(key);
@@ -183,7 +278,7 @@ export default function AudioSyncPlugin({
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [currentTime, isPlaying, editor]);
+  }, [currentOriginalTime, isPlaying, editor]);
 
   // Handle keyboard shortcuts for audio control
   useEffect(() => {
@@ -209,7 +304,7 @@ export default function AudioSyncPlugin({
       if (event.shiftKey && (event.code === 'ArrowLeft' || event.code === 'ArrowRight')) {
         event.preventDefault();
         const seekAmount = event.code === 'ArrowLeft' ? -5 : 5;
-        const newTime = Math.max(0, currentTime + seekAmount);
+        const newTime = Math.max(0, (currentOriginalTime || 0) + seekAmount);
         onSeekAudio?.(newTime);
       }
     };
@@ -222,7 +317,7 @@ export default function AudioSyncPlugin({
         editorElement.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [editor, currentTime, onSeekAudio]);
+  }, [editor, currentOriginalTime, onSeekAudio]);
 
   // Clean up on unmount
   useEffect(() => {

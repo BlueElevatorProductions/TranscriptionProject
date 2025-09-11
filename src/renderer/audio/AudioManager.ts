@@ -111,7 +111,7 @@ export class AudioManager {
       // Update current time
       this.dispatch({ 
         type: 'UPDATE_PLAYBACK', 
-        payload: { currentTime: editedTime }
+        payload: { currentTime: editedTime, currentOriginalTime: originalTime }
       });
 
       // Update highlighted word
@@ -298,6 +298,11 @@ export class AudioManager {
         const clips = action.payload;
         this.sequencer.updateClips(clips);
         const activeClipIds = new Set(clips.filter(c => c.status !== 'deleted').map(c => c.id));
+        // Recompute reorder indices based on clip.order
+        const sorted = clips
+          .map((c, i) => ({ i, order: c.order ?? i }))
+          .sort((a, b) => a.order - b.order)
+          .map(x => x.i);
         
         return {
           ...state,
@@ -305,6 +310,7 @@ export class AudioManager {
             ...state.timeline,
             clips,
             activeClipIds,
+            reorderIndices: sorted,
             totalDuration: this.calculateTotalDuration(),
           },
         };
@@ -533,6 +539,15 @@ export class AudioManager {
     console.log(`[AudioManager] seekToWord: clip=${clipId}, wordIndex=${wordIndex}, originalTime=${word.start}`);
     const editedTime = this.sequencer.originalTimeToEditedTime(word.start, clipId);
     console.log('[AudioManager] computed editedTime=', editedTime);
+    if (editedTime !== null) {
+      this.seekToEditedTime(editedTime);
+    }
+  }
+
+  // New: seek using original time domain, mapping to edited timeline
+  seekToOriginalTime(originalSec: number): void {
+    if (!this.state.playback.isReady) return;
+    const editedTime = this.convertOriginalToEditedTime(originalSec);
     if (editedTime !== null) {
       this.seekToEditedTime(editedTime);
     }
