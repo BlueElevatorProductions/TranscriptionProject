@@ -299,10 +299,24 @@ export class AudioManager {
         this.sequencer.updateClips(clips);
         const activeClipIds = new Set(clips.filter(c => c.status !== 'deleted').map(c => c.id));
         // Recompute reorder indices based on clip.order
-        const sorted = clips
-          .map((c, i) => ({ i, order: c.order ?? i }))
-          .sort((a, b) => a.order - b.order)
-          .map(x => x.i);
+        console.log('[AudioManager] UPDATE_CLIPS: clip orders debug:');
+        clips.slice(0, 10).forEach((c, i) => {
+          console.log(`  [${i}] ${c.id.slice(0, 16)} order=${c.order}`);
+        });
+        
+        // Create a mapping from original clip positions to their new order
+        const sortedWithOriginalIndex = clips
+          .map((c, originalIndex) => ({ originalIndex, order: c.order ?? originalIndex }))
+          .sort((a, b) => a.order - b.order);
+        
+        console.log('[AudioManager] sortedWithOriginalIndex (first 10):');
+        sortedWithOriginalIndex.slice(0, 10).forEach((item, i) => {
+          console.log(`  newPos[${i}] = originalIndex[${item.originalIndex}] (order=${item.order})`);
+        });
+        
+        // reorderIndices[newPosition] = originalIndex
+        const sorted = sortedWithOriginalIndex.map(x => x.originalIndex);
+        console.log('[AudioManager] computed reorderIndices (first 10):', sorted.slice(0, 10));
         
         return {
           ...state,

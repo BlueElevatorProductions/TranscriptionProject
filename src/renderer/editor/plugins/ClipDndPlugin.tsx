@@ -62,6 +62,9 @@ export default function ClipDndPlugin() {
       e.dataTransfer?.setDragImage(target, 10, 10);
       console.log('[ClipDndPlugin] dragstart key=', key);
       ensureIndicator();
+      
+      // Notify LexicalTranscriptEditor to enter drag mode
+      window.dispatchEvent(new CustomEvent('clip-drag-start'));
     };
 
     const onDragOver = (e: DragEvent) => {
@@ -137,8 +140,7 @@ export default function ClipDndPlugin() {
 
     rootEl.addEventListener('dragstart', onDragStart);
     rootEl.addEventListener('dragover', onDragOver);
-    rootEl.addEventListener('drop', onDrop);
-    // Capture drop at capture phase to avoid contentEditable interception
+    // Use capture phase to avoid contentEditable interception
     rootEl.addEventListener('drop', onDrop, true);
     const onDragEnd = () => {
       if (indicatorRef.current) indicatorRef.current.style.display = 'none';
@@ -146,6 +148,9 @@ export default function ClipDndPlugin() {
       hoverKeyRef.current = null;
       dragClipIdRef.current = null;
       hoverClipIdRef.current = null;
+      
+      // Notify LexicalTranscriptEditor to exit drag mode
+      window.dispatchEvent(new CustomEvent('clip-drag-end'));
     };
     rootEl.addEventListener('dragend', onDragEnd);
     rootEl.addEventListener('dragleave', onDragLeave);
@@ -156,7 +161,6 @@ export default function ClipDndPlugin() {
     return () => {
       rootEl.removeEventListener('dragstart', onDragStart);
       rootEl.removeEventListener('dragover', onDragOver);
-      rootEl.removeEventListener('drop', onDrop);
       rootEl.removeEventListener('drop', onDrop, true as any);
       rootEl.removeEventListener('dragend', onDragEnd);
       rootEl.removeEventListener('dragleave', onDragLeave);

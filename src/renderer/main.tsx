@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import WaveSurferMinimal from './components/audio/WaveSurferMinimal';
+import JuceEditorWindow from './components/audio/JuceEditorWindow';
 import './index.css';
 
 // Error Boundary Component
@@ -86,7 +86,22 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-console.log('React main.tsx initializing...');
+// Lightweight console noise control
+(() => {
+  const level = (import.meta as any).env?.VITE_LOG_LEVEL || '';
+  if (!level) return;
+  const noop = () => {};
+  if (level.toLowerCase() === 'error') {
+    console.log = noop as any;
+    console.info = noop as any;
+    console.warn = noop as any;
+  } else if (level.toLowerCase() === 'warn') {
+    console.log = noop as any;
+    console.info = noop as any;
+  }
+})();
+
+if ((import.meta as any).env?.VITE_UI_DEBUG === 'true') console.log('React main.tsx initializing...');
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -98,20 +113,8 @@ const isAudioEditor = params.get('audioEditor') === '1';
 const audioSrc = params.get('src') || undefined; // already URL-encoded from main
 
 function AudioEditorWindow() {
-  const src = audioSrc; // use encoded URL directly
-  return (
-    <div style={{ padding: 16, color: 'white', fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' }}>
-      <h3 style={{ marginTop: 0, marginBottom: 8 }}>Audio Editor (Isolated Window)</h3>
-      {src ? (
-        <>
-          <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 8 }}>Source: {src}</div>
-          <WaveSurferMinimal src={src} />
-        </>
-      ) : (
-        <p>No audio source provided.</p>
-      )}
-    </div>
-  );
+  const src = audioSrc; // encoded URL passed from main
+  return <JuceEditorWindow src={src} />;
 }
 
 const root = ReactDOM.createRoot(rootElement);
@@ -124,4 +127,4 @@ root.render(
   </React.StrictMode>
 );
 
-console.log('React application mounted successfully');
+if ((import.meta as any).env?.VITE_UI_DEBUG === 'true') console.log('React application mounted successfully');

@@ -5,6 +5,8 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -139,7 +141,140 @@ static void handleLine(const std::string& line) {
 
 #ifdef USE_JUCE
 // --- JUCE Implementation ---
-struct Segment { double start; double end; double dur; };
+struct Segment { 
+  double start; double end; double dur; 
+  // For contiguous timeline, store original audio positions
+  double originalStart = -1; double originalEnd = -1; 
+  bool hasOriginal() const { return originalStart >= 0 && originalEnd >= 0; }
+};
+
+// Custom AudioSource that handles Edit Decision List (EDL) playback
+class EdlAudioSource : public juce::PositionableAudioSource {
+public:
+  EdlAudioSource(juce::AudioFormatReaderSource* readerSource) : reader(readerSource) {}
+  
+  void updateSegments(const std::vector<Segment>& newSegments, bool isContiguous) {
+    segments = newSegments;
+    contiguousMode = isContiguous;
+    currentSegmentIndex = 0;
+    editedPosition = 0.0;
+  }
+  
+  void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override {
+    if (reader) reader->prepareToPlay(samplesPerBlockExpected, sampleRate);
+    this->sampleRate = sampleRate;
+  }
+  
+  void releaseResources() override {
+    if (reader) reader->releaseResources();
+  }
+  
+  void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override {
+    bufferToFill.clearActiveBufferRegion();
+    
+    if (!reader || segments.empty()) return;
+    
+    int samplesNeeded = bufferToFill.numSamples;
+    int samplesWritten = 0;
+    
+    while (samplesNeeded > 0 && currentSegmentIndex < segments.size()) {
+      const auto& segment = segments[currentSegmentIndex];
+      
+      // Calculate positions in samples
+      int64_t segmentStartSample, segmentEndSample;
+      double segmentDuration;
+      
+      if (contiguousMode && segment.hasOriginal()) {
+        // For reordered clips, use original audio positions
+        segmentStartSample = (int64_t)(segment.originalStart * sampleRate);
+        segmentEndSample = (int64_t)(segment.originalEnd * sampleRate);
+        segmentDuration = segment.originalEnd - segment.originalStart;
+      } else {
+        // For normal clips, use regular positions  
+        segmentStartSample = (int64_t)(segment.start * sampleRate);
+        segmentEndSample = (int64_t)(segment.end * sampleRate);
+        segmentDuration = segment.dur;
+      }
+      
+      // Calculate relative position within this segment (in edited timeline)
+      double relativeEditedPos = editedPosition - segment.start;
+      if (relativeEditedPos < 0) relativeEditedPos = 0;
+      
+      // Map to original audio position
+      double relativeProgress = relativeEditedPos / (segment.end - segment.start);
+      int64_t currentOriginalSample = segmentStartSample + (int64_t)(relativeProgress * (segmentEndSample - segmentStartSample));
+      
+      // How many samples left in this segment?
+      int64_t samplesLeftInSegment = segmentEndSample - currentOriginalSample;
+      int samplesToRead = std::min(samplesNeeded, (int)samplesLeftInSegment);
+      
+      if (samplesToRead > 0) {
+        // Read from original position
+        reader->setNextReadPosition(currentOriginalSample);
+        
+        juce::AudioSourceChannelInfo segmentInfo;
+        segmentInfo.buffer = bufferToFill.buffer;
+        segmentInfo.startSample = bufferToFill.startSample + samplesWritten;
+        segmentInfo.numSamples = samplesToRead;
+        
+        reader->getNextAudioBlock(segmentInfo);
+        
+        samplesWritten += samplesToRead;
+        samplesNeeded -= samplesToRead;
+        
+        // Advance edited position
+        editedPosition += (double)samplesToRead / sampleRate;
+      }
+      
+      // Check if we've reached the end of current segment
+      if (editedPosition >= segment.end - 0.001) { // Small tolerance
+        currentSegmentIndex++;
+        if (currentSegmentIndex < segments.size()) {
+          editedPosition = segments[currentSegmentIndex].start;
+        }
+      }
+      
+      if (samplesToRead <= 0) break; // Avoid infinite loop
+    }
+  }
+  
+  void setNextReadPosition(int64_t newPosition) override {
+    // Convert sample position to edited timeline position
+    editedPosition = (double)newPosition / sampleRate;
+    
+    // Find which segment contains this edited position
+    currentSegmentIndex = 0;
+    for (size_t i = 0; i < segments.size(); i++) {
+      if (editedPosition >= segments[i].start && editedPosition < segments[i].end) {
+        currentSegmentIndex = i;
+        break;
+      } else if (editedPosition < segments[i].start) {
+        currentSegmentIndex = i;
+        editedPosition = segments[i].start;
+        break;
+      }
+    }
+  }
+  
+  int64_t getNextReadPosition() const override {
+    return (int64_t)(editedPosition * sampleRate);
+  }
+  
+  int64_t getTotalLength() const override {
+    if (segments.empty()) return 0;
+    return (int64_t)(segments.back().end * sampleRate);
+  }
+  
+  bool isLooping() const override { return false; }
+
+private:
+  juce::AudioFormatReaderSource* reader;
+  std::vector<Segment> segments;
+  bool contiguousMode = false;
+  size_t currentSegmentIndex = 0;
+  double editedPosition = 0.0;
+  double sampleRate = 44100.0;
+};
 
 class Backend : public juce::HighResolutionTimer {
 public:
@@ -233,12 +368,59 @@ public:
     std::lock_guard<std::mutex> lock(mutex);
     segments = std::move(newSegs);
     for (auto& s : segments) s.dur = std::max(0.0, s.end - s.start);
-    // Debug logging for segment count verification (dev-only)
-    if (const char* debug = getenv("VITE_AUDIO_DEBUG")) {
-      if (strcmp(debug, "true") == 0) {
-        std::cerr << "[JUCE] updateEdl received " << segments.size() << " segments" << std::endl;
+    
+    // Enhanced debug logging - write to file to see what JUCE receives
+    std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+    debugFile << "[JUCE] updateEdl received " << segments.size() << " segments at " 
+              << std::time(nullptr) << std::endl;
+    
+    // Detect contiguous timeline by checking if segments are too perfectly aligned
+    // A contiguous timeline will have segments that start exactly where the previous ends
+    isContiguousTimeline = false;
+    
+    if (segments.size() > 1) {
+      int consecutiveMatches = 0;
+      for (size_t i = 1; i < segments.size() && i < 10; i++) {
+        // Check if this segment starts exactly where the previous ends (within small tolerance)
+        double gap = segments[i].start - segments[i-1].end;
+        if (std::abs(gap) < 0.01) { // 10ms tolerance
+          consecutiveMatches++;
+        }
+      }
+      
+      // If most segments are perfectly aligned, this is likely a contiguous timeline
+      if (consecutiveMatches >= 3) {
+        isContiguousTimeline = true;
+        debugFile << "[JUCE] CONTIGUOUS TIMELINE DETECTED - Enabling special playback mode" << std::endl;
+        
+        // For contiguous timeline, we need to reverse-engineer the original segment times
+        // The segments now contain contiguous times, but we need original audio positions
+        // This requires more sophisticated mapping - for now, we'll use a simpler approach
+      } else {
+        debugFile << "[JUCE] Standard timeline detected (consecutive matches: " << consecutiveMatches << ")" << std::endl;
       }
     }
+    
+    // Log first 10 segments with their timestamps and original positions
+    debugFile << "[JUCE] First 10 segments:" << std::endl;
+    for (size_t i = 0; i < std::min(segments.size(), size_t(10)); i++) {
+      debugFile << "  [JUCE] Segment[" << i << "]: " 
+                << std::fixed << std::setprecision(2) 
+                << segments[i].start << "-" << segments[i].end << "s";
+      if (segments[i].hasOriginal()) {
+        debugFile << " (orig: " << segments[i].originalStart << "-" << segments[i].originalEnd << "s)";
+      } else {
+        debugFile << " (no original)";
+      }
+      debugFile << std::endl;
+    }
+    debugFile.flush();
+    // For contiguous timeline, we'll handle it in the timer callback
+    // Reset the initialization flag for contiguous timeline
+    if (isContiguousTimeline) {
+      contiguousInitialized = false;
+    }
+    
     // Snap current position to start of first segment if outside any
     if (!segments.empty()) {
       const double pos = transportSource.getCurrentPosition();
@@ -255,6 +437,15 @@ public:
   void hiResTimerCallback() override {
     std::lock_guard<std::mutex> lock(mutex);
     if (!g.playing) return;
+    
+    if (isContiguousTimeline) {
+      handleContiguousTimelinePlayback();
+    } else {
+      handleStandardTimelinePlayback();
+    }
+  }
+  
+  void handleStandardTimelinePlayback() {
     double pos = transportSource.getCurrentPosition(); // original domain
     
     if (!segments.empty()) {
@@ -350,6 +541,105 @@ public:
     g.editedSec = originalToEdited(pos);
     emitPositionFromTransport();
   }
+  
+  void handleContiguousTimelinePlayback() {
+    double pos = transportSource.getCurrentPosition(); // original audio time
+    
+    if (!contiguousInitialized && segments.size() > 0 && segments[0].hasOriginal()) {
+      // On first call, jump to the first reordered segment's original position
+      transportSource.setPosition(segments[0].originalStart);
+      g.editedSec.store(segments[0].start);
+      contiguousInitialized = true;
+      
+      std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+      debugFile << "[JUCE] CONTIGUOUS: Initialized to first segment orig=" << segments[0].originalStart << std::endl;
+      debugFile.flush();
+      
+      emitPositionFromTransport();
+      return;
+    }
+    
+    // Find which segment we're currently playing (by original position)
+    int segIdx = -1;
+    for (size_t i = 0; i < segments.size(); i++) {
+      if (segments[i].hasOriginal() && 
+          pos >= segments[i].originalStart && 
+          pos < segments[i].originalEnd) {
+        segIdx = i;
+        break;
+      }
+    }
+    
+    if (segIdx >= 0) {
+      // We're in a valid segment - calculate contiguous time position
+      const auto& seg = segments[segIdx];
+      double relativePos = (pos - seg.originalStart) / (seg.originalEnd - seg.originalStart);
+      double contiguousTime = seg.start + relativePos * (seg.end - seg.start);
+      g.editedSec.store(contiguousTime);
+      
+      // Check if we're near the end of current segment
+      if (pos >= seg.originalEnd - 0.05) { // 50ms tolerance
+        if (segIdx + 1 < (int)segments.size() && segments[segIdx + 1].hasOriginal()) {
+          // Jump to next reordered segment's original position
+          double nextOriginalStart = segments[segIdx + 1].originalStart;
+          transportSource.setPosition(nextOriginalStart);
+          
+          std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+          debugFile << "[JUCE] CONTIGUOUS: Advanced to segment " << (segIdx + 1) 
+                    << " orig=" << nextOriginalStart << std::endl;
+          debugFile.flush();
+        } else {
+          // No more segments - end playback
+          endPlayback();
+          return;
+        }
+      }
+    } else {
+      // Not in any segment - find next segment or end
+      bool foundNext = false;
+      for (size_t i = 0; i < segments.size(); i++) {
+        if (segments[i].hasOriginal() && pos < segments[i].originalStart) {
+          transportSource.setPosition(segments[i].originalStart);
+          g.editedSec.store(segments[i].start);
+          foundNext = true;
+          
+          std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+          debugFile << "[JUCE] CONTIGUOUS: Jumped to segment " << i 
+                    << " orig=" << segments[i].originalStart << std::endl;
+          debugFile.flush();
+          break;
+        }
+      }
+      
+      if (!foundNext) {
+        endPlayback();
+        return;
+      }
+    }
+    
+    emitPositionFromTransport();
+  }
+  
+  void emitPositionContiguous() {
+    // For contiguous timeline, editedSec is correct, but we need to calculate originalSec
+    const double es = g.editedSec.load();
+    double os = es; // Default fallback
+    
+    // Find which contiguous segment we're in
+    for (size_t i = 0; i < segments.size(); i++) {
+      if (es >= segments[i].start && es < segments[i].end) {
+        // We're in segment i - but segments[i] contains contiguous times
+        // We need to reverse-engineer what original time this corresponds to
+        // For now, we'll use a placeholder approach
+        os = es; // This needs proper mapping - will be improved next
+        break;
+      }
+    }
+    
+    emit(std::string("{") +
+         "\"type\":\"position\",\"id\":\"" + g.id + "\",\"editedSec\":" + std::to_string(es) +
+         ",\"originalSec\":" + std::to_string(os) + "}");
+  }
 
 private:
   juce::AudioDeviceManager deviceManager;
@@ -363,6 +653,8 @@ private:
   std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
   std::mutex mutex;
   std::vector<Segment> segments;
+  bool isContiguousTimeline = false;
+  bool contiguousInitialized = false;
 
   juce::AudioSource& transportOrResampler() {
     if (useResampler) return resampler; else return transportSource;
@@ -452,8 +744,8 @@ int main() {
       continue;
     }
     if (contains("\"type\":\"updateEdl\"")) {
-      // Parse clips and build segments in 'order'
-      std::vector<std::tuple<double,double,int>> items;
+      // Parse clips and build segments in 'order' with optional originalStartSec/originalEndSec
+      std::vector<std::tuple<double,double,int,double,double>> items; // start,end,order,origStart,origEnd
       size_t pscan = 0;
       while (true) {
         size_t ps = line.find("\"startSec\"", pscan);
@@ -461,17 +753,36 @@ int main() {
         size_t cs = line.find(':', ps);
         size_t pe = line.find_first_of(",}\n", cs + 1);
         double start = 0.0; try { start = std::stod(line.substr(cs + 1, (pe == std::string::npos ? line.size() : pe) - (cs + 1))); } catch (...) {}
+        
         size_t peKey = line.find("\"endSec\"", pe == std::string::npos ? cs : pe);
         if (peKey == std::string::npos) break;
         size_t ce = line.find(':', peKey);
         size_t pe2 = line.find_first_of(",}\n", ce + 1);
         double end = start; try { end = std::stod(line.substr(ce + 1, (pe2 == std::string::npos ? line.size() : pe2) - (ce + 1))); } catch (...) {}
+        
         size_t poKey = line.find("\"order\"", pe2 == std::string::npos ? ce : pe2);
         if (poKey == std::string::npos) break;
         size_t co = line.find(':', poKey);
         size_t pe3 = line.find_first_of(",}\n", co + 1);
         int order = 0; try { order = std::stoi(line.substr(co + 1, (pe3 == std::string::npos ? line.size() : pe3) - (co + 1))); } catch (...) {}
-        items.emplace_back(start, end, order);
+        
+        // Parse optional originalStartSec and originalEndSec
+        double origStart = -1, origEnd = -1;
+        size_t posKey = line.find("\"originalStartSec\"", pe3 == std::string::npos ? co : pe3);
+        if (posKey != std::string::npos) {
+          size_t cos = line.find(':', posKey);
+          size_t pe4 = line.find_first_of(",}\n", cos + 1);
+          try { origStart = std::stod(line.substr(cos + 1, (pe4 == std::string::npos ? line.size() : pe4) - (cos + 1))); } catch (...) {}
+          
+          size_t poeKey = line.find("\"originalEndSec\"", pe4 == std::string::npos ? cos : pe4);
+          if (poeKey != std::string::npos) {
+            size_t coe = line.find(':', poeKey);
+            size_t pe5 = line.find_first_of(",}\n", coe + 1);
+            try { origEnd = std::stod(line.substr(coe + 1, (pe5 == std::string::npos ? line.size() : pe5) - (coe + 1))); } catch (...) {}
+          }
+        }
+        
+        items.emplace_back(start, end, order, origStart, origEnd);
         pscan = pe3 == std::string::npos ? line.size() : pe3;
       }
       std::sort(items.begin(), items.end(), [](const auto& a, const auto& b){ return std::get<2>(a) < std::get<2>(b); });
@@ -479,7 +790,12 @@ int main() {
       for (auto& it : items) {
         double s = std::min(std::get<0>(it), std::get<1>(it));
         double e = std::max(std::get<0>(it), std::get<1>(it));
-        if (e > s) segs.push_back({s, e, e - s});
+        double origS = std::get<3>(it);
+        double origE = std::get<4>(it);
+        if (e > s) {
+          Segment seg = {s, e, e - s, origS, origE};
+          segs.push_back(seg);
+        }
       }
       backend.updateEdl(std::move(segs));
       continue;

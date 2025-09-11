@@ -203,18 +203,28 @@ export class JuceAudioManager {
         const clips = action.payload;
         this.sequencer.updateClips(clips);
         const activeClipIds = new Set(clips.filter((c) => c.status !== 'deleted').map((c) => c.id));
-        // Recompute reorder indices based on clip.order
-        const sorted = clips
-          .map((c, i) => ({ i, order: c.order ?? i }))
-          .sort((a, b) => a.order - b.order)
-          .map(x => x.i);
+        
+        // The clips array from the UI is already in the correct order after drag-and-drop reordering.
+        // We should always use sequential indices and trust the clips array order.
+        // This fixes the issue where JUCE was ignoring reordered clips during playback.
+        const reorderIndices = clips.map((_, i) => i);
+        
+        const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+        if (AUDIO_DEBUG) {
+          console.log('[JuceAudioManager] UPDATE_CLIPS: received clips array');
+          console.log('[JuceAudioManager] FULL CLIP IDs RECEIVED (first 10):');
+          clips.slice(0, 10).forEach((c, i) => {
+            console.log(`  RECEIVED[${i}]: ${c.id} order=${c.order}`);
+          });
+          console.log('[JuceAudioManager] reorderIndices:', reorderIndices.slice(0, 10));
+        }
         return {
           ...state,
           timeline: {
             ...state.timeline,
             clips,
             activeClipIds,
-            reorderIndices: sorted,
+            reorderIndices,
             totalDuration: this.calculateTotalDuration(clips, state.timeline.deletedWordIds),
           },
         };
@@ -339,18 +349,54 @@ export class JuceAudioManager {
 
   // New: seek using original time domain
   seekToOriginalTime(originalSec: number): void {
-    // Map original -> edited manually across reordered clips
-    const clips = this.state.timeline.clips
-      .filter(c => c.status !== 'deleted')
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    let acc = 0;
-    for (const c of clips) {
-      if (originalSec >= c.startTime && originalSec <= c.endTime) {
-        const edited = acc + (originalSec - c.startTime);
-        this.seekToEditedTime(edited);
-        return;
+    const { clips, activeClipIds } = this.state.timeline;
+    const ordered = this.state.timeline.reorderIndices
+      .map((i) => clips[i])
+      .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
+
+    // Check if clips have been reordered by detecting temporal discontinuity
+    let isReordered = false;
+    for (let i = 1; i < ordered.length; i++) {
+      if (ordered[i].startTime < ordered[i-1].endTime) {
+        isReordered = true;
+        break;
       }
-      acc += c.duration;
+    }
+
+    if (isReordered) {
+      // For reordered clips, find the clip containing the original timestamp
+      // and map to its position in the contiguous timeline
+      const targetClip = ordered.find(c => originalSec >= c.startTime && originalSec <= c.endTime);
+      if (!targetClip) return;
+
+      // Calculate offset within the target clip
+      const offsetWithinClip = originalSec - targetClip.startTime;
+
+      // Find this clip's position in the contiguous timeline
+      let contiguousTime = 0;
+      for (const clip of ordered) {
+        if (clip.id === targetClip.id) {
+          // Found our clip - seek to its contiguous position + offset
+          const seekTime = contiguousTime + offsetWithinClip;
+          if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+            console.log(`[seekToOriginalTime] REORDERED: ${originalSec.toFixed(2)}s (clip ${targetClip.id.slice(-8)}) → contiguous ${seekTime.toFixed(2)}s`);
+          }
+          this.seekToEditedTime(seekTime);
+          return;
+        }
+        contiguousTime += clip.duration;
+      }
+    } else {
+      // For clips in original order, use existing logic
+      let acc = 0;
+      for (const c of ordered) {
+        if (originalSec >= c.startTime && originalSec <= c.endTime) {
+          const edited = acc + (originalSec - c.startTime);
+          this.seekToEditedTime(edited);
+          return;
+        }
+        acc += c.duration;
+      }
     }
   }
 
@@ -394,6 +440,31 @@ export class JuceAudioManager {
     };
   }
 
+  /**
+   * Calculate contiguous timestamps for reordered clips
+   * This ensures the EDL has continuous timeline without time gaps/jumps
+   */
+  private calculateContiguousTimeline(clips: Clip[]): Array<{clip: Clip, newStartTime: number, newEndTime: number}> {
+    let currentTime = 0;
+    const result = [];
+    
+    for (const clip of clips) {
+      const duration = clip.endTime - clip.startTime;
+      const newStartTime = currentTime;
+      const newEndTime = currentTime + duration;
+      
+      result.push({
+        clip,
+        newStartTime,
+        newEndTime
+      });
+      
+      currentTime = newEndTime;
+    }
+    
+    return result;
+  }
+
   private async pushEdl(): Promise<void> {
     // Build EDL from current state
     const { clips, reorderIndices, activeClipIds, deletedWordIds } = this.state.timeline;
@@ -401,23 +472,62 @@ export class JuceAudioManager {
       .map((i) => clips[i])
       .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
     const gapCount = ordered.filter((c: any) => c?.type === 'audio-only').length;
-    const edl: EdlClip[] = ordered.map((c, idx) => ({
-      id: c.id,
-      startSec: c.startTime,
-      endSec: c.endTime,
-      order: idx,
-      deleted: c.words
-        .map((_, i) => (deletedWordIds.has(generateWordId(c.id, i)) ? i : -1))
-        .filter((i) => i >= 0),
-    }));
+    
+    // Check if clips have been reordered by detecting temporal discontinuity
+    // If clips are in original order, their timestamps should be ascending
+    let isReordered = false;
+    for (let i = 1; i < ordered.length; i++) {
+      if (ordered[i].startTime < ordered[i-1].endTime) {
+        isReordered = true;
+        break;
+      }
+    }
+    
+    let edl: EdlClip[];
+    
+    if (isReordered) {
+      // For reordered clips, calculate contiguous timeline
+      const contiguousTimeline = this.calculateContiguousTimeline(ordered);
+      edl = contiguousTimeline.map(({clip, newStartTime, newEndTime}, idx) => ({
+        id: clip.id,
+        startSec: newStartTime,
+        endSec: newEndTime,
+        originalStartSec: clip.startTime, // Include original timestamps for JUCE mapping
+        originalEndSec: clip.endTime,     // Include original timestamps for JUCE mapping  
+        order: idx,
+        deleted: clip.words
+          .map((_, i) => (deletedWordIds.has(generateWordId(clip.id, i)) ? i : -1))
+          .filter((i) => i >= 0),
+      }));
+      
+      if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+        console.log('[EDL] REORDERED CLIPS DETECTED - Using contiguous timeline');
+        contiguousTimeline.slice(0, 5).forEach(({clip, newStartTime, newEndTime}, i) => {
+          console.log(`  Clip[${i}]: ${clip.id.slice(-8)} ${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}s → ${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}s`);
+        });
+      }
+    } else {
+      // For clips in original order, use original timestamps
+      edl = ordered.map((c, idx) => ({
+        id: c.id,
+        startSec: c.startTime,
+        endSec: c.endTime,
+        order: idx,
+        deleted: c.words
+          .map((_, i) => (deletedWordIds.has(generateWordId(c.id, i)) ? i : -1))
+          .filter((i) => i >= 0),
+      }));
+    }
     if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
       console.log(`[EDL] Pushing segments: total=${edl.length}, gaps=${gapCount}`);
-      console.log('[EDL] Segment details:', edl.map(c => ({
-        id: c.id,
-        type: ordered.find(clip => clip.id === c.id)?.type || 'unknown',
-        range: `${c.startSec.toFixed(2)}-${c.endSec.toFixed(2)}s`,
-        duration: (c.endSec - c.startSec).toFixed(2) + 's'
-      })));
+      console.log('[EDL] reorderIndices:', reorderIndices);
+      console.log('[EDL] clips.length:', clips.length);
+      console.log('[EDL] ordered clips:', ordered.map(c => `${c.id.slice(0,8)}(order:${c.order})`));
+      console.log('[EDL] FULL CLIP IDs IN ORDER (first 10):', ordered.slice(0,10).map((c, i) => `[${i}]${c.id}`));
+      console.log('[EDL] EDL being sent to JUCE (first 10):');
+      edl.slice(0, 10).forEach((segment, i) => {
+        console.log(`  EDL[${i}]: ${segment.id} ${segment.startSec.toFixed(2)}-${segment.endSec.toFixed(2)}s order=${segment.order}`);
+      });
     }
     const res = await this.transport!.updateEdl(this.sessionId, edl);
     if (!res.success) throw new Error(res.error || 'updateEdl failed');

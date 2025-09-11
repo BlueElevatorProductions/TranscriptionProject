@@ -68,6 +68,7 @@ export class ClipContainerNode extends ElementNode {
     el.setAttribute('data-clip-id', this.__clipId);
     el.setAttribute('data-speaker-id', this.__speakerId);
     el.setAttribute('data-status', this.__status);
+    el.setAttribute('data-lexical-node-key', this.getKey());
     if (this.__status === 'deleted') {
       el.classList.add('is-deleted');
     }
@@ -89,6 +90,8 @@ export class ClipContainerNode extends ElementNode {
         el.classList.remove('is-deleted');
       }
     }
+    // Always update the node key as it may change during updates
+    el.setAttribute('data-lexical-node-key', this.getKey());
     return false;
   }
 

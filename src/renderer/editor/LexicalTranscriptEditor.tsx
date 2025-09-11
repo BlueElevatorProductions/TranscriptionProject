@@ -93,6 +93,7 @@ function LexicalTranscriptEditorContent({
   const [editor] = useLexicalComposerContext();
   const initializedRef = useRef(false);
   const suppressOnChangeRef = useRef(false);
+  const dragModeRef = useRef(false);
   const lastClipsHashRef = useRef<string | null>(null);
 
   // Initialize editor with segments data
@@ -119,23 +120,70 @@ function LexicalTranscriptEditorContent({
     }
   }, [editor, clips, segments, getSpeakerDisplayName, getSpeakerColor]);
 
+  // Listen for drag-drop events to suppress onChange during drag operations
+  useEffect(() => {
+    const handleDragStart = () => {
+      dragModeRef.current = true;
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Entering drag mode - suppressing onClipsChange');
+    };
+
+    const handleDragEnd = () => {
+      // Exit drag mode and force a visual refresh after ProjectContext updates
+      setTimeout(() => {
+        dragModeRef.current = false;
+        const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+        if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Exiting drag mode - clearing hash to trigger rebuild on next clips update');
+        
+        // Clear hash to force rebuild on next clips update from ProjectContext
+        lastClipsHashRef.current = null;
+        
+        // The forced rebuild will happen automatically when the ProjectContext 
+        // updates and the clips prop changes, triggering the useEffect with the new hash
+      }, 200); // Longer timeout to ensure ProjectContext has been updated
+    };
+
+    window.addEventListener('clip-drag-start', handleDragStart);
+    window.addEventListener('clip-drag-end', handleDragEnd);
+    return () => {
+      window.removeEventListener('clip-drag-start', handleDragStart);
+      window.removeEventListener('clip-drag-end', handleDragEnd);
+    };
+  }, []);
+
   // Handle editor state changes
   const handleEditorChange = useCallback((editorState: EditorState, editor: LexicalEditor) => {
     if (suppressOnChangeRef.current) {
       // Ignore synthetic changes caused by external rebuilds
       return;
     }
+    if (dragModeRef.current) {
+      // Suppress onClipsChange during drag-drop operations to prevent order resets
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Suppressing onClipsChange due to drag mode');
+      return;
+    }
+    if (isPlaying) {
+      // Suppress onClipsChange during audio playback to prevent order resets
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Suppressing onClipsChange due to playback');
+      return;
+    }
     if (clips && clips.length > 0 && onClipsChange) {
-      const updatedClips = editorStateToClips(editor);
+      const updatedClips = editorStateToClips(editor, clips);
       // Preserve audio-only clips that were filtered out from rendering
       const audioOnlyClips = clips.filter(c => c.type === 'audio-only');
       const allClips = [...updatedClips, ...audioOnlyClips].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
-      if (UI_DEBUG) console.log('[LexicalTranscriptEditor] onClipsChange fired:', { 
-        editorClips: updatedClips.length, 
-        audioOnlyClips: audioOnlyClips.length,
-        total: allClips.length 
-      });
+      if (UI_DEBUG) {
+        console.log('[LexicalTranscriptEditor] onClipsChange fired:', { 
+          editorClips: updatedClips.length, 
+          audioOnlyClips: audioOnlyClips.length,
+          total: allClips.length,
+          firstFewClipOrders: allClips.slice(0, 10).map(c => `${c.id.slice(-6)}:${c.order}`)
+        });
+        console.trace('[LexicalTranscriptEditor] onClipsChange call stack');
+      }
       onClipsChange(allClips);
     } else {
       const updatedSegments = editorStateToSegments(editor);
@@ -151,15 +199,32 @@ function LexicalTranscriptEditorContent({
   // Rebuild editor when external clips change (e.g., programmatic split/reorder)
   useEffect(() => {
     if (!clips || clips.length === 0) return;
+    
+    // Skip rebuilds during drag mode to avoid interfering with drag operation
+    if (dragModeRef.current) {
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Skipping rebuild during drag mode');
+      return;
+    }
+    
     // Compute a lightweight hash of clips order and lengths to detect external updates
     const hash = clips.map((c: any) => `${c.id}:${c.order}:${c.words?.length ?? 0}`).join('|');
+    const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+    if (UI_DEBUG) console.log('[LexicalTranscriptEditor] External clips hash check:', {
+      currentHash: hash.substring(0, 100) + '...',
+      lastHash: (lastClipsHashRef.current || '').substring(0, 100) + '...',
+      hashMatch: hash === lastClipsHashRef.current,
+      dragMode: dragModeRef.current,
+      firstFewOrders: clips.slice(0, 10).map(c => `${c.id.slice(-6)}:${c.order}`)
+    });
     if (hash === lastClipsHashRef.current) return;
     lastClipsHashRef.current = hash;
     suppressOnChangeRef.current = true;
+    if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Rebuilding editor due to external clip changes');
     clipsToEditorState(editor, clips, {
       includeSpeakerLabels: true,
-      getSpeakerDisplayName: () => '',
-      getSpeakerColor: undefined,
+      getSpeakerDisplayName,
+      getSpeakerColor,
     });
     // Allow onChange again on next tick
     setTimeout(() => { suppressOnChangeRef.current = false; }, 0);

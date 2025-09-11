@@ -5,10 +5,13 @@ export type TransportId = string;
 // Edited timeline clip description sent to JUCE
 export interface EdlClip {
   id: string;
-  startSec: number; // in original audio seconds
-  endSec: number;   // in original audio seconds
+  startSec: number; // in edited timeline seconds (may be contiguous for reordered clips)
+  endSec: number;   // in edited timeline seconds (may be contiguous for reordered clips)
   order: number;    // ordering within the edited timeline
   deleted?: number[]; // optional word indexes deleted in this clip
+  // For reordered clips with contiguous timeline, include original audio positions
+  originalStartSec?: number; // original audio file position
+  originalEndSec?: number;   // original audio file position
 }
 
 // Commands sent to the JUCE backend (JSON lines over stdio)

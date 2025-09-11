@@ -149,11 +149,26 @@ export function clipsToEditorState(
     const root = $getRoot();
     root.clear();
 
-    clips
+    const UI_DEBUG = (globalThis as any).process?.env?.VITE_AUDIO_DEBUG === 'true' || 
+                     (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+                     
+    const filteredClips = clips
       .slice()
-      .filter(clip => clip.type !== 'audio-only') // Skip audio-only gaps in UI rendering
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .forEach((clip, index) => {
+      .filter(clip => clip.type !== 'audio-only'); // Skip audio-only gaps in UI rendering
+      
+    if (UI_DEBUG) {
+      console.log('[clipsToEditorState] Input clips orders:', filteredClips.map(c => `${c.id.slice(-6)}:${c.order}`));
+    }
+    
+    // Don't re-sort by order property - respect the array position as the intended order
+    // The clips array is already in the correct order after drag-and-drop operations
+    const sortedClips = filteredClips;
+    
+    if (UI_DEBUG) {
+      console.log('[clipsToEditorState] Sorted clips orders:', sortedClips.map(c => `${c.id.slice(-6)}:${c.order}`));
+    }
+    
+    sortedClips.forEach((clip, index) => {
         const container = $createClipContainerNode(clip.id, clip.speaker, (clip as any).status ?? 'active');
 
         // Paragraph wrapper inside each clip container to ensure valid text structure
@@ -185,12 +200,21 @@ export function clipsToEditorState(
 /**
  * Convert editor ClipContainerNodes back to Clip[]
  */
-export function editorStateToClips(editor: LexicalEditor): Clip[] {
+export function editorStateToClips(editor: LexicalEditor, preserveOrderFromClips?: Clip[]): Clip[] {
   const result: Clip[] = [];
+  
+  // Create order lookup from existing clips to preserve drag-drop ordering
+  const orderLookup = new Map<string, number>();
+  if (preserveOrderFromClips) {
+    preserveOrderFromClips.forEach(clip => {
+      orderLookup.set(clip.id, clip.order ?? 0);
+    });
+  }
+  
   editor.getEditorState().read(() => {
     const root = $getRoot();
     const children = root.getChildren();
-    let order = 0;
+    let fallbackOrder = 0;
     children.forEach((child) => {
       if (child instanceof ClipContainerNode) {
         const clipId = (child as ClipContainerNode).getClipId();
@@ -214,6 +238,10 @@ export function editorStateToClips(editor: LexicalEditor): Clip[] {
         const text = words.map((w) => w.word).join(' ');
         const startTime = words.length ? words[0].start : 0;
         const endTime = words.length ? words[words.length - 1].end : startTime;
+        
+        // Preserve existing order if available, otherwise fall back to sequential
+        const preservedOrder = orderLookup.has(clipId) ? orderLookup.get(clipId)! : fallbackOrder++;
+        
         result.push({
           id: clipId,
           speaker: speakerId,
@@ -226,7 +254,7 @@ export function editorStateToClips(editor: LexicalEditor): Clip[] {
           confidence: 1.0,
           type: 'transcribed' as const,
           duration: endTime - startTime,
-          order: order++,
+          order: preservedOrder,
           createdAt: Date.now(),
           modifiedAt: Date.now(),
           status: status,

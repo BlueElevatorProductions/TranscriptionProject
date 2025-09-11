@@ -146,6 +146,7 @@ function projectReducer(state: ProjectState, action: ProjectAction): ProjectStat
     case 'UPDATE_CLIPS': {
       const newClips = action.payload;
       console.log('ProjectContext - Updating clips:', newClips.length, 'clips');
+      console.log('ProjectContext - First few clip orders:', newClips.slice(0, 10).map(c => `${c.id.slice(-6)}:${c.order}`));
 
       let updatedProjectData = state.projectData;
       if (updatedProjectData) {

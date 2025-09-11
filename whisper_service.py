@@ -17,16 +17,16 @@ def print_progress(percentage):
     print(f"PROGRESS:{percentage}", file=sys.stderr, flush=True)
 
 def check_whisper_installation():
-    """Check if whisper or whisperx is available"""
+    """Check if whisperx or whisper is available (prefer whisperx for word timings)."""
     try:
-        import whisper
-        return 'whisper'
+        import whisperx  # type: ignore
+        return 'whisperx'
     except ImportError:
         pass
-    
+
     try:
-        import whisperx
-        return 'whisperx'
+        import whisper  # type: ignore
+        return 'whisper'
     except ImportError:
         pass
     
@@ -57,7 +57,12 @@ def transcribe_with_whisper_lib(audio_path, model_size='base', language=None):
     options = {}
     if language:
         options['language'] = language
-    
+    # Request word-level timestamps if supported by the library
+    try:
+        options['word_timestamps'] = True  # available in newer whisper versions
+    except Exception:
+        pass
+
     result = model.transcribe(audio_path, **options)
     print_progress(90)
     

@@ -351,7 +351,7 @@ export class ClipNode extends DecoratorNode<React.JSX.Element> {
       startTime: this.__startTime,
       endTime: this.__endTime,
       speakerId: this.__speakerId,
-      type: this.__type,
+      clipType: this.__type,
       type: 'clip',
       version: 1,
     };

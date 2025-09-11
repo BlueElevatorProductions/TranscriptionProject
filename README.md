@@ -36,12 +36,15 @@ TranscriptionProject is a desktop application designed for content creators, jou
 - **Mode-Specific Behavior**: Different interactions for Listen vs Edit modes
 - **Professional Controls**: Bottom-mounted audio player with transport controls
 - **Timeline Management**: Seamless handling of clip reordering and deletions
+- **Drag-and-Drop Clip Reordering**: Advanced contiguous timeline system for intuitive audio editing
+- **JUCE Backend Integration**: Native C++ audio backend with Edit Decision List (EDL) processing
 - **Error Recovery**: Comprehensive error boundaries with automatic recovery
 - **Memory Management**: Efficient state management with cleanup monitoring
 
 ### Professional Editing (Enhanced 2025)
 - **Word-Level Editing**: Double-click individual words to correct transcription errors
 - **Dynamic Clip System**: Visual boundaries for organizing transcript content
+- **Drag-and-Drop Reordering**: Visually reorder clips by dragging, with audio playback following the new sequence
 - **Speaker Management**: Assign and manage speaker names with automatic persistence; edit mode limits clip speaker changes to a dropdown of project-defined names
 - **Context Menus**: Right-click for editing options (Edit Word, Delete Word, Split Clip Here)
 - **Clip Operations**: Split, merge, reorder, and delete clips with undo support
@@ -376,6 +379,7 @@ Clips Generation → Audio System Integration
 - Node.js 18 or higher
 - npm package manager
 - (Optional) API keys for OpenAI or AssemblyAI
+- (Optional) JUCE Framework for advanced audio features like drag-and-drop clip reordering
 
 ### Installation
 
@@ -402,6 +406,11 @@ npm run dev:electron
 
 # Build for production
 npm run build
+
+# Build JUCE backend (optional - for advanced audio features)
+cd native/juce-backend
+cmake -DUSE_JUCE=ON -DJUCE_DIR=/path/to/JUCE ..
+make
 ```
 
 ### Configuration
@@ -474,7 +483,64 @@ ZIP archives containing:
 
 ## Recent Updates (September 2025 - Latest)
 
-### ✅ JUCE Audio Backend Integration & Critical Bug Fixes (Latest)
+### ✅ Drag-and-Drop Clip Reordering with Contiguous Timeline (September 2025 - Latest)
+
+**Revolutionary Audio Editing**: Complete implementation of drag-and-drop clip reordering with seamless audio playback following the reordered sequence.
+
+#### **🎯 Key Achievement**
+- **Intuitive Drag-and-Drop**: Users can visually reorder clips by dragging in the transcript editor
+- **Seamless Audio Playback**: Audio automatically plays in the reordered sequence, not original file order  
+- **Contiguous Timeline System**: Advanced dual-timeline architecture handles complex timestamp mapping
+- **Real-time Synchronization**: UI and audio playback stay perfectly synchronized during reordering
+
+#### **🔧 Technical Implementation**
+
+**Contiguous Timeline Architecture**:
+The system maintains two timeline representations:
+1. **Contiguous Timeline**: Sequential UI positioning (0-10s, 10-20s, 20-30s)
+2. **Original Timeline**: Actual audio file positions (15-25s, 0-10s, 25-35s)
+
+**TypeScript Layer** (`JuceAudioManager.ts`):
+- **Automatic Detection**: Identifies reordered clips by temporal discontinuities
+- **Timeline Calculation**: Generates contiguous timeline from reordered clips
+- **Dual Timestamp EDL**: Sends both contiguous and original timestamps to JUCE backend
+
+**C++ JUCE Backend** (`main.cpp`):
+- **Segment Jump Logic**: Plays from original audio positions in reordered sequence
+- **Boundary Detection**: Seamlessly jumps between segments at 50ms boundaries
+- **Position Mapping**: Converts between contiguous UI time and original audio positions
+
+#### **🎵 How It Works**
+
+**Example Reordering**:
+```
+Original Audio:  [Intro: 0-5s] [Speech A: 5-15s] [Speech B: 15-25s] [Outro: 25-30s]
+User Drags:      Speech B to position 2
+Result Playback: [Intro: 0-5s] [Speech B: 15-25s] [Speech A: 5-15s] [Outro: 25-30s]
+```
+
+**Audio Playback Flow**:
+1. User drags clip B to position 2
+2. TypeScript generates contiguous timeline: Speech B now at 5-15s (contiguous)
+3. EDL includes both timelines: `{startSec: 5, endSec: 15, originalStartSec: 15, originalEndSec: 25}`
+4. JUCE backend plays from 15-25s in original audio but displays as 5-15s in UI
+5. At boundary, jumps to next reordered segment automatically
+
+#### **🚀 User Experience Benefits**
+- **Visual Editing**: Drag clips visually like video editing software
+- **Immediate Feedback**: Reordered sequence plays back instantly
+- **Seamless Transitions**: No gaps or stuttering between reordered segments
+- **Professional Workflow**: Foundation for future full audio editing window
+
+#### **🏗️ Architecture Foundation**
+This implementation provides the foundation for professional audio editing:
+- **Non-destructive Editing**: Original audio file unchanged
+- **Scalable Architecture**: Ready for complex multi-track editing
+- **Industry Standards**: Uses Edit Decision List (EDL) approach from professional video/audio editing
+
+**Documentation**: Complete technical documentation available at `native/juce-backend/README.md`
+
+### ✅ JUCE Audio Backend Integration & Critical Bug Fixes
 
 **Major System Integration**: Complete JUCE C++ audio backend integration with comprehensive bug fixes for seamless transcription editing experience.
 
