@@ -52,6 +52,7 @@ TranscriptionProject is a desktop application designed for content creators, jou
   - onClipsChange is suppressed in Listen Mode (readOnly), so structural changes are never sent back to JUCE when clicking words.
   - Clip sync to JUCE is de‑duplicated (id/order/type/speaker/start/end/words length), preventing redundant UPDATE_CLIPS during playback.
   - Word/spacer clicks use a -10ms seek bias to avoid boundary “ended” blips.
+  - Reordered playback correctness: when a later clip is moved to the top, clicks in the new first clip always start that clip — UI clamps seeks to the clicked clip’s start and the audio layer snaps within a small EPS at boundaries. If the JUCE backend reports only edited-time in `position` events, a fallback enables original-time seeks during reorders to keep playback and highlighting aligned.
 
 - Spacer pills (UI-only) for audio-only gaps
   - New `SpacerNode` renders silent/music gaps as inline pills, keeping the UI aligned with the EDL without separate “gap clip” containers.
