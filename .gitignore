@@ -105,3 +105,10 @@ __pycache__/
 # Temporary development files
 tmp_notes/
 *.backup
+
+# Test artifacts (Playwright)
+playwright-report/
+test-results/
+.playwright-cache/
+trace.zip
+*.playwright-report.zip
