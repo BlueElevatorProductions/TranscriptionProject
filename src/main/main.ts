@@ -282,6 +282,9 @@ class App {
   private setupJuceTransport(): void {
     try {
       this.juceClient = new JuceClient();
+      const edlRevisionById = new Map<string, number>();
+      const getRev = (id: string) => edlRevisionById.get(id) ?? 0;
+      const bumpRev = (id: string) => { const r = getRev(id) + 1; edlRevisionById.set(id, r); return r; };
       // Forward JUCE events to renderer(s)
       const forward = (evt: JuceEvent) => {
         try {
@@ -298,7 +301,11 @@ class App {
       this.juceClient.setEventHandlers({
         onLoaded: forward,
         onState: forward,
-        onPosition: forward,
+        onPosition: (e) => {
+          // Enrich position with current revision for the id
+          const rev = getRev(e.id);
+          forward({ ...e, revision: rev } as any);
+        },
         onEnded: forward,
         onError: forward,
       });
@@ -309,7 +316,13 @@ class App {
         catch (e) { return { success: false, error: String(e) }; }
       });
       ipcMain.handle('juce:updateEdl', async (_e, id: string, clips: EdlClip[]) => {
-        try { await this.juceClient!.updateEdl(id, clips); return { success: true }; }
+        try {
+          await this.juceClient!.updateEdl(id, clips);
+          // Bump revision and emit edlApplied ack
+          const rev = bumpRev(id);
+          forward({ type: 'edlApplied', id, revision: rev } as any);
+          return { success: true, revision: rev };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
       ipcMain.handle('juce:play', async (_e, id: string) => {

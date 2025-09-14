@@ -39,6 +39,7 @@ export class JuceAudioManager {
   // If JUCE does not emit dual-timeline positions during reorders, prefer seeking in original time
   private preferOriginalSeek: boolean = false;
   private lastCorrectiveSeekAt: number = 0;
+  private lastAppliedRevision: number = 0;
 
   constructor(callbacks: AudioManagerCallbacks) {
     this.state = createInitialState();
@@ -343,8 +344,26 @@ export class JuceAudioManager {
       case 'state':
         this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { isPlaying: evt.playing } });
         break;
+      case 'edlApplied': {
+        const rev = (evt as any).revision;
+        if (typeof rev === 'number') {
+          this.lastAppliedRevision = rev;
+          if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+            console.log('[JuceAudio] EDL applied revision:', rev);
+          }
+        }
+        break;
+      }
         
       case 'position': {
+        // Drop stale position events from older EDL revisions
+        const rev = (evt as any).revision;
+        if (typeof rev === 'number' && rev < this.lastAppliedRevision) {
+          if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+            console.log('[JuceAudio] Dropping stale position from rev', rev, 'current', this.lastAppliedRevision);
+          }
+          break;
+        }
         const editedTime = evt.editedSec;
         const originalSecFromEvt = evt.originalSec;
         // Map edited -> original locally to guard against backends that don't emit original time

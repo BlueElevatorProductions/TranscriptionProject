@@ -30,7 +30,8 @@ export type JuceCommand =
 export type JuceEvent =
   | { type: 'loaded'; id: TransportId; durationSec: number; sampleRate: number; channels: number }
   | { type: 'state'; id: TransportId; playing: boolean }
-  | { type: 'position'; id: TransportId; editedSec: number; originalSec: number }
+  | { type: 'position'; id: TransportId; editedSec: number; originalSec: number; revision?: number }
+  | { type: 'edlApplied'; id: TransportId; revision: number }
   | { type: 'ended'; id: TransportId }
   | { type: 'error'; id?: TransportId; code?: string | number; message: string };
 
@@ -77,6 +78,8 @@ export function isJuceEvent(obj: any): obj is JuceEvent {
         typeof obj.editedSec === 'number' &&
         typeof obj.originalSec === 'number'
       );
+    case 'edlApplied':
+      return typeof obj.id === 'string' && typeof obj.revision === 'number';
     case 'ended':
       return typeof obj.id === 'string';
     case 'error':
@@ -114,4 +117,3 @@ export function isJuceCommand(obj: any): obj is JuceCommand {
       return false;
   }
 }
-
