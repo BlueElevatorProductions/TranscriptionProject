@@ -194,6 +194,10 @@ The import dialog has been simplified for stability during the beta phase:
   - `NotificationContext`: Toast notifications and error handling
 - **Unified Audio State**: Single source of truth for all audio operations
 
+## Developer Docs
+
+- Editing + Audio Integration Cheat Sheet: `docs/Editing-Text-Audio-Integration.md`
+
 ## Architecture
 
 ```
