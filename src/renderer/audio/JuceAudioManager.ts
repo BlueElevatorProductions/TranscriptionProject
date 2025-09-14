@@ -36,6 +36,9 @@ export class JuceAudioManager {
   private eventHandler?: (evt: JuceEvent) => void;
   private sessionId: string = 'default';
   private audioPath: string | null = null;
+  // If JUCE does not emit dual-timeline positions during reorders, prefer seeking in original time
+  private preferOriginalSeek: boolean = false;
+  private lastCorrectiveSeekAt: number = 0;
 
   constructor(callbacks: AudioManagerCallbacks) {
     this.state = createInitialState();
@@ -86,6 +89,8 @@ export class JuceAudioManager {
       throw error;
     }
     await this.pushEdl();
+    // Reset fallback detection on fresh init
+    this.preferOriginalSeek = false;
     // Ask for initial state
     await this.transport!.queryState(this.sessionId);
   }
@@ -110,8 +115,14 @@ export class JuceAudioManager {
 
   seekToEditedTime(editedTime: number): void {
     if (!this.state.playback.isReady) return;
-    editedTime = Math.max(0, Math.min(editedTime, this.state.playback.duration));
-    this.transport!.seek(this.sessionId, editedTime).then((res) => {
+    const clamped = Math.max(0, Math.min(editedTime, this.state.playback.duration));
+    // If backend lacks dual-timeline support during reorders, send original time instead
+    let timeToSend = clamped;
+    if (this.preferOriginalSeek) {
+      const mapped = this.sequencer.editedTimeToOriginalTime(clamped);
+      if (mapped) timeToSend = mapped.originalTime;
+    }
+    this.transport!.seek(this.sessionId, timeToSend).then((res) => {
       if (!res.success) this.callbacks.onError(res.error || 'seek failed');
     });
   }
@@ -335,7 +346,10 @@ export class JuceAudioManager {
         
       case 'position': {
         const editedTime = evt.editedSec;
-        const originalSec = evt.originalSec;
+        const originalSecFromEvt = evt.originalSec;
+        // Map edited -> original locally to guard against backends that don't emit original time
+        const mapped = this.sequencer.editedTimeToOriginalTime(editedTime);
+        const originalSec = mapped?.originalTime ?? originalSecFromEvt;
         
         if (AUDIO_DEBUG) {
           (this as any)._lastTimeLog = (this as any)._lastTimeLog || 0;
@@ -370,6 +384,33 @@ export class JuceAudioManager {
         } else if (AUDIO_DEBUG) {
           console.log('[JUCE DEBUG] No position found for originalTime:', originalSec);
         }
+
+        // Detect whether backend supports dual timeline mapping during reorders.
+        // If reordered and evt.originalSec ~= evt.editedSec but our local map differs, prefer original seeks.
+        try {
+          const { clips, activeClipIds } = this.state.timeline;
+          const ordered = this.state.timeline.reorderIndices
+            .map((i) => clips[i])
+            .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
+          let isReordered = false;
+          for (let i = 1; i < ordered.length; i++) {
+            if (ordered[i].startTime < ordered[i - 1].endTime) { isReordered = true; break; }
+          }
+          if (isReordered && mapped) {
+            const backendEqual = Math.abs(originalSecFromEvt - editedTime) < 0.001;
+            const localDiffers = Math.abs(mapped.originalTime - editedTime) > 0.01; // clearly different mapping
+            if (backendEqual && localDiffers && !this.preferOriginalSeek) {
+              if (AUDIO_DEBUG) console.warn('[JuceAudio] Enabling preferOriginalSeek fallback (backend emits no original mapping).');
+              this.preferOriginalSeek = true;
+              // Correct the current playback position to the intended original time
+              const nowMs = Date.now();
+              if (nowMs - this.lastCorrectiveSeekAt > 300) {
+                this.lastCorrectiveSeekAt = nowMs;
+                try { this.seekToEditedTime(editedTime); } catch {}
+              }
+            }
+          }
+        } catch {}
         break;
       }
       case 'ended':
