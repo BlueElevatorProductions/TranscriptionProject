@@ -125,19 +125,17 @@ export class JuceAudioManager {
     }
     const wasPlaying = this.state.playback.isPlaying;
     try {
-      if (wasPlaying) {
-        const pr = await this.transport!.pause(this.sessionId);
-        if (!pr.success) this.callbacks.onError(pr.error || 'pause failed before seek');
-      }
+      // Always pause before seek to ensure backend applies jump
+      const pr = await this.transport!.pause(this.sessionId);
+      if (!pr.success) this.callbacks.onError(pr.error || 'pause failed before seek');
       const sr = await this.transport!.seek(this.sessionId, clamped);
       if (!sr.success) {
         this.callbacks.onError(sr.error || 'seek failed');
         return;
       }
-      if (wasPlaying) {
-        const pl = await this.transport!.play(this.sessionId);
-        if (!pl.success) this.callbacks.onError(pl.error || 'resume failed after seek');
-      }
+      // Always resume playback on word click seek for Listen mode UX
+      const pl = await this.transport!.play(this.sessionId);
+      if (!pl.success) this.callbacks.onError(pl.error || 'resume failed after seek');
     } catch (e) {
       this.callbacks.onError(String(e));
     }
