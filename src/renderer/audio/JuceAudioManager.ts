@@ -116,22 +116,31 @@ export class JuceAudioManager {
     else await this.play();
   }
 
-  seekToEditedTime(editedTime: number): void {
+  async seekToEditedTime(editedTime: number): Promise<void> {
     if (!this.state.playback.isReady) return;
     const clamped = Math.max(0, Math.min(editedTime, this.state.playback.duration));
-    // If backend lacks dual-timeline support during reorders, send original time instead
-    let timeToSend = clamped;
-    if (this.preferOriginalSeek) {
-      const mapped = this.sequencer.editedTimeToOriginalTime(clamped);
-      if (mapped) timeToSend = mapped.originalTime;
-    }
     if (this.edlApplying) {
       this.pendingSeekEdited = clamped;
       return;
     }
-    this.transport!.seek(this.sessionId, timeToSend).then((res) => {
-      if (!res.success) this.callbacks.onError(res.error || 'seek failed');
-    });
+    const wasPlaying = this.state.playback.isPlaying;
+    try {
+      if (wasPlaying) {
+        const pr = await this.transport!.pause(this.sessionId);
+        if (!pr.success) this.callbacks.onError(pr.error || 'pause failed before seek');
+      }
+      const sr = await this.transport!.seek(this.sessionId, clamped);
+      if (!sr.success) {
+        this.callbacks.onError(sr.error || 'seek failed');
+        return;
+      }
+      if (wasPlaying) {
+        const pl = await this.transport!.play(this.sessionId);
+        if (!pl.success) this.callbacks.onError(pl.error || 'resume failed after seek');
+      }
+    } catch (e) {
+      this.callbacks.onError(String(e));
+    }
   }
 
   seekToWord(clipId: string, wordIndex: number): void {
