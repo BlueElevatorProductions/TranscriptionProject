@@ -42,7 +42,6 @@ export class JuceAudioManager {
   private edlApplying: boolean = false;
   private pendingSeekEdited: number | null = null;
   private lastAppliedRevision: number = 0;
-  private lastAppliedRevision: number = 0;
 
   constructor(callbacks: AudioManagerCallbacks) {
     this.state = createInitialState();
