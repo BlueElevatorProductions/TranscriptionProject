@@ -388,29 +388,33 @@ export class JuceAudioManager {
     // Check if clips have been reordered by detecting temporal discontinuity
     let isReordered = false;
     for (let i = 1; i < ordered.length; i++) {
-      if (ordered[i].startTime < ordered[i-1].endTime) {
+      if (ordered[i].startTime < ordered[i - 1].endTime) {
         isReordered = true;
         break;
       }
     }
 
+    const EPS = 0.02; // tolerate small pre-roll biases near boundaries
+
     if (isReordered) {
-      // For reordered clips, find the clip containing the original timestamp
-      // and map to its position in the contiguous timeline
-      const targetClip = ordered.find(c => originalSec >= c.startTime && originalSec <= c.endTime);
+      // Prefer speech clips for mapping; avoid snapping into gaps or previous clip due to tiny bias
+      const speech = ordered.filter(c => (c as any).type !== 'audio-only');
+      let targetClip = speech.find(c => originalSec >= c.startTime && originalSec <= c.endTime);
+      if (!targetClip) {
+        // If we're within EPS before a clip start, snap into that clip
+        targetClip = speech.find(c => originalSec >= c.startTime - EPS && originalSec < c.startTime + EPS);
+      }
       if (!targetClip) return;
 
-      // Calculate offset within the target clip
-      const offsetWithinClip = originalSec - targetClip.startTime;
+      const offsetWithinClip = Math.max(0, originalSec - targetClip.startTime);
 
-      // Find this clip's position in the contiguous timeline
+      // Find this clip's position in the contiguous edited timeline
       let contiguousTime = 0;
       for (const clip of ordered) {
         if (clip.id === targetClip.id) {
-          // Found our clip - seek to its contiguous position + offset
           const seekTime = contiguousTime + offsetWithinClip;
           if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
-            console.log(`[seekToOriginalTime] REORDERED: ${originalSec.toFixed(2)}s (clip ${targetClip.id.slice(-8)}) → contiguous ${seekTime.toFixed(2)}s`);
+            console.log(`[seekToOriginalTime] REORDERED: ${originalSec.toFixed(3)}s (clip ${targetClip.id.slice(-8)}) → contiguous ${seekTime.toFixed(3)}s`);
           }
           this.seekToEditedTime(seekTime);
           return;
@@ -418,11 +422,13 @@ export class JuceAudioManager {
         contiguousTime += clip.duration;
       }
     } else {
-      // For clips in original order, use existing logic
+      // Original order: linear map with EPS snapping forward at boundaries
       let acc = 0;
       for (const c of ordered) {
-        if (originalSec >= c.startTime && originalSec <= c.endTime) {
-          const edited = acc + (originalSec - c.startTime);
+        const within = originalSec >= c.startTime && originalSec <= c.endTime;
+        const nearStart = originalSec >= c.startTime - EPS && originalSec < c.startTime + EPS;
+        if (within || nearStart) {
+          const edited = acc + Math.max(0, originalSec - c.startTime);
           this.seekToEditedTime(edited);
           return;
         }

@@ -370,7 +370,13 @@ useEffect(() => {
             if (audioState.isInitialized) audioActions.updateClips(updatedClips);
           }}
           onWordClick={(ts) => {
-            const bias = Math.max(0, (ts || 0) - 0.01);
+            const t = typeof ts === 'number' ? ts : 0;
+            // Clamp seek to the clicked clip's start to avoid crossing into the previous
+            // original clip when the first edited clip was reordered to the top.
+            const speechClips = clips.filter(c => c.type !== 'audio-only');
+            const containing = speechClips.find(c => t >= c.startTime && t <= c.endTime);
+            const clipStart = containing ? containing.startTime : 0;
+            const bias = Math.max(clipStart + 0.0005, t - 0.01);
             audioActions.seekToOriginalTime(bias);
             if (mode === 'listen' && !audioState.isPlaying) {
               audioActions.play().catch(() => {});
