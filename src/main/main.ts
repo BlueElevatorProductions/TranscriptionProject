@@ -283,6 +283,7 @@ class App {
     try {
       this.juceClient = new JuceClient();
       const edlRevisionById = new Map<string, number>();
+      const pendingAppliedById = new Map<string, number>();
       const getRev = (id: string) => edlRevisionById.get(id) ?? 0;
       const bumpRev = (id: string) => { const r = getRev(id) + 1; edlRevisionById.set(id, r); return r; };
       // Forward JUCE events to renderer(s)
@@ -302,9 +303,18 @@ class App {
         onLoaded: forward,
         onState: forward,
         onPosition: (e) => {
-          // Enrich position with current revision for the id
-          const rev = getRev(e.id);
-          forward({ ...e, revision: rev } as any);
+          const id = (e as any).id as string;
+          const rev = getRev(id);
+          // If an EDL apply is pending for this id, emit edlApplied first
+          if (pendingAppliedById.has(id)) {
+            const appliedRev = pendingAppliedById.get(id)!;
+            // Ensure our stored rev matches bumped rev
+            if (appliedRev === rev) {
+              forward({ type: 'edlApplied', id, revision: appliedRev } as any);
+              pendingAppliedById.delete(id);
+            }
+          }
+          forward({ ...(e as any), revision: rev } as any);
         },
         onEnded: forward,
         onError: forward,
@@ -318,12 +328,13 @@ class App {
       ipcMain.handle('juce:updateEdl', async (_e, id: string, clips: EdlClip[]) => {
         try {
           await this.juceClient!.updateEdl(id, clips);
-          // Bump revision and emit edlApplied ack
+          // Bump revision and mark pending apply; will be emitted on next position tick
           const rev = bumpRev(id);
-          forward({ type: 'edlApplied', id, revision: rev } as any);
+          pendingAppliedById.set(id, rev);
           return { success: true, revision: rev };
+        } catch (e) {
+          return { success: false, error: String(e) };
         }
-        catch (e) { return { success: false, error: String(e) }; }
       });
       ipcMain.handle('juce:play', async (_e, id: string) => {
         try { await this.juceClient!.play(id); return { success: true }; }
