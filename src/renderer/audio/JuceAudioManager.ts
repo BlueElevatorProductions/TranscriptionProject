@@ -39,6 +39,9 @@ export class JuceAudioManager {
   // If JUCE does not emit dual-timeline positions during reorders, prefer seeking in original time
   private preferOriginalSeek: boolean = false;
   private lastCorrectiveSeekAt: number = 0;
+  private edlApplying: boolean = false;
+  private pendingSeekEdited: number | null = null;
+  private lastAppliedRevision: number = 0;
   private lastAppliedRevision: number = 0;
 
   constructor(callbacks: AudioManagerCallbacks) {
@@ -123,6 +126,10 @@ export class JuceAudioManager {
       const mapped = this.sequencer.editedTimeToOriginalTime(clamped);
       if (mapped) timeToSend = mapped.originalTime;
     }
+    if (this.edlApplying) {
+      this.pendingSeekEdited = clamped;
+      return;
+    }
     this.transport!.seek(this.sessionId, timeToSend).then((res) => {
       if (!res.success) this.callbacks.onError(res.error || 'seek failed');
     });
@@ -152,11 +159,13 @@ export class JuceAudioManager {
 
   updateClips(clips: Clip[]): void {
     this.dispatch({ type: 'UPDATE_CLIPS', payload: clips });
+    this.edlApplying = true;
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
   }
 
   reorderClips(fromIndex: number, toIndex: number): void {
     this.dispatch({ type: 'REORDER_CLIPS', payload: { fromIndex, toIndex } });
+    this.edlApplying = true;
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
   }
 
