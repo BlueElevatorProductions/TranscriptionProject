@@ -1,9 +1,10 @@
 /**
- * SpeakerNode - Lexical DecoratorNode for interactive speaker labels
- * Provides inline speaker editing and styling
+ * SpeakerNode - Lexical DecoratorNode for speaker labels
+ * Provides simple display of speaker names with styling
+ * Interactive functionality is handled by ClipHeaderPlugin
  */
 
-import React, { useCallback, useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { 
   DecoratorNode, 
   NodeKey, 
@@ -11,115 +12,108 @@ import {
   SerializedLexicalNode,
   EditorConfig
 } from 'lexical';
+import SpeakerDropdown from '../../components/shared/SpeakerDropdown';
+import { useClipEditor } from '../../hooks/useClipEditor';
 
 export interface SerializedSpeakerNode extends SerializedLexicalNode {
   speakerId: string;
   displayName: string;
   color?: string;
+  clipId?: string;
+  clipIndex?: number;
+  totalClips?: number;
 }
 
 export interface SpeakerComponentProps {
   speakerId: string;
   displayName: string;
   color?: string;
-  onSpeakerChange?: (speakerId: string, newName: string) => void;
+  availableSpeakers?: { id: string; name: string }[];
   nodeKey: NodeKey;
+  // New props for advanced dropdown
+  clipId?: string;
+  clipIndex?: number;
+  totalClips?: number;
+  readOnly?: boolean;
 }
 
 function SpeakerComponent({
   speakerId,
   displayName,
   color,
-  onSpeakerChange,
-  nodeKey
+  availableSpeakers = [],
+  nodeKey,
+  clipId,
+  clipIndex = 0,
+  totalClips = 0,
+  readOnly = false
 }: SpeakerComponentProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(displayName);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
-
-  const handleEditStart = useCallback(() => {
-    setIsEditing(true);
-    setEditValue(displayName);
-  }, [displayName]);
-
-  const handleEditSave = useCallback(() => {
-    if (editValue.trim() && editValue.trim() !== displayName) {
-      onSpeakerChange?.(speakerId, editValue.trim());
-    }
-    setIsEditing(false);
-  }, [editValue, displayName, speakerId, onSpeakerChange]);
-
-  const handleEditCancel = useCallback(() => {
-    setIsEditing(false);
-    setEditValue(displayName);
-  }, [displayName]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    e.stopPropagation();
-    
-    if (e.key === 'Enter') {
-      handleEditSave();
-    } else if (e.key === 'Escape') {
-      handleEditCancel();
-    }
-  }, [handleEditSave, handleEditCancel]);
-
-  const handleBlur = useCallback(() => {
-    handleEditSave();
-  }, [handleEditSave]);
-
-  // Speaker color styling
-  const colorStyles = color ? {
-    color: color,
-    borderColor: color + '40', // Add some transparency
-    backgroundColor: color + '10' // Very light background
-  } : {
-    color: '#374151',
-    borderColor: '#d1d5db',
-    backgroundColor: '#f9fafb'
-  };
-
-  if (isEditing) {
-    return (
-      <span className="lexical-speaker-node-editing inline-block">
-        <input
-          ref={inputRef}
-          type="text"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={handleBlur}
-          className="inline-block px-2 py-1 text-sm font-medium rounded border-2 border-blue-500 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-          style={{ 
-            minWidth: '80px',
-            width: `${Math.max(editValue.length * 8 + 16, 80)}px`
-          }}
-        />
-      </span>
-    );
-  }
-
+  // Get available speakers and audio system from global context
+  const speakers = (globalThis as any).__LEXICAL_AVAILABLE_SPEAKERS__ || [];
+  const audioState = (globalThis as any).__LEXICAL_AUDIO_STATE__;
+  const audioActions = (globalThis as any).__LEXICAL_AUDIO_ACTIONS__;
+  const clips = (globalThis as any).__LEXICAL_CLIPS__ || [];
+  
+  // Find current clip and its index
+  const currentClip = clips.find((clip: any) => clip.id === clipId);
+  const currentClipIndex = clips.findIndex((clip: any) => clip.id === clipId);
+  
+  // Only show dropdown in edit mode
+  const showDropdown = !readOnly && audioState?.mode === 'edit' && audioState && audioActions;
+  
+  // Use clip editor for operations
+  const clipEditor = useClipEditor(audioState, audioActions);
+  
+  // Always render dropdown - no simple label fallback
   return (
-    <span 
-      className="lexical-speaker-node inline-flex items-center px-2 py-1 text-sm font-medium rounded-md border cursor-pointer hover:opacity-80 transition-opacity select-none mr-2"
-      style={colorStyles}
-      onClick={handleEditStart}
-      title={`Click to edit speaker name (${speakerId})`}
-      contentEditable={false}
-      suppressContentEditableWarning={true}
-    >
-      <span className="speaker-icon mr-1" role="img" aria-label="speaker">
-        🎙️
-      </span>
-      {displayName}
-    </span>
+    <div className="lexical-speaker-node-container" style={{
+      position: 'absolute',
+      top: '8px',
+      left: '8px',
+      zIndex: 10,
+      pointerEvents: 'auto'
+    }}>
+      <SpeakerDropdown
+        currentSpeakerId={speakerId}
+        displayName={displayName}
+        availableSpeakers={speakers}
+        clipIndex={currentClipIndex >= 0 ? currentClipIndex : 0}
+        totalClips={clips.length}
+        onSpeakerChange={(newSpeakerId) => {
+          console.log('[SpeakerNode] Speaker change:', newSpeakerId);
+          if (clipId) {
+            clipEditor.changeSpeaker(clipId, newSpeakerId);
+            window.dispatchEvent(new CustomEvent('speaker-change-clip', {
+              detail: { clipId, speakerId: newSpeakerId }
+            }));
+          }
+        }}
+        onMergeAbove={() => {
+          console.log('[SpeakerNode] Merge above clicked');
+          if (currentClipIndex > 0 && clipId) {
+            const prevClip = clips[currentClipIndex - 1];
+            if (prevClip) {
+              clipEditor.mergeClips(prevClip.id, clipId);
+            }
+          }
+        }}
+        onMergeBelow={() => {
+          console.log('[SpeakerNode] Merge below clicked');
+          if (currentClipIndex < clips.length - 1 && clipId) {
+            const nextClip = clips[currentClipIndex + 1];
+            if (nextClip) {
+              clipEditor.mergeClips(clipId, nextClip.id);
+            }
+          }
+        }}
+        onDeleteClip={() => {
+          console.log('[SpeakerNode] Delete clip clicked');
+          if (clipId) {
+            clipEditor.deleteClip(clipId);
+          }
+        }}
+      />
+    </div>
   );
 }
 
@@ -127,18 +121,25 @@ export class SpeakerNode extends DecoratorNode<React.JSX.Element> {
   __speakerId: string;
   __displayName: string;
   __color?: string;
+  __clipId?: string;
+  __clipIndex?: number;
+  __totalClips?: number;
 
   static getType(): string {
     return 'speaker';
   }
 
   static clone(node: SpeakerNode): SpeakerNode {
-    return new SpeakerNode(
+    const cloned = new SpeakerNode(
       node.__speakerId,
       node.__displayName,
       node.__color,
       node.__key
     );
+    cloned.__clipId = node.__clipId;
+    cloned.__clipIndex = node.__clipIndex;
+    cloned.__totalClips = node.__totalClips;
+    return cloned;
   }
 
   constructor(
@@ -185,6 +186,27 @@ export class SpeakerNode extends DecoratorNode<React.JSX.Element> {
     return writable;
   }
 
+  setClipInfo(clipId: string, clipIndex: number, totalClips: number): SpeakerNode {
+    const writable = this.getWritable();
+    writable.__clipId = clipId;
+    writable.__clipIndex = clipIndex;
+    writable.__totalClips = totalClips;
+    return writable;
+  }
+
+  // Clip getters
+  getClipId(): string | undefined {
+    return this.__clipId;
+  }
+
+  getClipIndex(): number | undefined {
+    return this.__clipIndex;
+  }
+
+  getTotalClips(): number | undefined {
+    return this.__totalClips;
+  }
+
   createDOM(config: EditorConfig): HTMLElement {
     const element = document.createElement('span');
     element.classList.add('lexical-speaker-node-container');
@@ -203,12 +225,9 @@ export class SpeakerNode extends DecoratorNode<React.JSX.Element> {
         displayName={this.__displayName}
         color={this.__color}
         nodeKey={this.__key}
-        onSpeakerChange={(speakerId: string, newName: string) => {
-          // Dispatch a global event handled by SpeakerPlugin to update speakers map
-          window.dispatchEvent(new CustomEvent('speaker-name-change', {
-            detail: { speakerId, newName }
-          }));
-        }}
+        clipId={this.__clipId}
+        clipIndex={this.__clipIndex}
+        totalClips={this.__totalClips}
       />
     );
   }
@@ -218,7 +237,7 @@ export class SpeakerNode extends DecoratorNode<React.JSX.Element> {
   }
 
   isKeyboardSelectable(): boolean {
-    return true;
+    return false; // Not selectable since it's positioned absolutely
   }
 
   // Selection behavior
@@ -231,7 +250,7 @@ export class SpeakerNode extends DecoratorNode<React.JSX.Element> {
   }
 
   canInsertTextAfter(): boolean {
-    return true;
+    return false; // Don't allow text after since it's absolutely positioned
   }
 
   // Serialization
@@ -240,14 +259,21 @@ export class SpeakerNode extends DecoratorNode<React.JSX.Element> {
       speakerId: this.__speakerId,
       displayName: this.__displayName,
       color: this.__color,
+      clipId: this.__clipId,
+      clipIndex: this.__clipIndex,
+      totalClips: this.__totalClips,
       type: 'speaker',
       version: 1,
     };
   }
 
   static importJSON(serializedNode: SerializedSpeakerNode): SpeakerNode {
-    const { speakerId, displayName, color } = serializedNode;
-    return new SpeakerNode(speakerId, displayName, color);
+    const { speakerId, displayName, color, clipId, clipIndex, totalClips } = serializedNode;
+    const node = new SpeakerNode(speakerId, displayName, color);
+    if (clipId !== undefined && clipIndex !== undefined && totalClips !== undefined) {
+      node.setClipInfo(clipId, clipIndex, totalClips);
+    }
+    return node;
   }
 
   // Text representation for copy/paste and export

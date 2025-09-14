@@ -15,8 +15,9 @@ import {
 
 import { WordNode, $createWordNode, $isWordNode } from '../nodes/WordNode';
 import { SegmentNode, $createSegmentNode, $isSegmentNode } from '../nodes/SegmentNode';
-import { SpeakerNode, $createSpeakerNode, $isSpeakerNode } from '../nodes/SpeakerNode';
+// SpeakerNode no longer used - handled by ClipSpeakerPlugin
 import { ClipNode, $isClipNode } from '../nodes/ClipNode';
+import { $createSpacerNode } from '../nodes/SpacerNode';
 
 export interface Segment {
   id: string;
@@ -87,19 +88,8 @@ export function segmentsToEditorState(
         shouldInsertParagraphBreak
       );
 
-      // Add speaker label if needed and speaker changed
-      if (includeSpeakerLabels && speakerChanged) {
-        const speakerDisplayName = getSpeakerDisplayName(segment.speaker);
-        const speakerColor = getSpeakerColor?.(segment.speaker);
-        
-        const speakerNode = $createSpeakerNode(
-          segment.speaker,
-          speakerDisplayName,
-          speakerColor
-        );
-        
-        currentSegmentNode.append(speakerNode);
-      }
+      // Speaker info is now handled by ClipSpeakerPlugin via data attributes on container
+      // No longer append SpeakerNode to segment to prevent deletion issues
 
       // Add words to segment (only if provided by model)
       if (segment.words && segment.words.length > 0) {
@@ -152,48 +142,99 @@ export function clipsToEditorState(
     const UI_DEBUG = (globalThis as any).process?.env?.VITE_AUDIO_DEBUG === 'true' || 
                      (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
                      
-    const filteredClips = clips
-      .slice()
-      .filter(clip => clip.type !== 'audio-only'); // Skip audio-only gaps in UI rendering
-      
-    if (UI_DEBUG) {
-      console.log('[clipsToEditorState] Input clips orders:', filteredClips.map(c => `${c.id.slice(-6)}:${c.order}`));
-    }
-    
-    // Don't re-sort by order property - respect the array position as the intended order
-    // The clips array is already in the correct order after drag-and-drop operations
-    const sortedClips = filteredClips;
-    
-    if (UI_DEBUG) {
-      console.log('[clipsToEditorState] Sorted clips orders:', sortedClips.map(c => `${c.id.slice(-6)}:${c.order}`));
-    }
-    
-    sortedClips.forEach((clip, index) => {
-        const container = $createClipContainerNode(clip.id, clip.speaker, (clip as any).status ?? 'active');
+    // Work with speech-only clips in the given array order (edited order)
+    const speech = clips
+      .filter(c => c.type !== 'audio-only')
+      .slice();
 
-        // Paragraph wrapper inside each clip container to ensure valid text structure
-        const paragraph = $createParagraphNode();
+    if (UI_DEBUG) {
+      console.log('[clipsToEditorState] Speech-only orders:', speech.map(c => `${c.id.slice(-6)}:${c.order}`));
+    }
+
+    const SPACER_VISUAL_THRESHOLD = 1.0; // show pills only if >= 1s
+    const attachSpacerToContainerEnd = (container: any, gap: Clip) => {
+      const duration = Math.max(0, (gap.endTime ?? 0) - (gap.startTime ?? 0));
+      if (duration < SPACER_VISUAL_THRESHOLD) return;
+      // Append spacer pill at the end of the first paragraph
+      const children = container.getChildren();
+      let paragraph: any = children.find((c: any) => c.getType && c.getType() === 'paragraph');
+      if (!paragraph) {
+        paragraph = $createParagraphNode();
         container.append(paragraph);
+      }
+      // Add a space before spacer if last child is a word/text
+      const lastChild = paragraph.getChildren().slice(-1)[0];
+      if (lastChild && lastChild.getType && lastChild.getType() === 'text') {
+        paragraph.append($createTextNode(' '));
+      } else if (lastChild && (lastChild as any).getType && (lastChild as any).getType() === 'word') {
+        paragraph.append($createTextNode(' '));
+      }
+      paragraph.append($createSpacerNode(duration, gap.startTime, gap.endTime));
+    };
 
-        // Speaker label
-        if (includeSpeakerLabels) {
-          const speakerDisplayName = getSpeakerDisplayName(clip.speaker);
-          const speakerColor = getSpeakerColor?.(clip.speaker);
-          const speakerNode = $createSpeakerNode(clip.speaker, speakerDisplayName, speakerColor);
-          paragraph.append(speakerNode);
-        }
+    // Traverse full edited order including gaps to attach pills after speech or at the beginning of the first encountered speech
+    let lastSpeechContainer: any = null;
+    const containerById = new Map<string, any>();
 
-        // Words
-        (clip.words || []).forEach((w, wi) => {
-          const wordNode = $createWordNode(w.word, w.start, w.end, clip.speaker, w.score);
-          paragraph.append(wordNode);
-          if (wi < clip.words.length - 1) {
+    // Preserve the incoming array order (no sort), since drag/drop already
+    // provides the intended visual order
+    const all = clips.slice();
+    all.forEach((c) => {
+      if (c.type === 'audio-only') {
+        const dur = Math.max(0, (c.endTime ?? 0) - (c.startTime ?? 0));
+        if (dur >= SPACER_VISUAL_THRESHOLD) {
+          if (lastSpeechContainer) {
+            // trailing spacer after last speech
+            const paragraph = lastSpeechContainer.getChildren().find((n: any) => n.getType && n.getType() === 'paragraph') || $createParagraphNode();
+            if (!paragraph.isAttached()) lastSpeechContainer.append(paragraph);
             paragraph.append($createTextNode(' '));
+            paragraph.append($createSpacerNode(dur, c.startTime, c.endTime));
+          } else {
+            // Initial global gaps before any speech are handled separately (attached to earliest speech)
+            // Do nothing here to avoid pinning to the first visual clip.
           }
-        });
+        }
+        return;
+      }
 
-        root.append(container);
+      // speech clip: build its container
+      const container = $createClipContainerNode(c.id, c.speaker, (c as any).status ?? 'active');
+      const paragraph = $createParagraphNode();
+      container.append(paragraph);
+
+      // No-op: initial gaps are handled later by attaching to earliest-by-original-time speech
+
+      (c.words || []).forEach((w, wi) => {
+        const wordNode = $createWordNode(w.word, w.start, w.end, c.speaker, w.score);
+        paragraph.append(wordNode);
+        if (wi < c.words.length - 1) paragraph.append($createTextNode(' '));
       });
+
+      root.append(container);
+      lastSpeechContainer = container;
+      containerById.set(c.id, container);
+    });
+
+    // Attach leading global gap (music intro) to the earliest-by-original-start speech clip, so it moves with that clip
+    if (speech.length > 0) {
+      let earliest = speech[0];
+      for (const s of speech) {
+        if ((s.startTime ?? 0) < (earliest.startTime ?? 0)) earliest = s;
+      }
+      const leadDur = Math.max(0, (earliest.startTime ?? 0)); // from 0 to earliest speech start
+      if (leadDur >= SPACER_VISUAL_THRESHOLD) {
+        const target = containerById.get(earliest.id);
+        if (target) {
+          const paragraph = target.getChildren().find((n: any) => n.getType && n.getType() === 'paragraph') || $createParagraphNode();
+          if (!paragraph.isAttached()) target.append(paragraph);
+          const children = paragraph.getChildren();
+          const firstChild = children[0] || null;
+          paragraph.insertBefore($createTextNode(' '), firstChild);
+          paragraph.insertBefore($createSpacerNode(leadDur, 0, earliest.startTime), firstChild);
+          paragraph.insertBefore($createTextNode(' '), firstChild);
+        }
+      }
+    }
   });
 }
 
@@ -494,14 +535,12 @@ export function extractFormattedText(editor: LexicalEditor): string {
         const segmentNode = child as SegmentNode;
         const segmentChildren = segmentNode.getChildren();
         
-        let speakerLabel = '';
+        // Get speaker info from segment node since SpeakerNodes are no longer used
+        const speakerLabel = `${segmentNode.getSpeakerId()}: `;
         let segmentText = '';
         
         segmentChildren.forEach((segmentChild) => {
-          if ($isSpeakerNode(segmentChild)) {
-            const speakerNode = segmentChild as SpeakerNode;
-            speakerLabel = `${speakerNode.getDisplayName()}: `;
-          } else if ($isWordNode(segmentChild)) {
+          if ($isWordNode(segmentChild)) {
             const wordNode = segmentChild as WordNode;
             segmentText += wordNode.getTextContent();
           } else if (segmentChild.getType() === 'text') {

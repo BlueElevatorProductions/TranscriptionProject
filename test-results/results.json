@@ -11,7 +11,7 @@
     "grepInvert": null,
     "maxFailures": 0,
     "metadata": {
-      "actualWorkers": 1
+      "actualWorkers": 2
     },
     "preserveOutput": "always",
     "reporter": [
@@ -37,7 +37,7 @@
         "repeatEach": 1,
         "retries": 0,
         "metadata": {
-          "actualWorkers": 1
+          "actualWorkers": 2
         },
         "id": "electron-visual-tests",
         "name": "electron-visual-tests",
@@ -58,144 +58,178 @@
   },
   "suites": [
     {
-      "title": "project-open-existing.spec.ts",
-      "file": "project-open-existing.spec.ts",
+      "title": "dropdown-verification.spec.ts",
+      "file": "dropdown-verification.spec.ts",
       "column": 0,
       "line": 0,
-      "specs": [
+      "specs": [],
+      "suites": [
         {
-          "title": "Open existing .transcript and render segments",
-          "ok": false,
-          "tags": [],
-          "tests": [
+          "title": "Dropdown Verification",
+          "file": "dropdown-verification.spec.ts",
+          "line": 9,
+          "column": 6,
+          "specs": [
             {
-              "timeout": 90000,
-              "annotations": [],
-              "expectedStatus": "passed",
-              "projectId": "electron-visual-tests",
-              "projectName": "electron-visual-tests",
-              "results": [
+              "title": "should visualize current dropdown state",
+              "ok": false,
+              "tags": [],
+              "tests": [
                 {
-                  "workerIndex": 0,
-                  "parallelIndex": 0,
-                  "status": "failed",
-                  "duration": 1461,
-                  "error": {
-                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m",
-                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n    at /Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/project-open-existing.spec.ts:41:61",
-                    "location": {
-                      "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/project-open-existing.spec.ts",
-                      "column": 61,
-                      "line": 41
-                    },
-                    "snippet": "\u001b[0m \u001b[90m 39 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mscreenshot({ path\u001b[33m:\u001b[39m \u001b[32m'test-results/project-open-existing.png'\u001b[39m\u001b[33m,\u001b[39m fullPage\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 40 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 41 |\u001b[39m   expect(projectData\u001b[33m?\u001b[39m\u001b[33m.\u001b[39mtranscription\u001b[33m?\u001b[39m\u001b[33m.\u001b[39msegments\u001b[33m?\u001b[39m\u001b[33m.\u001b[39mlength \u001b[33m||\u001b[39m \u001b[35m0\u001b[39m)\u001b[33m.\u001b[39mtoBeGreaterThan(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                                             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 42 |\u001b[39m   expect(hasSegments)\u001b[33m.\u001b[39mtoBeGreaterThan(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 43 |\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 44 |\u001b[39m\u001b[0m"
-                  },
-                  "errors": [
-                    {
-                      "location": {
-                        "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/project-open-existing.spec.ts",
-                        "column": 61,
-                        "line": 41
-                      },
-                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n\n\u001b[0m \u001b[90m 39 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mscreenshot({ path\u001b[33m:\u001b[39m \u001b[32m'test-results/project-open-existing.png'\u001b[39m\u001b[33m,\u001b[39m fullPage\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 40 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 41 |\u001b[39m   expect(projectData\u001b[33m?\u001b[39m\u001b[33m.\u001b[39mtranscription\u001b[33m?\u001b[39m\u001b[33m.\u001b[39msegments\u001b[33m?\u001b[39m\u001b[33m.\u001b[39mlength \u001b[33m||\u001b[39m \u001b[35m0\u001b[39m)\u001b[33m.\u001b[39mtoBeGreaterThan(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                                             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 42 |\u001b[39m   expect(hasSegments)\u001b[33m.\u001b[39mtoBeGreaterThan(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 43 |\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 44 |\u001b[39m\u001b[0m\n\u001b[2m    at /Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/project-open-existing.spec.ts:41:61\u001b[22m"
-                    }
-                  ],
-                  "stdout": [
-                    {
-                      "text": "[page] [vite] connecting...\n"
-                    },
-                    {
-                      "text": "[page] [vite] connected.\n"
-                    },
-                    {
-                      "text": "[page] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold\n"
-                    },
-                    {
-                      "text": "[page] React main.tsx initializing...\n"
-                    },
-                    {
-                      "text": "[page] React application mounted successfully\n"
-                    },
-                    {
-                      "text": "[page] Transcription conversion effect triggered with: {hasSelectedJob: false, jobStatus: undefined, hasSegments: false, segmentCount: 0, hasProjectData: false}\n"
-                    },
-                    {
-                      "text": "[page] Transcription conversion effect triggered with: {hasSelectedJob: false, jobStatus: undefined, hasSegments: false, segmentCount: 0, hasProjectData: false}\n"
-                    },
-                    {
-                      "text": "[page] App initialized: {version: undefined, platform: undefined}\n"
-                    },
-                    {
-                      "text": "[page] App initialized: {version: undefined, platform: undefined}\n"
-                    },
-                    {
-                      "text": "[page] Transcription conversion effect triggered with: {hasSelectedJob: false, jobStatus: undefined, hasSegments: false, segmentCount: 0, hasProjectData: false}\n"
-                    },
-                    {
-                      "text": "Loaded project via IPC. Segments: \u001b[90mundefined\u001b[39m\n"
-                    },
-                    {
-                      "text": "[page] [TEST] Loading project via test-load-project event. Segments: undefined\n"
-                    },
-                    {
-                      "text": "[page] The above error occurred in the <ProjectProvider> component:\n\n    at ProjectProvider (http://localhost:3000/contexts/ProjectContext.tsx:186:35)\n    at AudioProvider (http://localhost:3000/contexts/AudioContext.tsx:79:33)\n    at NotificationProvider (http://localhost:3000/contexts/NotificationContext.tsx:44:40)\n    at ThemeProvider (http://localhost:3000/components/theme-provider.tsx:25:3)\n    at AppProviders (http://localhost:3000/contexts/index.tsx:28:32)\n    at App\n    at ErrorBoundary (http://localhost:3000/main.tsx:10:5)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.\n"
-                    },
-                    {
-                      "text": "[page] React Error Boundary caught error: TypeError: Cannot read properties of undefined (reading 'name')\n    at projectReducer (http://localhost:3000/contexts/ProjectContext.tsx:32:76)\n    at updateReducer (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-WRD5HZVH.js?v=321d33d5:11794:30)\n    at Object.useReducer (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-WRD5HZVH.js?v=321d33d5:12737:24)\n    at useReducer (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-OU5AQDZK.js?v=321d33d5:1070:29)\n    at ProjectProvider (http://localhost:3000/contexts/ProjectContext.tsx:188:29)\n    at renderWithHooks (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-WRD5HZVH.js?v=321d33d5:11548:26)\n    at updateFunctionComponent (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-WRD5HZVH.js?v=321d33d5:14582:28)\n    at beginWork (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-WRD5HZVH.js?v=321d33d5:15924:22)\n    at beginWork$1 (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-WRD5HZVH.js?v=321d33d5:19753:22)\n    at performUnitOfWork (http://localhost:3000/@fs/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/node_modules/.vite/deps/chunk-WRD5HZVH.js?v=321d33d5:19198:20) {componentStack: \n    at ProjectProvider (http://localhost:3000/con…rorBoundary (http://localhost:3000/main.tsx:10:5)}\n"
-                    },
-                    {
-                      "text": "Segment elements count: \u001b[33m0\u001b[39m\n"
-                    },
-                    {
-                      "text": "Body text snippet: ⚠️\nApplication Error\n\nThe application encountered an error and cannot continue.\n\nError Details\nReload Application\n"
-                    }
-                  ],
-                  "stderr": [],
-                  "retry": 0,
-                  "startTime": "2025-09-06T15:13:04.786Z",
+                  "timeout": 90000,
                   "annotations": [],
-                  "attachments": [
+                  "expectedStatus": "passed",
+                  "projectId": "electron-visual-tests",
+                  "projectName": "electron-visual-tests",
+                  "results": [
                     {
-                      "name": "screenshot",
-                      "contentType": "image/png",
-                      "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/project-open-existing-Open-72cfd-nscript-and-render-segments-electron-visual-tests/test-failed-1.png"
-                    },
-                    {
-                      "name": "video",
-                      "contentType": "video/webm",
-                      "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/project-open-existing-Open-72cfd-nscript-and-render-segments-electron-visual-tests/video.webm"
-                    },
-                    {
-                      "name": "error-context",
-                      "contentType": "text/markdown",
-                      "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/project-open-existing-Open-72cfd-nscript-and-render-segments-electron-visual-tests/error-context.md"
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 11663,
+                      "error": {
+                        "message": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.transcript-editor-content') to be visible\u001b[22m\n",
+                        "stack": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.transcript-editor-content') to be visible\u001b[22m\n\n    at /Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts:15:16",
+                        "location": {
+                          "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts",
+                          "column": 16,
+                          "line": 15
+                        },
+                        "snippet": "  13 |     \n  14 |     // Wait for the app to load\n> 15 |     await page.waitForSelector('.transcript-editor-content', { timeout: 10000 });\n     |                ^\n  16 |   });\n  17 |\n  18 |   test('should visualize current dropdown state', async ({ page }) => {"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts",
+                            "column": 16,
+                            "line": 15
+                          },
+                          "message": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.transcript-editor-content') to be visible\u001b[22m\n\n\n  13 |     \n  14 |     // Wait for the app to load\n> 15 |     await page.waitForSelector('.transcript-editor-content', { timeout: 10000 });\n     |                ^\n  16 |   });\n  17 |\n  18 |   test('should visualize current dropdown state', async ({ page }) => {\n    at /Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts:15:16"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-12T19:41:10.959Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/dropdown-verification-Drop-91a39-lize-current-dropdown-state-electron-visual-tests/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/dropdown-verification-Drop-91a39-lize-current-dropdown-state-electron-visual-tests/video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/dropdown-verification-Drop-91a39-lize-current-dropdown-state-electron-visual-tests/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts",
+                        "column": 16,
+                        "line": 15
+                      }
                     }
                   ],
-                  "errorLocation": {
-                    "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/project-open-existing.spec.ts",
-                    "column": 61,
-                    "line": 41
-                  }
+                  "status": "unexpected"
                 }
               ],
-              "status": "unexpected"
+              "id": "05ef4431de6497d4e67e-f8fa05e819ba2f757a89",
+              "file": "dropdown-verification.spec.ts",
+              "line": 18,
+              "column": 7
+            },
+            {
+              "title": "should verify dropdown functionality",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "electron-visual-tests",
+                  "projectName": "electron-visual-tests",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 11149,
+                      "error": {
+                        "message": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.transcript-editor-content') to be visible\u001b[22m\n",
+                        "stack": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.transcript-editor-content') to be visible\u001b[22m\n\n    at /Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts:15:16",
+                        "location": {
+                          "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts",
+                          "column": 16,
+                          "line": 15
+                        },
+                        "snippet": "  13 |     \n  14 |     // Wait for the app to load\n> 15 |     await page.waitForSelector('.transcript-editor-content', { timeout: 10000 });\n     |                ^\n  16 |   });\n  17 |\n  18 |   test('should visualize current dropdown state', async ({ page }) => {"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts",
+                            "column": 16,
+                            "line": 15
+                          },
+                          "message": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.transcript-editor-content') to be visible\u001b[22m\n\n\n  13 |     \n  14 |     // Wait for the app to load\n> 15 |     await page.waitForSelector('.transcript-editor-content', { timeout: 10000 });\n     |                ^\n  16 |   });\n  17 |\n  18 |   test('should visualize current dropdown state', async ({ page }) => {\n    at /Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts:15:16"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-12T19:41:10.957Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/dropdown-verification-Drop-3635e-rify-dropdown-functionality-electron-visual-tests/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/dropdown-verification-Drop-3635e-rify-dropdown-functionality-electron-visual-tests/video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/test-results/dropdown-verification-Drop-3635e-rify-dropdown-functionality-electron-visual-tests/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/TranscriptionProject/tests/visual/dropdown-verification.spec.ts",
+                        "column": 16,
+                        "line": 15
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "05ef4431de6497d4e67e-451cc3692488a0f61f9e",
+              "file": "dropdown-verification.spec.ts",
+              "line": 150,
+              "column": 7
             }
-          ],
-          "id": "d1129fc989a424155ed0-d793496900d915ada01a",
-          "file": "project-open-existing.spec.ts",
-          "line": 6,
-          "column": 5
+          ]
         }
       ]
     }
   ],
   "errors": [],
   "stats": {
-    "startTime": "2025-09-06T15:13:04.426Z",
-    "duration": 2044.547,
+    "startTime": "2025-09-12T19:41:10.565Z",
+    "duration": 12863.268,
     "expected": 0,
     "skipped": 0,
-    "unexpected": 1,
+    "unexpected": 2,
     "flaky": 0
   }
 }

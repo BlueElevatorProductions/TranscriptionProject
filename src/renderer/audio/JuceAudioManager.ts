@@ -46,10 +46,19 @@ export class JuceAudioManager {
     }
   }
 
+
   // Public API mirroring AudioManager
   async initialize(audioUrl: string, clips: Clip[]): Promise<void> {
+    console.log('[JuceAudioManager] Initialize called');
+    console.log('[JuceAudioManager] Transport available:', !!this.transport);
+    
     // Derive absolute file path from media URL or file URL
     this.audioPath = this.resolveAudioPath(audioUrl);
+    console.log('[JuceAudioManager] Audio path resolution:', {
+      input: audioUrl,
+      resolved: this.audioPath,
+      inputType: typeof audioUrl
+    });
     if (!this.audioPath) {
       throw new Error('Unable to resolve audio path for JUCE backend');
     }
@@ -63,8 +72,19 @@ export class JuceAudioManager {
     this.transport!.onEvent(this.eventHandler);
 
     // Load and send initial EDL
-    const res = await this.transport!.load(this.sessionId, this.audioPath);
-    if (!res.success) throw new Error(res.error || 'load failed');
+    console.log('[JuceAudioManager] Calling transport.load with:', {
+      sessionId: this.sessionId,
+      audioPath: this.audioPath
+    });
+    
+    try {
+      const res = await this.transport!.load(this.sessionId, this.audioPath);
+      console.log('[JuceAudioManager] Transport load result:', res);
+      if (!res.success) throw new Error(res.error || 'load failed');
+    } catch (error) {
+      console.error('[JuceAudioManager] Transport load error:', error);
+      throw error;
+    }
     await this.pushEdl();
     // Ask for initial state
     await this.transport!.queryState(this.sessionId);
@@ -72,7 +92,9 @@ export class JuceAudioManager {
 
   async play(): Promise<void> {
     const res = await this.transport!.play(this.sessionId);
-    if (!res.success) this.callbacks.onError(res.error || 'play failed');
+    if (!res.success) {
+      this.callbacks.onError(res.error || 'play failed');
+    }
   }
 
   pause(): void {
@@ -291,28 +313,36 @@ export class JuceAudioManager {
   }
 
   private onTransportEvent(evt: JuceEvent) {
+    const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+    
+    if (AUDIO_DEBUG) {
+      console.log('[JuceAudio] Event received:', evt.type);
+    }
+    
     if (evt.type === 'error') {
       this.callbacks.onError(evt.message);
       return;
     }
+    
     switch (evt.type) {
       case 'loaded':
         this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { isReady: true, duration: this.sequencer.getTotalEditedDuration() } });
         break;
+        
       case 'state':
         this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { isPlaying: evt.playing } });
         break;
+        
       case 'position': {
         const editedTime = evt.editedSec;
         const originalSec = evt.originalSec;
-        const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
         
         if (AUDIO_DEBUG) {
           (this as any)._lastTimeLog = (this as any)._lastTimeLog || 0;
           const now = Date.now();
           if (now - (this as any)._lastTimeLog > 1000) {
             (this as any)._lastTimeLog = now;
-            console.log('[JuceAudio] Time update:', {
+            console.log('[JuceAudio] Position update:', {
               editedTime: editedTime.toFixed(3),
               originalSec: originalSec.toFixed(3),
               isPlaying: this.state.playback.isPlaying
@@ -328,16 +358,17 @@ export class JuceAudioManager {
             this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { currentWordId: wordId, currentClipId: pos.clipId } });
             this.callbacks.onWordHighlight(wordId);
             if (AUDIO_DEBUG) {
-              // Debug mapping info for Listen Mode
-              console.log('[JUCE DEBUG] position evt', {
+              console.log('[JUCE DEBUG] Word highlight:', {
                 editedSec: evt.editedSec,
                 originalSec: evt.originalSec,
                 mappedClipId: pos.clipId,
                 localWordIndex: pos.localWordIndex,
-                wordId,
+                wordId
               });
             }
           }
+        } else if (AUDIO_DEBUG) {
+          console.log('[JUCE DEBUG] No position found for originalTime:', originalSec);
         }
         break;
       }
@@ -418,26 +449,59 @@ export class JuceAudioManager {
   }
 
   private getPositionAtOriginalTime(originalTime: number): TimelinePosition | null {
-    // Find the speech clip containing this original time (ignore audio-only gaps)
+    const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+    
+    // Find the clip containing this original time in the ORIGINAL timeline
+    // Word timestamps are absolute (not relative to clip start)
     const clips = this.state.timeline.clips
-      .filter((c) => c.status !== 'deleted' && c.type !== 'audio-only')
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      .filter((c) => c.status !== 'deleted' && c.type !== 'audio-only');
+    
     const clip = clips.find((c) => originalTime >= c.startTime && originalTime <= c.endTime);
-    if (!clip || (clip.words || []).length === 0) return null;
-    const relativeTime = originalTime - clip.startTime;
-    let idx = 0;
-    for (const w of clip.words) {
-      if (relativeTime >= (w.start - clip.startTime) && relativeTime <= (w.end - clip.startTime)) break;
-      idx++;
+    if (!clip || !clip.words || clip.words.length === 0) {
+      if (AUDIO_DEBUG) {
+        console.log('[getPositionAtOriginalTime] No clip found for originalTime:', originalTime, {
+          availableClips: clips.map(c => ({ id: c.id.slice(-8), start: c.startTime, end: c.endTime }))
+        });
+      }
+      return null;
     }
-    idx = Math.max(0, Math.min(idx, clip.words.length - 1));
-    return {
+
+    // Find the word within this clip that contains the originalTime
+    // Word times are absolute times in the original audio file
+    const wordIndex = clip.words.findIndex(w => originalTime >= w.start && originalTime < w.end);
+    
+    if (wordIndex === -1) {
+      if (AUDIO_DEBUG) {
+        console.log('[getPositionAtOriginalTime] No word found in clip:', {
+          clipId: clip.id.slice(-8),
+          originalTime,
+          wordRanges: clip.words.slice(0, 3).map(w => ({ text: w.word, start: w.start, end: w.end }))
+        });
+      }
+      return null;
+    }
+
+    const result = {
       editedTime: 0, // not needed for highlight
       originalTime,
       clipId: clip.id,
-      wordIndex: clip.startWordIndex + idx,
-      localWordIndex: idx,
+      wordIndex: clip.startWordIndex + wordIndex,
+      localWordIndex: wordIndex,
     };
+
+    if (AUDIO_DEBUG) {
+      console.log('[getPositionAtOriginalTime] Found word:', {
+        originalTime,
+        clipId: clip.id.slice(-8),
+        wordText: clip.words[wordIndex].word,
+        wordStart: clip.words[wordIndex].start,
+        wordEnd: clip.words[wordIndex].end,
+        localWordIndex: wordIndex,
+        globalWordIndex: result.wordIndex
+      });
+    }
+
+    return result;
   }
 
   /**
@@ -501,9 +565,13 @@ export class JuceAudioManager {
       }));
       
       if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
-        console.log('[EDL] REORDERED CLIPS DETECTED - Using contiguous timeline');
-        contiguousTimeline.slice(0, 5).forEach(({clip, newStartTime, newEndTime}, i) => {
-          console.log(`  Clip[${i}]: ${clip.id.slice(-8)} ${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}s → ${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}s`);
+        console.log('[EDL] ⚡ REORDERED CLIPS DETECTED - Using dual timeline mapping');
+        console.log('  Original clip order:', clips.map((c, i) => `${i}:${c.id.slice(-8)}(${c.startTime.toFixed(1)}-${c.endTime.toFixed(1)}s)`));
+        console.log('  Reordered indices:', reorderIndices);
+        console.log('  Contiguous timeline mapping:');
+        contiguousTimeline.slice(0, 8).forEach(({clip, newStartTime, newEndTime}, i) => {
+          const wordCount = clip.words ? clip.words.length : 0;
+          console.log(`    [${i}] ${clip.id.slice(-8)}: Original(${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}s) → Contiguous(${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}s) [${wordCount} words]`);
         });
       }
     } else {
@@ -517,16 +585,19 @@ export class JuceAudioManager {
           .map((_, i) => (deletedWordIds.has(generateWordId(c.id, i)) ? i : -1))
           .filter((i) => i >= 0),
       }));
+      
+      if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+        console.log('[EDL] ✅ Original clip order - Using original timestamps');
+      }
     }
+    
     if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
-      console.log(`[EDL] Pushing segments: total=${edl.length}, gaps=${gapCount}`);
-      console.log('[EDL] reorderIndices:', reorderIndices);
-      console.log('[EDL] clips.length:', clips.length);
-      console.log('[EDL] ordered clips:', ordered.map(c => `${c.id.slice(0,8)}(order:${c.order})`));
-      console.log('[EDL] FULL CLIP IDs IN ORDER (first 10):', ordered.slice(0,10).map((c, i) => `[${i}]${c.id}`));
-      console.log('[EDL] EDL being sent to JUCE (first 10):');
-      edl.slice(0, 10).forEach((segment, i) => {
-        console.log(`  EDL[${i}]: ${segment.id} ${segment.startSec.toFixed(2)}-${segment.endSec.toFixed(2)}s order=${segment.order}`);
+      console.log(`[EDL] 📤 Sending EDL to JUCE: ${edl.length} segments (${gapCount} gaps)`);
+      console.log('[EDL] First 5 EDL entries:');
+      edl.slice(0, 5).forEach((segment, i) => {
+        const hasOriginal = segment.originalStartSec !== undefined;
+        const suffix = hasOriginal ? ` (orig: ${segment.originalStartSec!.toFixed(2)}-${segment.originalEndSec!.toFixed(2)}s)` : '';
+        console.log(`  [${i}] ${segment.id.slice(-8)}: ${segment.startSec.toFixed(2)}-${segment.endSec.toFixed(2)}s${suffix}`);
       });
     }
     const res = await this.transport!.updateEdl(this.sessionId, edl);

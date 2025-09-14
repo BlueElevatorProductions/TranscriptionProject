@@ -62,12 +62,41 @@ export default function SpeakerPlugin({
       });
     };
 
+    // Handle speaker changes for specific clips (from SpeakerDropdown)
+    const handleClipSpeakerChange = (event: CustomEvent) => {
+      const { clipId, speakerId } = event.detail;
+      
+      // Update the speaker node for this specific clip
+      editor.update(() => {
+        const root = $getRoot();
+        
+        const updateClipSpeaker = (node: LexicalNode) => {
+          if ($isSpeakerNode(node) && node.getClipId() === clipId) {
+            const newDisplayName = getSpeakerDisplayName(speakerId);
+            node.setSpeakerId(speakerId);
+            node.setDisplayName(newDisplayName);
+          }
+
+          if ($isElementNode(node)) {
+            const children = (node as ElementNode).getChildren();
+            for (const child of children) {
+              updateClipSpeaker(child);
+            }
+          }
+        };
+
+        updateClipSpeaker(root);
+      });
+    };
+
     window.addEventListener('speaker-name-change', handleSpeakerChange as EventListener);
+    window.addEventListener('speaker-change-clip', handleClipSpeakerChange as EventListener);
     
     return () => {
       window.removeEventListener('speaker-name-change', handleSpeakerChange as EventListener);
+      window.removeEventListener('speaker-change-clip', handleClipSpeakerChange as EventListener);
     };
-  }, [editor, onSpeakerChange]);
+  }, [editor, onSpeakerChange, getSpeakerDisplayName]);
 
   // Update speaker display names when speakers prop changes
   useEffect(() => {

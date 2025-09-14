@@ -21,6 +21,21 @@
   border-radius: 4px;
 }
 
+/* Spacer pill styling */
+.lexical-spacer-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  margin: 0 4px;
+  font-size: 12px;
+  line-height: 1;
+  background: rgba(107, 114, 128, 0.15); /* gray-500/15 */
+  color: #374151; /* gray-700 */
+  border: 1px solid rgba(55, 65, 81, 0.25); /* gray-700/25 */
+  border-radius: 6px;
+  pointer-events: auto;
+}
+
 /* Speaker nodes */
 .lexical-speaker-node {
   margin-bottom: 0.5rem;
@@ -42,13 +57,102 @@
 /* Clip container styling (top-level blocks) */
 .lexical-clip-container {
   position: relative;
-  padding-top: 1rem;
+  padding-top: 3rem; /* Increased for dropdown space */
   margin-top: 1.25rem;
   /* elegant dashed divider */
   border-top: 2px dashed rgba(148, 163, 184, 0.6); /* slate-400 */
   border-bottom: 2px dashed rgba(148, 163, 184, 0.6); /* slate-400 */
   padding-bottom: 1rem;
   margin-bottom: 1.25rem;
+}
+
+/* Ensure speaker dropdown container is visible above text and clickable */
+.lexical-clip-container .clip-speaker-dropdown-container {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 9999;
+  pointer-events: auto !important;
+  display: inline-block;
+}
+
+.lexical-clip-container .clip-speaker-dropdown-container * {
+  pointer-events: auto !important;
+}
+
+/* Clip settings dropdown container */
+.clip-settings-dropdown-container {
+  pointer-events: auto !important;
+}
+
+/* Clip settings dropdown styles */
+.clip-settings-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 0.375rem;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b7280;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.clip-settings-trigger:hover {
+  background-color: rgba(255, 255, 255, 1);
+  border-color: rgba(0, 0, 0, 0.2);
+  color: #374151;
+  box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.15);
+}
+
+/* Dropdown menu styling */
+.clip-settings-menu {
+  width: 14rem;
+  origin: top right;
+  border-radius: 0.375rem;
+  background-color: rgb(31, 41, 55); /* gray-800 */
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  outline-offset: -1px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  z-index: 50;
+  pointer-events: auto;
+}
+
+/* Radix UI dropdown content animations */
+.clip-settings-menu[data-state="open"] {
+  animation: slideIn 0.1s ease-out;
+}
+
+.clip-settings-menu[data-state="closed"] {
+  animation: slideOut 0.075s ease-in;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
 }
 
 /* Deleted clips styling in Edit Mode */

@@ -41,6 +41,74 @@ TranscriptionProject is a desktop application designed for content creators, jou
 - **Error Recovery**: Comprehensive error boundaries with automatic recovery
 - **Memory Management**: Efficient state management with cleanup monitoring
 
+### Transcript + Audio Integration (2025 Q4 updates)
+
+- Single speaker dropdown portal
+  - `ClipSpeakerPlugin` renders all dropdowns via a single persistent React portal into `#clip-speaker-layer` inside the editor wrapper.
+  - Actions (change speaker, merge above/below, delete) apply to both the audio system and project store; a `clips-updated` event triggers a lightweight refresh.
+  - Dropdown menu z-index is elevated so menus sit above transcript content.
+
+- Listen vs Edit mode safety
+  - onClipsChange is suppressed in Listen Mode (readOnly), so structural changes are never sent back to JUCE when clicking words.
+  - Clip sync to JUCE is de‑duplicated (id/order/type/speaker/start/end/words length), preventing redundant UPDATE_CLIPS during playback.
+  - Word/spacer clicks use a -10ms seek bias to avoid boundary “ended” blips.
+
+- Spacer pills (UI-only) for audio-only gaps
+  - New `SpacerNode` renders silent/music gaps as inline pills, keeping the UI aligned with the EDL without separate “gap clip” containers.
+  - Pills are shown only for gaps ≥ 1.0s; sub‑1s are visually absorbed into neighboring text.
+  - Trailing/intermediate gaps: pills attach after the preceding speech clip based on explicit audio‑only clips in edited array order.
+  - Leading intro gap: exactly one pill attaches to the earliest-by-original‑time speech clip; it moves with that clip when dragged.
+  - Pills are UI‑only; they do not modify audio EDL or exports. Pills are keyboard‑selectable (select + delete removes them).
+
+- Merge + delete semantics (gap-aware)
+  - Merge Above/Below: robust id‑based logic skips gaps and splices the inclusive range (prev/gaps/curr) into a single merged speech clip with a fresh id; renumbers orders afterwards.
+  - Delete Clip: removes the speech clip, prunes orphan 0‑duration gaps, renumbers orders.
+
+- JUCE stability
+  - Before any `initialize`/`updateClips`, clips are normalized: finite start/end, speech clips with ≤0 duration are filtered, orders renumbered by array index. This prevents malformed EDLs from causing early segfaults.
+
+Developer refs
+
+- `src/renderer/editor/plugins/ClipSpeakerPlugin.tsx`: single portal + dropdown actions
+- `src/renderer/editor/components/shared/SpeakerDropdown.tsx|.css`: dropdown UI
+- `src/renderer/editor/utils/converters.ts`: spacer pills + transcript build
+- `src/renderer/editor/nodes/SpacerNode.tsx`: pill rendering and click‑to‑seek
+- `src/renderer/editor/LexicalTranscriptEditor.tsx`: Listen Mode suppression + node registration
+- `src/renderer/components/AudioSystemIntegration.tsx`: JUCE normalization + de‑dup sync + -10ms bias
+
+### Developer Cheatsheet
+
+- Spacer pills (UI-only)
+  - Threshold: gaps ≥ 1.0s become pills; tweak `SPACER_VISUAL_THRESHOLD` in `src/renderer/editor/utils/converters.ts`.
+  - Placement:
+    - Trailing/intermediate: attached after the preceding speech clip when an explicit `audio-only` clip appears in the edited array.
+    - Leading intro: exactly one pill attached to the earliest-by-original-time speech clip and moves with that clip when dragged.
+  - Node: `SpacerNode` (`src/renderer/editor/nodes/SpacerNode.tsx`) renders a pill and seeks on click (Listen Mode).
+  - Deletion: pills are keyboard-selectable; select + delete removes. If you want one‑backspace deletion, add a Backspace boundary handler in `SpacerNode`.
+
+- Speaker dropdown portal
+  - Portal container: `#clip-speaker-layer` (rendered in `LexicalTranscriptEditor.tsx`).
+  - Renderer + actions: `ClipSpeakerPlugin.tsx` (single persistent React root; items rendered/positioned at ~10 fps; 400ms grace for rebuilds).
+  - z-index: menus are elevated in `SpeakerDropdown.css` (menu z-index 200000). Containers have smooth movement transitions.
+
+- Listen vs Edit safety
+  - onClipsChange suppressed when `readOnly` (Listen Mode) in `LexicalTranscriptEditor.tsx`.
+  - Seek bias: -10ms in `AudioSystemIntegration.tsx` on `onWordClick` and spacer click (from `SpacerNode`).
+  - If needed, add a short “ignore ended after manual seek” window in the JUCE/transport bridge to fully quash boundary blips.
+
+- Sync to JUCE
+  - De‑duplication: hash fields are `id/order/type/speaker/start/end/wordCount`. Update in `AudioSystemIntegration.tsx` if you add structural fields.
+  - Normalization: before `initialize` and `updateClips` we clamp start/end, filter ≤0‑duration speech clips, and renumber `order` by array index (`normalizeClipsForAudio`).
+
+- Merge/Delete (gap-aware)
+  - Merge Above/Below: id‑based; skips over `audio-only` gaps; splices inclusive range and renumbers orders; merged clip gets a fresh id (see `ClipSpeakerPlugin.tsx`).
+  - Delete: removes the speech clip, prunes orphan zero‑duration gaps, renumbers orders.
+
+- Useful debug tips
+  - Enable `VITE_AUDIO_DEBUG=true` to see de‑dup hash decisions and EDL sends.
+  - Use Elements to confirm: `.lexical-clip-container` for speech containers, `.lexical-spacer-node` for pills, `#clip-speaker-layer` for the dropdown portal.
+  - If playback starts‑then‑stops after edits, check for stray UPDATE_CLIPS right before a click; de‑dup + suppression should prevent this in Listen Mode.
+
 ### Professional Editing (Enhanced 2025)
 - **Word-Level Editing**: Double-click individual words to correct transcription errors
 - **Dynamic Clip System**: Visual boundaries for organizing transcript content
@@ -154,13 +222,20 @@ The import dialog has been simplified for stability during the beta phase:
 │ │   ├── ui/                                                │
 │ │   │   └── NewUIShell.tsx     # Main interface shell     │
 │ │   ├── AudioSystemIntegration.tsx # Audio system bridge  │
-│ │   ├── SimpleTranscript.tsx   # Clean transcript UI      │
-│ │   ├── SimpleAudioControls.tsx # Professional controls   │
 │ │   ├── AudioErrorBoundary.tsx # Error recovery system    │
 │ │   ├── shared/                # Reusable components       │
+│ │   │   └── SpeakerDropdown.tsx # Speaker selection UI    │
 │ │   ├── ImportDialog/          # Enhanced import system    │
 │ │   ├── Settings/              # User preferences          │
-│ │   └── Notifications/         # Toast system              │
+│ │   ├── Notifications/         # Toast system              │
+│ │   └── Legacy/                # Legacy components         │
+│ │       └── components/        # Unused legacy components  │
+│ ├── editor/                    # Lexical transcript editor  │
+│ │   ├── LexicalTranscriptEditor.tsx # Main editor component│
+│ │   ├── nodes/                 # Lexical custom nodes      │
+│ │   │   ├── SpacerNode.tsx    # UI-only gap pills          │
+│ │   │   └── SpeakerNode.tsx   # Speaker labels with dropdown│
+│ │   └── plugins/               # Lexical editor plugins    │
 │ ├── hooks/                     # Custom React hooks        │
 │ │   └── useAudioEditor.ts     # Unified audio hook        │
 │ ├── audio/                     # Audio system core         │
@@ -173,6 +248,22 @@ The import dialog has been simplified for stability during the beta phase:
 │ └── types/                     # TypeScript definitions    │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+## Component Architecture
+
+### Active Components
+- **LexicalTranscriptEditor**: The main transcript component that renders speaker labels, word highlighting, and editing functionality
+- **SpeakerNode**: Lexical editor node that renders speaker names with dropdown functionality in Edit mode
+- **SpeakerDropdown**: Styled dropdown component for speaker selection and clip operations (merge, delete)
+  - Dropdowns render via a body-level overlay to avoid Lexical rebuilds removing them. If dropdown visibility ever flickers during rapid updates, check `ClipSpeakerPlugin` throttling and the `clips-updated` event hooks in `useClipEditor`.
+- **AudioSystemIntegration**: Bridges the audio system with the Lexical editor
+
+### Legacy Components
+Components in `src/renderer/Legacy/components/` are **not active** and preserved for reference only:
+- `SimpleTranscript.tsx`: Previous transcript component (replaced by LexicalTranscriptEditor)
+- `SimpleAudioControls.tsx`: Previous audio controls (replaced by integrated controls)
+
+**Note**: Always modify **LexicalTranscriptEditor** and related components, not the Legacy versions.
 
 ## Audio System Architecture (2025 Redesign)
 
@@ -231,9 +322,9 @@ const [audioState, audioActions] = useAudioEditor({
 **What it does:**
 - **Project Integration**: Bridges audio system with project data/contexts
 - **Mode Switching**: Handles Listen vs Edit mode behaviors
-- **Component Orchestration**: Manages SimpleTranscript + AudioErrorBoundary
+- **Component Orchestration**: Manages LexicalTranscriptEditor + AudioErrorBoundary
 
-#### **4. SimpleTranscript.tsx** - The UI
+#### **4. LexicalTranscriptEditor.tsx** - The UI
 
 **Listen Mode:**
 - Click word → Seek + Play immediately
@@ -247,7 +338,7 @@ const [audioState, audioActions] = useAudioEditor({
 
 ### Data Flow
 
-User clicks word → SimpleTranscript → AudioSystemIntegration → useAudioEditor → AudioManager → HTML Audio Element → Word highlighting updates → SimpleTranscript re-renders
+User clicks word → LexicalTranscriptEditor → AudioSystemIntegration → useAudioEditor → AudioManager → HTML Audio Element → Word highlighting updates → LexicalTranscriptEditor re-renders
 
 ### Why This Architecture Works
 
@@ -540,6 +631,160 @@ This implementation provides the foundation for professional audio editing:
 
 **Documentation**: Complete technical documentation available at `native/juce-backend/README.md`
 
+### ✅ JUCE Backend Highlighting Debugging & Fixes (September 2025 - Latest)
+
+**Focused JUCE Fix**: Removed hybrid polling confusion and implemented comprehensive JUCE backend debugging to identify and fix word highlighting issues with reordered clips.
+
+#### **🎯 Problem Identified**
+The word highlighting issues were caused by:
+- **Hybrid polling interference**: Added complexity that masked the real JUCE backend problems  
+- **Incorrect position mapping**: `getPositionAtOriginalTime` had flawed logic for reordered clips
+- **Insufficient debugging**: Hard to diagnose dual timeline mapping issues
+
+#### **🔧 Solutions Implemented**
+
+**1. Removed Hybrid Polling System**:
+- Eliminated confusing fallback polling mechanism
+- Focused debugging on pure JUCE backend events
+- Cleaner, more predictable behavior
+
+**2. Fixed Position Mapping Logic**:
+```typescript
+// OLD: Incorrect relative time calculation
+const relativeTime = originalTime - clip.startTime;
+for (const w of clip.words) {
+  if (relativeTime >= (w.start - clip.startTime) && ...) // Wrong!
+}
+
+// NEW: Direct word timestamp matching  
+const wordIndex = clip.words.findIndex(w => 
+  originalTime >= w.start && originalTime < w.end  // Correct!
+);
+```
+
+**3. Comprehensive JUCE Debugging**:
+- **EDL Dual Timeline**: Shows original → contiguous mapping for reordered clips
+- **Position Lookup**: Detailed logging of word finding process
+- **Event Tracking**: Clear JUCE position event flow
+
+#### **🔍 Debug Output Guide**
+
+With `VITE_AUDIO_DEBUG=true`, look for these key debug patterns:
+
+**For Reordered Clips**:
+```
+[EDL] ⚡ REORDERED CLIPS DETECTED - Using dual timeline mapping
+  Original clip order: 0:abc123(0.0-3.3s) 1:def456(3.3-7.8s) 2:ghi789(7.8-9.2s)
+  Reordered indices: [0, 2, 1]
+  Contiguous timeline mapping:
+    [0] abc123: Original(0.00-3.32s) → Contiguous(0.00-3.32s) [25 words]
+    [1] ghi789: Original(7.83-9.19s) → Contiguous(3.32-4.68s) [12 words]  
+    [2] def456: Original(3.32-7.83s) → Contiguous(4.68-9.19s) [38 words]
+```
+
+**For Word Highlighting**:
+```
+[JuceAudio] Position update: { editedTime: 5.432, originalSec: 6.123, isPlaying: true }
+[getPositionAtOriginalTime] Found word: {
+  originalTime: 6.123,
+  clipId: "def456",
+  wordText: "example",
+  wordStart: 6.100,
+  wordEnd: 6.200,
+  localWordIndex: 15
+}
+[JUCE DEBUG] Word highlight: { mappedClipId: "def456", localWordIndex: 15, wordId: "clip-def456-word-15" }
+```
+
+**For Troubleshooting**:
+```
+[getPositionAtOriginalTime] No clip found for originalTime: 5.5 {
+  availableClips: [
+    { id: "abc123", start: 0, end: 3.32 },
+    { id: "def456", start: 3.32, end: 7.83 }
+  ]
+}
+```
+
+#### **🚀 Expected Results**
+- **Accurate highlighting**: Words highlight exactly when spoken in reordered clips
+- **Clear debugging**: Easy to identify mapping issues
+- **Preserved editing**: All drag-and-drop functionality intact
+- **Predictable behavior**: No interference from fallback systems
+
+### ✅ Word Highlighting Restoration with Hybrid System (September 2025 - Previous)
+
+**Highlighting Recovery**: Complete restoration of smooth 50fps word highlighting while preserving all JUCE backend editing functionality.
+
+#### **🎯 Problem Solved**
+After implementing JUCE backend for drag-and-drop editing, word highlighting became broken due to:
+- **Event-driven vs Polling**: System switched from reliable 50fps polling to JUCE backend events
+- **Inconsistent Event Delivery**: JUCE events not firing consistently during playback
+- **Missing Fallback**: No backup highlighting mechanism when events failed
+
+#### **🔧 Hybrid Solution Implemented**
+
+**Smart Highlighting System**:
+1. **Primary**: JUCE backend events (optimal performance)
+2. **Fallback**: 50fps polling when events are insufficient
+3. **Automatic Detection**: Monitors JUCE event frequency and switches modes
+
+**Key Features**:
+- **Event Monitoring**: Tracks JUCE position events and timing
+- **Intelligent Fallback**: Activates 50fps polling when events stale >100ms
+- **Seamless Switching**: Transparent mode switching without user interruption
+- **Enhanced Debugging**: Comprehensive logging for troubleshooting
+
+#### **🎵 Technical Implementation**
+
+**Hybrid Highlighting Manager** (`JuceAudioManager.ts`):
+```typescript
+// Monitor JUCE events and activate fallback polling as needed
+private startHybridHighlighting(): void {
+  this.highlightingInterval = setInterval(() => {
+    const timeSinceLastJuceEvent = Date.now() - this.lastJuceEventTime;
+    
+    // If JUCE events working (< 100ms old), don't poll
+    if (timeSinceLastJuceEvent < 100) return;
+    
+    // JUCE events stale - use fallback polling
+    this.queryJuceStateForHighlighting();
+  }, 20); // 50fps for smooth highlighting
+}
+```
+
+**Event Tracking**:
+- `lastJuceEventTime`: Timestamp of last JUCE position event
+- `juceEventCount`: Total events received for debugging
+- `highlightingInterval`: Fallback polling timer
+
+**Debug Output**:
+```
+[JuceAudio] Event received: position { eventCount: 45, timeSinceLastEvent: 18 }
+[JuceAudio] Word highlight: { highlightingMode: 'event-only', wordId: 'clip-1-word-12' }
+[JuceAudio] Fallback polling activated - JUCE events stale by 150ms
+[JuceAudio] Hybrid highlighting system started
+```
+
+#### **🚀 User Benefits**
+- **Restored 50fps Highlighting**: Smooth word highlighting is back
+- **Preserved Editing**: All drag-and-drop editing functionality intact
+- **Automatic Recovery**: System adapts to JUCE backend issues transparently
+- **Better Debugging**: Comprehensive logging for troubleshooting
+
+#### **🔧 Editing Compatibility**
+**No Impact on Editing Features**:
+- ✅ Drag-and-drop clip reordering still works
+- ✅ Contiguous timeline system preserved
+- ✅ JUCE backend EDL processing intact
+- ✅ All advanced audio editing features functional
+
+**Smart Integration**:
+- Highlighting system starts/stops with playback
+- Event monitoring continues throughout editing
+- Debug mode shows both highlighting and editing status
+- Memory cleanup prevents resource leaks
+
 ### ✅ JUCE Audio Backend Integration & Critical Bug Fixes
 
 **Major System Integration**: Complete JUCE C++ audio backend integration with comprehensive bug fixes for seamless transcription editing experience.
@@ -661,6 +906,9 @@ VITE_AUDIO_DEBUG=true npm run start-dev
 # - Gap generation statistics
 # - Prop flow validation
 # - JUCE backend communication
+# - EDL dual timeline mapping for reordered clips
+# - Word-to-time mapping debugging
+# - Position lookup failures and successes
 ```
 
 **Error Recovery**:
@@ -732,7 +980,7 @@ Following Day One's exact measurements:
 - **AudioManager.ts**: Single audio manager replacing 5 competing systems
 - **AudioAppState.ts**: Centralized state eliminating fragmentation
 - **useAudioEditor.ts**: Simple React hook replacing complex integrations
-- **SimpleTranscript.tsx**: Clean transcript UI with proper mode behavior
+- **LexicalTranscriptEditor.tsx**: Professional transcript UI with Lexical editor
 - **AudioErrorBoundary.tsx**: Comprehensive error recovery system
 
 #### **Key Improvements**
@@ -755,7 +1003,7 @@ Following Day One's exact measurements:
 ```typescript
 // Comprehensive error boundaries
 <AudioErrorBoundary onRecoveryAttempt={handleRecovery}>
-  <SimpleTranscript audioState={state} audioActions={actions} />
+  <LexicalTranscriptEditor audioState={state} audioActions={actions} />
 </AudioErrorBoundary>
 
 // Automatic recovery mechanisms

@@ -20,6 +20,8 @@ export interface ClipEditorActions {
   mergeMultipleClips(clipIds: string[]): void;
   /** Set the style for a specific clip. */
   setClipStyle(clipId: string, style: import('../types').ClipStyle): void;
+  /** Change the speaker assignment for a specific clip. */
+  changeSpeaker(clipId: string, newSpeakerId: string): void;
   /** Delete (hide) an entire clip from the edited timeline. */
   deleteClip(clipId: string): void;
   /** Move a clip from one index to another in the edited sequence. */
@@ -129,6 +131,7 @@ export function useClipEditor(
         };
         clips.splice(minIdx, 2, merged);
         audioActions.updateClips(clips);
+        try { window.dispatchEvent(new CustomEvent('clips-updated')); } catch {}
       },
       mergeMultipleClips: (clipIds: string[]) => {
         if (clipIds.length < 2) return;
@@ -191,6 +194,7 @@ export function useClipEditor(
         // Insert merged clip at the original first clip position
         clips.splice(firstClipIndex, 0, merged);
         audioActions.updateClips(clips);
+        try { window.dispatchEvent(new CustomEvent('clips-updated')); } catch {}
       },
       setClipStyle: (clipId: string, style: any) => {
         undoMgr.takeSnapshot(
@@ -213,6 +217,28 @@ export function useClipEditor(
         clips[clipIndex] = updatedClip;
         audioActions.updateClips(clips);
       },
+      changeSpeaker: (clipId: string, newSpeakerId: string) => {
+        undoMgr.takeSnapshot(
+          audioState.clips,
+          audioState.deletedWordIds,
+          audioActions.getReorderIndices(),
+          `Change speaker for clip ${clipId}`
+        );
+        
+        const clips = [...audioState.clips];
+        const clipIndex = clips.findIndex(c => c.id === clipId);
+        if (clipIndex === -1) return;
+        
+        const updatedClip = {
+          ...clips[clipIndex],
+          speaker: newSpeakerId,
+          modifiedAt: Date.now()
+        };
+        
+        clips[clipIndex] = updatedClip;
+        audioActions.updateClips(clips);
+        try { window.dispatchEvent(new CustomEvent('clips-updated')); } catch {}
+      },
       deleteClip: (clipId: string) => {
         undoMgr.takeSnapshot(
           audioState.clips,
@@ -221,6 +247,7 @@ export function useClipEditor(
           `Delete clip ${clipId}`
         );
         audioActions.deleteClip(clipId);
+        try { window.dispatchEvent(new CustomEvent('clips-updated')); } catch {}
       },
       reorderClips: (fromIndex: number, toIndex: number) => {
         undoMgr.takeSnapshot(

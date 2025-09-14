@@ -91,10 +91,13 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
                     type="text"
                     value={tempSpeakerName || ''}
                     onChange={(e) => onTempNameChange(e.target.value)}
-                    // onBlur={() => {
-                    //   console.log('Speaker input onBlur triggered for:', speaker.id);
-                    //   onSpeakerSave(speaker.id);
-                    // }}
+                    onBlur={(e) => {
+                      // Use setTimeout to allow clicks on other elements to register first
+                      setTimeout(() => {
+                        console.log('Speaker input onBlur triggered for:', speaker.id);
+                        onSpeakerSave(speaker.id);
+                      }, 150);
+                    }}
                     onKeyDown={(e) => {
                       e.stopPropagation(); // Prevent parent keyboard handlers
                       if (e.key === 'Enter') {
@@ -104,9 +107,17 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    onFocus={() => {}}
+                    onMouseDown={(e) => {
+                      // Prevent focus loss when clicking in the input
+                      e.stopPropagation();
+                    }}
+                    onFocus={(e) => {
+                      // Ensure the input maintains focus
+                      e.stopPropagation();
+                    }}
                     className="speaker-name-input"
                     ref={inputRef}
+                    autoFocus
                   />
                 ) : (
                   <span 

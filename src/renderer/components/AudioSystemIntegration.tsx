@@ -37,6 +37,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     projectState.projectData
   );
   const [initializationError, setInitializationError] = useState<string | null>(null);
+  const [audioPath, setAudioPath] = useState<string | null>(null);
   const [cursorPosition, setCursorPosition] = useState<TimelinePosition | null>(null);
   const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
   const [editorVersion, setEditorVersion] = useState(0);
@@ -72,6 +73,35 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
       if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Audio state changed:', newState);
     },
   });
+
+  // Normalize clips before sending to audio layer to prevent JUCE crashes
+  const normalizeClipsForAudio = useCallback((src: Clip[]): Clip[] => {
+    const EPS = 0.0005;
+    const safe = (n: any) => (typeof n === 'number' && isFinite(n) ? n : 0);
+    let out = src.map(c => ({
+      ...c,
+      startTime: safe(c.startTime),
+      endTime: Math.max(safe(c.startTime), safe(c.endTime)),
+    }));
+    // Filter zero/negative-duration speech clips
+    out = out.filter(c => {
+      const dur = (c.endTime ?? 0) - (c.startTime ?? 0);
+      if (c.type !== 'audio-only') return dur > EPS;
+      return dur >= 0; // keep gaps; they may be needed for continuity
+    });
+    // Renumber order sequentially
+    out = out.map((c, i) => ({ ...c, order: i }));
+    return out;
+  }, []);
+
+  // Keep audio system mode in sync with UI toggle (Listen/Edit)
+  useEffect(() => {
+    try {
+      audioActions.setMode(mode);
+    } catch (err) {
+      if (AUDIO_DEBUG) console.warn('[AudioSystemIntegration] setMode failed:', err);
+    }
+  }, [mode]);
 
   // Prevent multiple init attempts
   const initializationAttemptRef = useRef(false);
@@ -163,20 +193,54 @@ useEffect(() => {
   return () => window.removeEventListener('clip-reorder', onClipReorder as any);
 }, [projectState.projectData, projectActions, audioActions]);
 
+// Handle audio seek events from ClipsPanel
+useEffect(() => {
+  const onAudioSeek = (e: CustomEvent<{ time: number; shouldPlay?: boolean }>) => {
+    const { time, shouldPlay } = e.detail || {};
+    if (typeof time === 'number' && audioState.isInitialized) {
+      if (AUDIO_DEBUG) {
+        console.log('[AudioSystemIntegration] Seeking to time from ClipsPanel:', time, shouldPlay ? '(and play)' : '');
+      }
+      audioActions.seekToOriginalTime(time);
+      
+      // Start playing if requested
+      if (shouldPlay && !audioState.isPlaying) {
+        audioActions.play().catch(err => {
+          console.error('Failed to start playback from ClipsPanel:', err);
+        });
+      }
+    }
+  };
+
+  window.addEventListener('audio-seek-to-time', onAudioSeek as any);
+  return () => window.removeEventListener('audio-seek-to-time', onAudioSeek as any);
+}, [audioActions, audioState.isInitialized, audioState.isPlaying]);
+
   useEffect(() => {
     if (disableAudio) return;
     if (clips.length > 0 && audioUrl && !audioState.isInitialized && !initializationAttemptRef.current) {
       initializationAttemptRef.current = true;
       setInitializationError(null);
 
+      console.log('[AudioSystemIntegration] Attempting to initialize audio with:', {
+        audioUrl,
+        clipsCount: clips.length,
+        audioUrlType: typeof audioUrl,
+        audioUrlExists: audioUrl ? 'yes' : 'no'
+      });
+
+      // Store audio path for error screen
+      setAudioPath(audioUrl);
+
       audioActions
-        .initialize(audioUrl, clips)
+        .initialize(audioUrl, normalizeClipsForAudio(clips))
         .then(() => {
           if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Initialized audio');
         })
         .catch((err) => {
           console.error('Failed to init audio system:', err);
           setInitializationError(`Failed to load audio: ${err.message || err}`);
+          console.warn('Audio system initialization failed, but continuing with transcript-only mode');
         })
         .finally(() => {
           initializationAttemptRef.current = false;
@@ -184,24 +248,35 @@ useEffect(() => {
     }
   }, [clips.length, audioUrl, audioState.isInitialized, disableAudio]);
 
-  // Keep clips in sync (but don't override manual reordering)
+  // Keep clips in sync (but don't override manual reordering). De-dupe to avoid
+  // rapid redundant updates that can interrupt playback.
+  const lastSentClipsHashRef = useRef<string>('');
   useEffect(() => {
-    if (audioState.isInitialized && clips.length > 0 && !isReorderingRef.current) {
-      if (AUDIO_DEBUG) {
-        console.log('[AudioSystemIntegration] Syncing clips to audio system (not during reorder)');
+    if (!audioState.isInitialized || clips.length === 0 || isReorderingRef.current) {
+      if (isReorderingRef.current && AUDIO_DEBUG) {
+        console.log('[AudioSystemIntegration] Skipping clip sync - reordering in progress');
       }
-      audioActions.updateClips(clips);
-    } else if (isReorderingRef.current && AUDIO_DEBUG) {
-      console.log('[AudioSystemIntegration] Skipping clip sync - reordering in progress');
+      return;
     }
-  }, [clips, audioState.isInitialized]);
+    const hash = clips
+      .map((c) => `${c.id}:${c.order}:${c.type}:${c.speaker || ''}:${c.startTime.toFixed(3)}:${c.endTime.toFixed(3)}:${c.words?.length || 0}`)
+      .join('|');
+    if (hash === lastSentClipsHashRef.current) {
+      return; // No-op changes; avoid interrupting playback
+    }
+    lastSentClipsHashRef.current = hash;
+    if (AUDIO_DEBUG) {
+      console.log('[AudioSystemIntegration] Syncing clips to audio system (de-duped)');
+    }
+    audioActions.updateClips(normalizeClipsForAudio(clips));
+  }, [clips, audioState.isInitialized, normalizeClipsForAudio]);
 
   // Recovery
   const handleRecoveryAttempt = useCallback(() => {
     setInitializationError(null);
     if (clips.length > 0 && audioUrl) {
       setTimeout(() => {
-        audioActions.initialize(audioUrl, clips).catch((err) => {
+        audioActions.initialize(audioUrl, normalizeClipsForAudio(clips)).catch((err) => {
           setInitializationError(`Recovery failed: ${err.message || err}`);
         });
       }, 1000);
@@ -283,7 +358,7 @@ useEffect(() => {
             typeof audioState.currentOriginalTime === 'number' ? audioState.currentOriginalTime : 0
           }
           isPlaying={audioState.isPlaying}
-          readOnly={mode === 'listen'}
+          readOnly={mode === 'listen' && !initializationError}
           onSegmentsChange={() => {}}
           onClipsChange={(updatedClips) => {
             if (!projectState.projectData) return;
@@ -295,7 +370,8 @@ useEffect(() => {
             if (audioState.isInitialized) audioActions.updateClips(updatedClips);
           }}
           onWordClick={(ts) => {
-            audioActions.seekToOriginalTime(ts);
+            const bias = Math.max(0, (ts || 0) - 0.01);
+            audioActions.seekToOriginalTime(bias);
             if (mode === 'listen' && !audioState.isPlaying) {
               audioActions.play().catch(() => {});
             }
@@ -310,6 +386,8 @@ useEffect(() => {
           fontSize={fontSettings?.size || fontSettings?.fontSize}
           onWordEdit={() => {}}
           getSpeakerColor={() => '#3b82f6'}
+          audioState={audioState}
+          audioActions={audioActions}
         />
       </AudioErrorBoundary>
     );

@@ -20,8 +20,9 @@ import {
 import { WordNode } from './nodes/WordNode';
 import { SegmentNode } from './nodes/SegmentNode';
 import { ClipContainerNode } from './nodes/ClipContainerNode';
-import { SpeakerNode } from './nodes/SpeakerNode';
+// SpeakerNode removed - using ClipSpeakerPlugin instead
 import { ClipNode } from './nodes/ClipNode';
+import { SpacerNode } from './nodes/SpacerNode';
 
 import AudioSyncPlugin from './plugins/AudioSyncPlugin';
 import SpeakerPlugin from './plugins/SpeakerPlugin';
@@ -30,6 +31,10 @@ import ClipCreationPlugin from './plugins/ClipCreationPlugin';
 import ActiveClipPlugin from './plugins/ActiveClipPlugin';
 import ClipDndPlugin from './plugins/ClipDndPlugin';
 import FormattingPlugin from './plugins/FormattingPlugin';
+// Deprecated: replaced by ClipSpeakerPlugin which renders a unified dropdown
+// import ClipHeaderPlugin from './plugins/ClipHeaderPlugin';
+// import ClipSettingsPlugin from './plugins/ClipSettingsPlugin';
+import ClipSpeakerPlugin from './plugins/ClipSpeakerPlugin';
 
 import { 
   segmentsToEditorState,
@@ -65,6 +70,9 @@ interface LexicalTranscriptEditorProps {
   onParagraphBreak?: (segmentIndex: number, wordIndex: number, position: 'before' | 'after') => void;
   onSpeakerAdd?: (speakerId: string, name: string) => void;
   getSpeakerColor?: (speakerId: string) => string;
+  // Audio system integration
+  audioState?: import('../hooks/useAudioEditor').AudioEditorState;
+  audioActions?: import('../hooks/useAudioEditor').AudioEditorActions;
 }
 
 // Inner component that has access to the Lexical editor context
@@ -89,12 +97,57 @@ function LexicalTranscriptEditorContent({
   onSpeakerAdd,
   getSpeakerColor,
   readOnly = false,
-}: Omit<LexicalTranscriptEditorProps, 'className' | 'readOnly'> & { readOnly?: boolean; clips?: any[]; onClipsChange?: (clips: any[]) => void }) {
+  audioState,
+  audioActions,
+}: Omit<LexicalTranscriptEditorProps, 'className' | 'readOnly'> & { 
+  readOnly?: boolean; 
+  clips?: any[]; 
+  onClipsChange?: (clips: any[]) => void; 
+  audioState?: import('../hooks/useAudioEditor').AudioEditorState; 
+  audioActions?: import('../hooks/useAudioEditor').AudioEditorActions; 
+}) {
   const [editor] = useLexicalComposerContext();
   const initializedRef = useRef(false);
   const suppressOnChangeRef = useRef(false);
   const dragModeRef = useRef(false);
   const lastClipsHashRef = useRef<string | null>(null);
+
+  // Create available speakers array from both clips and speakers list
+  const availableSpeakers = useMemo(() => {
+    const speakersMap = new Map();
+    
+    // Add speakers from the global speakers object
+    Object.keys(speakers).forEach(speakerId => {
+      if (!speakersMap.has(speakerId)) {
+        speakersMap.set(speakerId, {
+          id: speakerId,
+          name: getSpeakerDisplayName(speakerId)
+        });
+      }
+    });
+    
+    // Add speakers from clips (in case there are speakers not in the global list)
+    if (clips && clips.length > 0) {
+      clips.forEach((clip: any) => {
+        if (clip.speaker && !speakersMap.has(clip.speaker)) {
+          speakersMap.set(clip.speaker, {
+            id: clip.speaker,
+            name: getSpeakerDisplayName(clip.speaker)
+          });
+        }
+      });
+    }
+    
+    const speakersArray = Array.from(speakersMap.values());
+    // Make available speakers globally accessible for SpeakerNode components
+    (globalThis as any).__LEXICAL_AVAILABLE_SPEAKERS__ = speakersArray;
+    // Make audio system accessible for SpeakerNode dropdown functionality
+    (globalThis as any).__LEXICAL_AUDIO_STATE__ = audioState;
+    (globalThis as any).__LEXICAL_AUDIO_ACTIONS__ = audioActions;
+    // Make clips available for SpeakerNode to determine clip index and operations
+    (globalThis as any).__LEXICAL_CLIPS__ = clips;
+    return speakersArray;
+  }, [clips, speakers, getSpeakerDisplayName, audioState, audioActions]);
 
   // Initialize editor with segments data
   useEffect(() => {
@@ -153,6 +206,12 @@ function LexicalTranscriptEditorContent({
 
   // Handle editor state changes
   const handleEditorChange = useCallback((editorState: EditorState, editor: LexicalEditor) => {
+    // In Listen mode, never push structural changes back to project/audio.
+    if (readOnly) {
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Suppressing onClipsChange due to readOnly (listen mode)');
+      return;
+    }
     if (suppressOnChangeRef.current) {
       // Ignore synthetic changes caused by external rebuilds
       return;
@@ -169,7 +228,7 @@ function LexicalTranscriptEditorContent({
       if (UI_DEBUG) console.log('[LexicalTranscriptEditor] Suppressing onClipsChange due to playback');
       return;
     }
-    if (clips && clips.length > 0 && onClipsChange) {
+    if (!readOnly && clips && clips.length > 0 && onClipsChange) {
       const updatedClips = editorStateToClips(editor, clips);
       // Preserve audio-only clips that were filtered out from rendering
       const audioOnlyClips = clips.filter(c => c.type === 'audio-only');
@@ -208,7 +267,10 @@ function LexicalTranscriptEditorContent({
     }
     
     // Compute a lightweight hash of clips order and lengths to detect external updates
-    const hash = clips.map((c: any) => `${c.id}:${c.order}:${c.words?.length ?? 0}`).join('|');
+    // Include speaker and status so UI rebuilds on these changes too
+    const hash = clips
+      .map((c: any) => `${c.id}:${c.order}:${c.words?.length ?? 0}:${c.speaker ?? ''}:${c.status ?? 'active'}`)
+      .join('|');
     const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
     if (UI_DEBUG) console.log('[LexicalTranscriptEditor] External clips hash check:', {
       currentHash: hash.substring(0, 100) + '...',
@@ -297,6 +359,16 @@ function LexicalTranscriptEditorContent({
         fontFamily={fontFamily}
         fontSize={fontSize}
       />
+      
+      {/* Speaker dropdowns - rendered outside editable content */}
+      <ClipSpeakerPlugin
+        availableSpeakers={availableSpeakers}
+        audioState={audioState}
+        audioActions={audioActions}
+        readOnly={readOnly}
+        getSpeakerDisplayName={getSpeakerDisplayName}
+      />
+      
       {/* Highlight and scope editing to active clip */}
       {!readOnly && <ActiveClipPlugin />}
       {!readOnly && <ClipDndPlugin />}
@@ -326,6 +398,8 @@ export function LexicalTranscriptEditor({
   onParagraphBreak,
   onSpeakerAdd,
   getSpeakerColor,
+  audioState,
+  audioActions,
 }: LexicalTranscriptEditorProps) {
   // Editor configuration
   const editorConfig = useMemo(() => ({
@@ -334,8 +408,8 @@ export function LexicalTranscriptEditor({
       WordNode,
       SegmentNode,
       ClipContainerNode,
-      SpeakerNode,
       ClipNode,
+      SpacerNode,
       ParagraphNode,
     ],
     onError: (error: Error) => {
@@ -372,6 +446,12 @@ export function LexicalTranscriptEditor({
   return (
     <main className={`flex-1 bg-white font-transcript overflow-y-auto ${className}`}>
       <div className={`max-w-4xl mx-auto relative lexical-transcript-editor-wrapper ${readOnly ? 'listen-mode' : 'edit-mode'}`}>
+        {/* Persistent overlay for clip speaker dropdowns. Kept inside the editor wrapper */}
+        <div
+          id="clip-speaker-layer"
+          className="clip-speaker-layer"
+          style={{ position: 'absolute', top: 0, left: 0, width: 0, height: 0, zIndex: 1000, pointerEvents: 'none' }}
+        />
         <LexicalComposer initialConfig={editorConfig}>
           <div className="lexical-transcript-editor-wrapper">
             <LexicalTranscriptEditorContent
@@ -395,6 +475,8 @@ export function LexicalTranscriptEditor({
               onSpeakerAdd={onSpeakerAdd}
               getSpeakerColor={getSpeakerColor}
               readOnly={readOnly}
+              audioState={audioState}
+              audioActions={audioActions}
             />
           </div>
         </LexicalComposer>

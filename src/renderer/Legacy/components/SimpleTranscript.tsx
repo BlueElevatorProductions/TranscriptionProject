@@ -7,7 +7,9 @@
 import React, { useCallback, useRef, useEffect } from 'react';
 import { Clip } from '../types';
 import { AudioEditorState, AudioEditorActions } from '../hooks/useAudioEditor';
+import { useClipEditor } from '../hooks/useClipEditor';
 import { generateWordId } from '../audio/AudioAppState';
+import SpeakerDropdown from './shared/SpeakerDropdown';
 
 interface SimpleTranscriptProps {
   // Audio system
@@ -249,38 +251,56 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
     );
   };
 
+  // Use clip editor for merge/delete operations
+  const clipEditor = useClipEditor(audioState, audioActions);
+
+  // Get available speakers for dropdown
+  const availableSpeakers = Object.entries(speakerNames).map(([id, name]) => ({
+    id,
+    name,
+  }));
+
   // Render speaker label
-  const renderSpeakerLabel = (clip: Clip) => {
+  const renderSpeakerLabel = (clip: Clip, clipIndex: number) => {
     const speakerId = clip.speaker || '';
     const displayName = speakerNames[speakerId] || speakerId || 'Unknown';
     const isActiveClip = audioState.currentClipId === clip.id;
-
-    // In Edit mode: Only show project-defined speakers (no arbitrary speaker creation)
-    const options = Object.entries(speakerNames);
     
-    // If current speaker isn't in project speakers, show it as "Unknown" in dropdown
-    // but don't add it as a selectable option to prevent persistence of arbitrary names
-    const validSpeakerId = speakerNames[speakerId] ? speakerId : (options[0]?.[0] || '');
+    // If current speaker isn't in project speakers, use first available or empty
+    const validSpeakerId = speakerNames[speakerId] ? speakerId : (availableSpeakers[0]?.id || '');
 
     return (
       <div className={`flex items-center mb-2 ${isActiveClip ? 'font-semibold' : ''}`}>
         {audioState.mode === 'edit' ? (
           <>
-            <select
-              className="text-sm font-medium text-gray-600 mr-3 bg-white border border-gray-300 rounded"
-              value={validSpeakerId}
-              onChange={e => handleSpeakerChange(clip.id, e.target.value)}
-            >
-              {options.length > 0 ? (
-                options.map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))
-              ) : (
-                <option value="" disabled>No speakers defined</option>
-              )}
-            </select>
+            <SpeakerDropdown
+              currentSpeakerId={validSpeakerId}
+              displayName={displayName}
+              availableSpeakers={availableSpeakers}
+              clipIndex={clipIndex}
+              totalClips={visibleClips.length}
+              onSpeakerChange={(newSpeakerId) => handleSpeakerChange(clip.id, newSpeakerId)}
+              onMergeAbove={() => {
+                if (clipIndex > 0) {
+                  const prevClip = visibleClips[clipIndex - 1];
+                  if (prevClip) {
+                    clipEditor.mergeClips(prevClip.id, clip.id);
+                  }
+                }
+              }}
+              onMergeBelow={() => {
+                if (clipIndex < visibleClips.length - 1) {
+                  const nextClip = visibleClips[clipIndex + 1];
+                  if (nextClip) {
+                    clipEditor.mergeClips(clip.id, nextClip.id);
+                  }
+                }
+              }}
+              onDeleteClip={() => {
+                clipEditor.deleteClip(clip.id);
+              }}
+              disabled={availableSpeakers.length === 0}
+            />
             <span className="text-sm font-medium text-gray-600 mr-3">:</span>
           </>
         ) : (
@@ -293,7 +313,7 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
   };
 
   // Render a single clip
-  const renderClip = (clip: Clip) => {
+  const renderClip = (clip: Clip, clipIndex: number) => {
     // In listen mode, don't show deleted clips
     if (audioState.mode === 'listen' && !audioActions.isClipActive(clip.id)) {
       return null;
@@ -308,7 +328,7 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
           isActiveClip ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'
         }`}
       >
-        {renderSpeakerLabel(clip)}
+        {renderSpeakerLabel(clip, clipIndex)}
         
         <div
           className="leading-relaxed break-words"
@@ -420,7 +440,7 @@ export const SimpleTranscript: React.FC<SimpleTranscriptProps> = ({
           }
         }}
       >
-        {visibleClips.map(renderClip)}
+        {visibleClips.map((clip, index) => renderClip(clip, index))}
       </div>
     </div>
   );

@@ -817,26 +817,63 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         {openPanel === 'speakers' && (
           <div className="p-4">
             <h2 className="text-lg font-semibold text-white mb-4">Speakers</h2>
-            <p className="text-white opacity-70 mb-2">Edit speaker names below. Changes persist to the project.</p>
-            <div className="space-y-2">
-              {speakers.map((speaker) => (
-                <div key={speaker.id} className="flex items-center gap-2">
-                  <span className="text-white text-sm w-28 opacity-70">{speaker.id}</span>
+            <p className="text-white opacity-70 mb-4">Edit speaker names below. Changes persist to the project.</p>
+            <div className="space-y-3 mb-4">
+              {speakers.map((speaker, index) => (
+                <div key={speaker.id} className="flex items-center gap-3">
                   <input
-                    className="flex-1 px-2 py-1 rounded bg-white bg-opacity-10 text-white border border-white border-opacity-20 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50"
+                    className="flex-1 px-3 py-2 rounded bg-white bg-opacity-10 text-white border border-white border-opacity-20 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 text-sm min-w-0 placeholder:text-white placeholder:opacity-50"
                     value={((projectState.globalSpeakers as any)[speaker.id] ?? '') as string}
                     onChange={(e) => {
                       const next = { ...projectState.globalSpeakers, [speaker.id]: e.target.value } as any;
                       projectActions.updateSpeakers(next);
                     }}
-                    placeholder={speaker.name || speaker.id}
+                    placeholder={`Speaker ${index + 1}`}
                   />
+                  <button
+                    onClick={() => {
+                      // Remove this speaker from global speakers
+                      const { [speaker.id]: removed, ...remainingSpeakers } = projectState.globalSpeakers as any;
+                      projectActions.updateSpeakers(remainingSpeakers);
+                    }}
+                    className="flex-shrink-0 w-6 h-6 flex items-center justify-center text-white opacity-50 hover:opacity-100 hover:text-red-400 transition-colors text-sm font-bold"
+                    title="Remove speaker"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
+            
+            <button
+              onClick={() => {
+                // Add new speaker functionality
+                const newSpeakerId = `SPEAKER_${speakers.length.toString().padStart(2, '0')}`;
+                const newSpeaker = {
+                  id: newSpeakerId,
+                  name: `Speaker ${speakers.length + 1}`,
+                  segments: [],
+                  totalDuration: 0
+                };
+                
+                // Update global speakers with the new speaker
+                const nextGlobalSpeakers = {
+                  ...projectState.globalSpeakers,
+                  [newSpeakerId]: `Speaker ${speakers.length + 1}`
+                };
+                projectActions.updateSpeakers(nextGlobalSpeakers);
+                
+                // For now, we'll just show it in the UI - ideally this should integrate with the project's speaker system
+                console.log('Added new speaker:', newSpeaker);
+              }}
+              className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
+            >
+              + Add Speaker
+            </button>
+            
             <button
               onClick={() => setOpenPanel(null)}
-              className="mt-4 px-3 py-1 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30"
+              className="mt-4 px-3 py-1 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30 text-sm"
             >
               Close
             </button>
@@ -846,14 +883,87 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         {openPanel === 'clips' && (
           <ClipsPanel
             clips={projectState.projectData?.clips?.clips || []}
-            onClipEdit={(clipId, updatedClip) => {
-              console.log('Clip edit not yet implemented in new system');
+            onClipPlay={(clip) => {
+              // Seek to the clip's start time and start playing
+              window.dispatchEvent(new CustomEvent('audio-seek-to-time', { 
+                detail: { time: clip.startTime, shouldPlay: true } 
+              }));
             }}
             onClipDelete={(clipId) => {
-              console.log('Clip deletion not yet implemented in new system');
+              // Mark clip as deleted in project data
+              if (projectState.projectData?.clips?.clips) {
+                const updatedClips = projectState.projectData.clips.clips.map(clip =>
+                  clip.id === clipId ? { ...clip, status: 'deleted' as const } : clip
+                );
+                const updatedProjectData = {
+                  ...projectState.projectData,
+                  clips: {
+                    ...projectState.projectData.clips,
+                    clips: updatedClips
+                  }
+                };
+                projectActions.updateProjectData(updatedProjectData);
+              }
             }}
-            onClipPlay={(clip) => {
-              console.log('Clip play will be handled by AudioSystemIntegration');
+            onClipMerge={(clipIds) => {
+              // Basic clip merging functionality
+              if (projectState.projectData?.clips?.clips && clipIds.length >= 2) {
+                const clips = projectState.projectData.clips.clips;
+                const clipsToMerge = clips.filter(clip => clipIds.includes(clip.id));
+                clipsToMerge.sort((a, b) => a.startTime - b.startTime);
+                
+                if (clipsToMerge.length >= 2) {
+                  const firstClip = clipsToMerge[0];
+                  const lastClip = clipsToMerge[clipsToMerge.length - 1];
+                  
+                  // Create merged clip
+                  const mergedClip = {
+                    ...firstClip,
+                    id: `merged-${Date.now()}`,
+                    endTime: lastClip.endTime,
+                    duration: lastClip.endTime - firstClip.startTime,
+                    text: clipsToMerge.map(c => c.text).join(' '),
+                    words: clipsToMerge.flatMap(c => c.words || []),
+                    type: 'user-created' as const,
+                    createdAt: new Date().toISOString()
+                  };
+                  
+                  // Remove original clips and add merged clip
+                  const updatedClips = clips.filter(clip => !clipIds.includes(clip.id));
+                  updatedClips.push(mergedClip);
+                  
+                  const updatedProjectData = {
+                    ...projectState.projectData,
+                    clips: {
+                      ...projectState.projectData.clips,
+                      clips: updatedClips
+                    }
+                  };
+                  projectActions.updateProjectData(updatedProjectData);
+                }
+              }
+            }}
+            onClipReorder={(fromIndex, toIndex) => {
+              // Use the same clip reordering system as the transcript editor
+              if (projectState.projectData?.clips?.clips) {
+                const allClips = projectState.projectData.clips.clips;
+                // Filter to get only non-audio-only clips (same as ClipsPanel filter)
+                const visibleClips = allClips.filter(clip => clip.type !== 'audio-only' && clip.status !== 'deleted');
+                
+                if (fromIndex >= 0 && toIndex >= 0 && fromIndex < visibleClips.length && toIndex < visibleClips.length) {
+                  const srcClip = visibleClips[fromIndex];
+                  const targetClip = visibleClips[toIndex];
+                  
+                  // Use the same event system as the transcript drag-and-drop
+                  window.dispatchEvent(new CustomEvent('clip-reorder', {
+                    detail: {
+                      srcClipId: srcClip.id,
+                      targetClipId: targetClip.id,
+                      placeBefore: fromIndex > toIndex // If dragging upward, place before target
+                    }
+                  }));
+                }
+              }
             }}
             onClose={() => setOpenPanel(null)}
           />

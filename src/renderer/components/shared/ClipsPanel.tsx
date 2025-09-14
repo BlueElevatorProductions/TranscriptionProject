@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { Scissors, Plus, Play, Trash2, Copy } from 'lucide-react';
+import React, { useState, useCallback, useRef } from 'react';
+import { Scissors, Plus, Play, Trash2, Copy, GripVertical } from 'lucide-react';
 import { Clip } from '../TranscriptEdit/useClips';
 
 interface ClipsPanelProps {
@@ -9,6 +9,7 @@ interface ClipsPanelProps {
   onClipDelete?: (clipId: string) => void;
   onClipPlay?: (clip: Clip) => void;
   onClipMerge?: (clipIds: string[]) => void;
+  onClipReorder?: (fromIndex: number, toIndex: number) => void;
   onClose: () => void;
 }
 
@@ -19,14 +20,19 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
   onClipDelete,
   onClipPlay,
   onClipMerge,
+  onClipReorder,
   onClose
 }) => {
   // Multi-select state
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipIds: string[] } | null>(null);
+  
+  // Drag-and-drop state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  // Show all clips (both generated and user-created)
-  const allClips = clips;
+  // Show only actual content clips, filtering out audio-only gaps
+  const allClips = clips.filter(clip => clip.type !== 'audio-only' && clip.status !== 'deleted');
   const userClips = clips.filter(clip => clip.type === 'user-created');
 
   // Handle clip selection with multi-select support
@@ -95,6 +101,37 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
+
+  // Drag and drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', allClips[index].id);
+  }, [allClips]);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== dropIndex && onClipReorder) {
+      onClipReorder(draggedIndex, dropIndex);
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }, [draggedIndex, onClipReorder]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }, []);
   
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -133,23 +170,38 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
         {allClips.map((clip, index) => {
           const isSelected = selectedClipIds.has(clip.id);
           const isActive = selectedClipId === clip.id;
+          const isDragging = draggedIndex === index;
+          const isDragOver = dragOverIndex === index;
           
           return (
           <div 
             key={clip.id} 
             className={`
-              border rounded-lg p-3 cursor-pointer transition-colors
+              border rounded-lg p-3 cursor-pointer transition-colors relative
               ${clip.type === 'user-created' ? 'bg-green-900 bg-opacity-20 border-green-400 border-opacity-40' : 'bg-white bg-opacity-10 border-white border-opacity-20'}
               ${isSelected ? 'bg-purple-900 bg-opacity-40 border-purple-400' : 
                 isActive ? 'bg-blue-900 bg-opacity-30 border-blue-400' : 
                 'hover:bg-white hover:bg-opacity-15'}
+              ${isDragging ? 'opacity-50' : ''}
+              ${isDragOver ? 'border-blue-500 border-2' : ''}
             `}
+            draggable={true}
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragOver={(e) => handleDragOver(e, index)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, index)}
+            onDragEnd={handleDragEnd}
             onClick={(e) => handleClipClick(clip.id, e)}
             onContextMenu={(e) => handleContextMenu(e, clip.id)}
           >
             {/* Clip header */}
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
+                <GripVertical 
+                  size={12} 
+                  className="text-white opacity-40 hover:opacity-70 cursor-grab active:cursor-grabbing"
+                  title="Drag to reorder"
+                />
                 <span className="text-xs font-medium text-blue-300">
                   Clip {index + 1}
                 </span>
