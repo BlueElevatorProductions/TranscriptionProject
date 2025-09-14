@@ -365,80 +365,12 @@ export class JuceAudioManager {
       }
         
       case 'position': {
-        // Drop stale position events from older EDL revisions
         const rev = (evt as any).revision;
-        if (typeof rev === 'number' && rev < this.lastAppliedRevision) {
-          if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
-            console.log('[JuceAudio] Dropping stale position from rev', rev, 'current', this.lastAppliedRevision);
-          }
-          break;
-        }
+        if (typeof rev === 'number' && rev < this.lastAppliedRevision) break;
         const editedTime = evt.editedSec;
-        const originalSecFromEvt = evt.originalSec;
-        // Map edited -> original locally to guard against backends that don't emit original time
         const mapped = this.sequencer.editedTimeToOriginalTime(editedTime);
-        const originalSec = mapped?.originalTime ?? originalSecFromEvt;
-        
-        if (AUDIO_DEBUG) {
-          (this as any)._lastTimeLog = (this as any)._lastTimeLog || 0;
-          const now = Date.now();
-          if (now - (this as any)._lastTimeLog > 1000) {
-            (this as any)._lastTimeLog = now;
-            console.log('[JuceAudio] Position update:', {
-              editedTime: editedTime.toFixed(3),
-              originalSec: originalSec.toFixed(3),
-              isPlaying: this.state.playback.isPlaying
-            });
-          }
-        }
-        
+        const originalSec = mapped?.originalTime ?? editedTime;
         this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { currentTime: editedTime, currentOriginalTime: originalSec } });
-        const pos = this.getPositionAtOriginalTime(originalSec);
-        if (pos) {
-          const wordId = generateWordId(pos.clipId, pos.localWordIndex);
-          if (wordId !== this.state.playback.currentWordId) {
-            this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { currentWordId: wordId, currentClipId: pos.clipId } });
-            this.callbacks.onWordHighlight(wordId);
-            if (AUDIO_DEBUG) {
-              console.log('[JUCE DEBUG] Word highlight:', {
-                editedSec: evt.editedSec,
-                originalSec: evt.originalSec,
-                mappedClipId: pos.clipId,
-                localWordIndex: pos.localWordIndex,
-                wordId
-              });
-            }
-          }
-        } else if (AUDIO_DEBUG) {
-          console.log('[JUCE DEBUG] No position found for originalTime:', originalSec);
-        }
-
-        // Detect whether backend supports dual timeline mapping during reorders.
-        // If reordered and evt.originalSec ~= evt.editedSec but our local map differs, prefer original seeks.
-        try {
-          const { clips, activeClipIds } = this.state.timeline;
-          const ordered = this.state.timeline.reorderIndices
-            .map((i) => clips[i])
-            .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
-          let isReordered = false;
-          for (let i = 1; i < ordered.length; i++) {
-            if (ordered[i].startTime < ordered[i - 1].endTime) { isReordered = true; break; }
-          }
-          if (isReordered && mapped) {
-            const backendEqual = Math.abs(originalSecFromEvt - editedTime) < 0.001;
-            const localDiffers = Math.abs(mapped.originalTime - editedTime) > 0.01; // clearly different mapping
-            if (backendEqual && localDiffers && !this.preferOriginalSeek) {
-              if (AUDIO_DEBUG) console.warn('[JuceAudio] Enabling preferOriginalSeek fallback (backend emits no original mapping).');
-              this.preferOriginalSeek = true;
-              // Correct the current playback position to the intended original time
-              const nowMs = Date.now();
-              if (nowMs - this.lastCorrectiveSeekAt > 300) {
-                this.lastCorrectiveSeekAt = nowMs;
-                try { this.seekToEditedTime(editedTime); } catch {}
-              }
-            }
-          }
-        } catch {}
         break;
       }
       case 'ended':
@@ -447,7 +379,7 @@ export class JuceAudioManager {
     }
   }
 
-  // New: seek using original time domain
+  // Compatibility: map original time to edited time and seek edited-only
   seekToOriginalTime(originalSec: number): void {
     const { clips, activeClipIds } = this.state.timeline;
     const ordered = this.state.timeline.reorderIndices
