@@ -334,11 +334,25 @@ export class JuceAudioManager {
         const newIndices = [...state.timeline.reorderIndices];
         const [movedIndex] = newIndices.splice(fromIndex, 1);
         newIndices.splice(toIndex, 0, movedIndex);
-        const reorderedClips = newIndices.map((i) => state.timeline.clips[i]);
+
+        // Update clip.order values to reflect the new playback order
+        const newClips = state.timeline.clips.map((clip, originalIdx) => ({
+          ...clip,
+          order: newIndices.indexOf(originalIdx),
+        }));
+
+        // Update sequencer with clips already in the new order
+        const reorderedClips = newIndices.map((i) => newClips[i]);
         this.sequencer.updateClips(reorderedClips);
+
         return {
           ...state,
-          timeline: { ...state.timeline, reorderIndices: newIndices, totalDuration: this.calculateTotalDuration(state.timeline.clips, state.timeline.deletedWordIds) },
+          timeline: {
+            ...state.timeline,
+            clips: newClips,
+            reorderIndices: newIndices,
+            totalDuration: this.calculateTotalDuration(newClips, state.timeline.deletedWordIds),
+          },
         };
       }
       case 'DELETE_CLIP': {
