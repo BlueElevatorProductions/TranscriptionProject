@@ -6,7 +6,6 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Clip } from '../types';
-import { AudioManager } from '../audio/AudioManager';
 import JuceAudioManager from '../audio/JuceAudioManager';
 import { AudioAppState, TimelinePosition, generateWordId } from '../audio/AudioAppState';
 
@@ -34,6 +33,7 @@ export interface AudioEditorState {
   // UI state
   currentWordId: string | null;
   currentClipId: string | null;
+  edlApplying?: boolean;
   selectedClipId: string | null;
   cursorPosition: TimelinePosition | null;
   selectedWordIds: Set<string>;
@@ -90,7 +90,7 @@ export interface UseAudioEditorOptions {
 export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEditorState, AudioEditorActions] => {
   // Keep this quiet by default. Only emit traces when VITE_AUDIO_TRACE=true
   const AUDIO_TRACE = (import.meta as any).env?.VITE_AUDIO_TRACE === 'true';
-  const managerRef = useRef<AudioManager | null>(null);
+  const managerRef = useRef<JuceAudioManager | null>(null);
   const optionsRef = useRef(options);
   
   // Update options ref when options change
@@ -139,6 +139,7 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
       totalDuration: appState.timeline.totalDuration,
       currentWordId: appState.playback.currentWordId,
       currentClipId: appState.playback.currentClipId,
+      edlApplying: appState.playback.edlApplying,
       selectedClipId: appState.ui.selectedClipId,
       cursorPosition: appState.ui.cursorPosition,
       selectedWordIds: appState.ui.selectedWordIds,
@@ -183,19 +184,13 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
   // Initialize manager lazily when actually needed
   const getOrCreateManager = useCallback(() => {
     if (!managerRef.current) {
-      const useJuce = (import.meta as any).env?.VITE_USE_JUCE === 'true' && (window as any).juceTransport;
-      if (AUDIO_TRACE) console.log('Creating new', useJuce ? 'JuceAudioManager' : 'AudioManager');
-      managerRef.current = (useJuce ? new JuceAudioManager({
+      if (AUDIO_TRACE) console.log('Creating new JuceAudioManager');
+      managerRef.current = new JuceAudioManager({
         onStateChange: stableOnStateChange,
         onError: stableOnError,
         onWordHighlight: stableOnWordHighlight,
         onClipChange: stableOnClipChange,
-      }) : new AudioManager({
-        onStateChange: stableOnStateChange,
-        onError: stableOnError,
-        onWordHighlight: stableOnWordHighlight,
-        onClipChange: stableOnClipChange,
-      })) as any;
+      }) as any;
     }
     return managerRef.current;
   }, [stableOnStateChange, stableOnError, stableOnWordHighlight, stableOnClipChange]);
@@ -204,7 +199,7 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
   useEffect(() => {
     return () => {
       if (managerRef.current) {
-        if (AUDIO_TRACE) console.log('Destroying AudioManager');
+        if (AUDIO_TRACE) console.log('Destroying JuceAudioManager');
         managerRef.current.destroy();
         managerRef.current = null;
       }
@@ -305,11 +300,11 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
       });
       
       if (managerRef.current) {
-        if (AUDIO_TRACE) console.log('[useAudioEditor] Calling AudioManager.updateClips...');
+        if (AUDIO_TRACE) console.log('[useAudioEditor] Calling JuceAudioManager.updateClips...');
         managerRef.current.updateClips(clips);
-        if (AUDIO_TRACE) console.log('[useAudioEditor] AudioManager.updateClips completed');
+        if (AUDIO_TRACE) console.log('[useAudioEditor] JuceAudioManager.updateClips completed');
       } else {
-        if (AUDIO_TRACE) console.warn('[useAudioEditor] No AudioManager instance available for updateClips');
+        if (AUDIO_TRACE) console.warn('[useAudioEditor] No JuceAudioManager instance available for updateClips');
       }
     },
 

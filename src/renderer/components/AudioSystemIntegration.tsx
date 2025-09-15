@@ -240,6 +240,10 @@ useEffect(() => {
       }
       return;
     }
+    if (audioState.edlApplying) {
+      if (AUDIO_DEBUG) console.log('[AudioSystemIntegration] Skipping clip sync - EDL applying');
+      return;
+    }
     const hash = clips
       .map((c) => `${c.id}:${c.order}:${c.type}:${c.speaker || ''}:${c.startTime.toFixed(3)}:${c.endTime.toFixed(3)}:${c.words?.length || 0}`)
       .join('|');

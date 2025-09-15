@@ -321,6 +321,7 @@ function LexicalTranscriptEditorContent({
         onSeekWord={onWordSeek}
         isPlaying={isPlaying}
         enableClickSeek={!!enableClickSeek}
+        deletedWordIds={audioState?.deletedWordIds}
       />
       
       {/* Speaker management plugin */}

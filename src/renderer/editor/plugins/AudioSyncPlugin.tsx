@@ -18,6 +18,8 @@ interface AudioSyncPluginProps {
   enableClickSeek?: boolean;
   // Prefer seeking by identity so backend maps to edited time
   onSeekWord?: (clipId: string, wordIndex: number) => void;
+  // Deleted word IDs to suppress highlighting (text-only deletions)
+  deletedWordIds?: Set<string>;
 }
 
 export default function AudioSyncPlugin({
@@ -26,6 +28,7 @@ export default function AudioSyncPlugin({
   onSeekAudio,
   enableClickSeek = false,
   onSeekWord,
+  deletedWordIds,
 }: AudioSyncPluginProps) {
   const [editor] = useLexicalComposerContext();
   const animationFrameRef = useRef<number>();
@@ -44,7 +47,10 @@ export default function AudioSyncPlugin({
         const root = $getRoot();
         const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
         let hasUpdates = false;
-        let currentlyPlayingWord = null;
+        let currentlyPlayingWord = null as null | { word: string; startTime: number; endTime: number; currentTime: number };
+        let highlightedCount = 0;
+        let blockedClipId: string | null = null;
+        const lastNonDeletedBeforeTByClip = new Map<string, WordNode>();
         
         // Only process when we have valid time data
         if (typeof currentTime !== 'number' || currentTime < 0) {
@@ -83,22 +89,52 @@ export default function AudioSyncPlugin({
         }
 
         // Traverse all nodes to find WordNodes
+        const getWordDomInfo = (node: WordNode): { clipId: string | null; localIndex: number } => {
+          const el = editor.getElementByKey(node.getKey()) as HTMLElement | null;
+          if (!el) return { clipId: null, localIndex: -1 };
+          const container = el.closest('.lexical-clip-container') as HTMLElement | null;
+          const clipId = container?.getAttribute('data-clip-id') || null;
+          if (!container || !clipId) return { clipId: null, localIndex: -1 };
+          const allWords = Array.from(container.querySelectorAll<HTMLElement>('.lexical-word-node'));
+          const idx = allWords.indexOf(el);
+          return { clipId, localIndex: idx };
+        };
+
         const updateWordNode = (node: WordNode) => {
-          const shouldHighlight = node.isCurrentlyPlaying(t);
+          let shouldHighlight = node.isCurrentlyPlaying(t);
           const currentlyHighlighted = node.getLatest().__isCurrentlyPlaying;
+
+          // Candidate tracking for fallback: remember last non-deleted word in this clip before t
+          const editedStart = node.getEditedStart();
+          const { clipId, localIndex } = getWordDomInfo(node);
+          if (clipId && editedStart <= t) {
+            const isDeleted = !!(deletedWordIds && localIndex >= 0 && deletedWordIds.has(`${clipId}-word-${localIndex}`));
+            if (!isDeleted) {
+              lastNonDeletedBeforeTByClip.set(clipId, node);
+            }
+          }
+
+          // Suppress highlight for deleted words
+          if (shouldHighlight && deletedWordIds) {
+            const { clipId, localIndex } = getWordDomInfo(node);
+            if (clipId && localIndex >= 0 && deletedWordIds.has(`${clipId}-word-${localIndex}`)) {
+              shouldHighlight = false;
+              blockedClipId = clipId;
+            }
+          }
 
           if (shouldHighlight !== currentlyHighlighted) {
             node.setCurrentlyPlaying(shouldHighlight);
             hasUpdates = true;
-            
             if (shouldHighlight) {
+              highlightedCount++;
               currentlyPlayingWord = {
                 word: node.getTextContent(),
                 startTime: node.getEditedStart(),
                 endTime: node.getEditedEnd(),
-                currentTime: t
+                currentTime: t,
               };
-          }
+            }
           }
         };
 
@@ -117,6 +153,19 @@ export default function AudioSyncPlugin({
         };
 
         traverseNodes(root);
+
+        // If we blocked a deleted word highlight and nothing else was highlighted, prefer
+        // the nearest previous non-deleted word in the same clip.
+        if (highlightedCount === 0 && blockedClipId) {
+          const candidate = lastNonDeletedBeforeTByClip.get(blockedClipId);
+          if (candidate) {
+            const was = candidate.getLatest().__isCurrentlyPlaying;
+            if (!was) {
+              candidate.setCurrentlyPlaying(true);
+              hasUpdates = true;
+            }
+          }
+        }
 
         // Debug logging every few updates
         if (AUDIO_DEBUG) {
@@ -175,7 +224,7 @@ export default function AudioSyncPlugin({
 
     // Update word highlighting whenever currentTime changes
     updateWordHighlights();
-  }, [currentTime, isPlaying, editor]);
+  }, [currentTime, isPlaying, deletedWordIds, editor]);
   
   // Debug useEffect to track prop changes
   React.useEffect(() => {
