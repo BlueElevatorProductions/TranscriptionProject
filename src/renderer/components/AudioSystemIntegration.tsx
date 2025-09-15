@@ -354,9 +354,6 @@ useEffect(() => {
           key={`editor-v${editorVersion}`}
           clips={mode === 'listen' ? clips.filter(c => c.status !== 'deleted') : clips}
           currentTime={audioState.currentTime}
-          currentOriginalTime={
-            typeof audioState.currentOriginalTime === 'number' ? audioState.currentOriginalTime : 0
-          }
           isPlaying={audioState.isPlaying}
           readOnly={mode === 'listen' && !initializationError}
           onSegmentsChange={() => {}}
@@ -371,13 +368,7 @@ useEffect(() => {
           }}
           onWordClick={(ts) => {
             const t = typeof ts === 'number' ? ts : 0;
-            // Clamp seek to the clicked clip's start to avoid crossing into the previous
-            // original clip when the first edited clip was reordered to the top.
-            const speechClips = clips.filter(c => c.type !== 'audio-only');
-            const containing = speechClips.find(c => t >= c.startTime && t <= c.endTime);
-            const clipStart = containing ? containing.startTime : 0;
-            const bias = Math.max(clipStart + 0.0005, t - 0.01);
-            audioActions.seekToOriginalTime(bias);
+            audioActions.seekToTime(t);
             if (mode === 'listen' && !audioState.isPlaying) {
               audioActions.play().catch(() => {});
             }

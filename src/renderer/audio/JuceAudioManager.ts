@@ -376,9 +376,7 @@ export class JuceAudioManager {
         const rev = (evt as any).revision;
         if (typeof rev === 'number' && rev < this.lastAppliedRevision) break;
         const editedTime = evt.editedSec;
-        const mapped = this.sequencer.editedTimeToOriginalTime(editedTime);
-        const originalSec = mapped?.originalTime ?? editedTime;
-        this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { currentTime: editedTime, currentOriginalTime: originalSec } });
+        this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { currentTime: editedTime } });
         break;
       }
       case 'ended':

@@ -9,14 +9,14 @@ import { $getRoot, $getSelection, $isElementNode, LexicalNode, ElementNode } fro
 import { WordNode, $isWordNode } from '../nodes/WordNode';
 
 interface AudioSyncPluginProps {
-  // Use original audio time ONLY for highlighting to match WordNode timings
-  currentOriginalTime?: number;
+  // Edited timeline time for highlighting
+  currentTime?: number;
   isPlaying: boolean;
   onSeekAudio?: (timestamp: number) => void;
 }
 
 export default function AudioSyncPlugin({
-  currentOriginalTime,
+  currentTime,
   isPlaying,
   onSeekAudio,
 }: AudioSyncPluginProps) {
@@ -30,7 +30,7 @@ export default function AudioSyncPlugin({
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Word highlighting synchronization - trigger on currentOriginalTime changes
+  // Word highlighting synchronization - trigger on currentTime changes
   useEffect(() => {
     const updateWordHighlights = () => {
       editor.update(() => {
@@ -40,18 +40,18 @@ export default function AudioSyncPlugin({
         let currentlyPlayingWord = null;
         
         // Only process when we have valid time data
-        if (typeof currentOriginalTime !== 'number' || currentOriginalTime < 0) {
+        if (typeof currentTime !== 'number' || currentTime < 0) {
           // Skip if time is invalid - this is normal during state transitions
           return;
         }
         
         if (AUDIO_DEBUG && isPlaying) {
-          console.log('[AudioSyncPlugin] Processing time update:', { 
-            currentOriginalTime, 
+          console.log('[AudioSyncPlugin] Processing time update:', {
+            currentTime,
             isPlaying
           });
         }
-        const t = currentOriginalTime;
+        const t = currentTime;
 
         // Determine first actual word start; don't highlight before the first word
         let minStart = Number.POSITIVE_INFINITY;
@@ -64,7 +64,7 @@ export default function AudioSyncPlugin({
               for (const c of children) stack.push(c);
             }
             if ((n as any).getType && (n as any).getType() === 'word') {
-              const start = (n as any).getStart?.();
+              const start = (n as any).getEditedStart?.();
               if (typeof start === 'number' && start < minStart) minStart = start;
             }
           }
@@ -87,11 +87,11 @@ export default function AudioSyncPlugin({
             if (shouldHighlight) {
               currentlyPlayingWord = {
                 word: node.getTextContent(),
-                startTime: node.getStart(),
-                endTime: node.getEnd(),
+                startTime: node.getEditedStart(),
+                endTime: node.getEditedEnd(),
                 currentTime: t
               };
-            }
+          }
           }
         };
 
@@ -166,21 +166,21 @@ export default function AudioSyncPlugin({
       });
     };
 
-    // Update word highlighting whenever currentOriginalTime changes
+    // Update word highlighting whenever currentTime changes
     updateWordHighlights();
-  }, [currentOriginalTime, isPlaying, editor]);
+  }, [currentTime, isPlaying, editor]);
   
   // Debug useEffect to track prop changes
   React.useEffect(() => {
     const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
     if (AUDIO_DEBUG) {
       console.log('[AudioSyncPlugin] Props changed:', {
-        currentOriginalTime,
-        type: typeof currentOriginalTime,
+        currentTime,
+        type: typeof currentTime,
         isPlaying
       });
     }
-  }, [currentOriginalTime, isPlaying]);
+  }, [currentTime, isPlaying]);
 
   // Handle word clicks for seeking
   useEffect(() => {
@@ -227,7 +227,7 @@ export default function AudioSyncPlugin({
 
         const findCurrentWord = (node: LexicalNode): boolean => {
           if ($isWordNode(node as any)) {
-            if (node.isCurrentlyPlaying(currentOriginalTime)) {
+            if (node.isCurrentlyPlaying(currentTime)) {
               // Find the DOM element for this node
               const key = node.getKey();
               const element = editor.getElementByKey(key);
@@ -278,7 +278,7 @@ export default function AudioSyncPlugin({
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [currentOriginalTime, isPlaying, editor]);
+  }, [currentTime, isPlaying, editor]);
 
   // Handle keyboard shortcuts for audio control
   useEffect(() => {
@@ -304,7 +304,7 @@ export default function AudioSyncPlugin({
       if (event.shiftKey && (event.code === 'ArrowLeft' || event.code === 'ArrowRight')) {
         event.preventDefault();
         const seekAmount = event.code === 'ArrowLeft' ? -5 : 5;
-        const newTime = Math.max(0, (currentOriginalTime || 0) + seekAmount);
+        const newTime = Math.max(0, (currentTime || 0) + seekAmount);
         onSeekAudio?.(newTime);
       }
     };
@@ -317,7 +317,7 @@ export default function AudioSyncPlugin({
         editorElement.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [editor, currentOriginalTime, onSeekAudio]);
+  }, [editor, currentTime, onSeekAudio]);
 
   // Clean up on unmount
   useEffect(() => {

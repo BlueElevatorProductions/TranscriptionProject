@@ -15,11 +15,10 @@ export interface AudioEditorState {
   isInitialized: boolean;
   isLoading: boolean;
   error: string | null;
-  
+
   // Playback state
   isPlaying: boolean;
   currentTime: number;
-  currentOriginalTime?: number;
   duration: number;
   volume: number;
   playbackRate: number;
@@ -105,7 +104,6 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
     error: null,
     isPlaying: false,
     currentTime: 0,
-    currentOriginalTime: 0,
     duration: 0,
     volume: 0.8,
     playbackRate: 1.0,
@@ -130,7 +128,6 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
       error: appState.error,
       isPlaying: appState.playback.isPlaying,
       currentTime: appState.playback.currentTime,
-      currentOriginalTime: appState.playback.currentOriginalTime ?? 0,
       duration: appState.playback.duration,
       volume: appState.playback.volume,
       playbackRate: appState.playback.playbackRate,

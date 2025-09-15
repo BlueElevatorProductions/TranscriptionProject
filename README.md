@@ -817,7 +817,7 @@ private startHybridHighlighting(): void {
 
 **3. Word Highlighting Synchronization**
 - **Issue**: Word highlights completely missing during audio playback
-- **Root Cause**: React prop flow broken - `currentOriginalTime` not passed through component hierarchy
+- **Root Cause**: React prop flow broken - timeline time not passed through component hierarchy
 - **Solution**: Fixed missing parameter in LexicalTranscriptEditor function destructuring (line 264) and component prop passing (line 316)
 - **Result**: Real-time word highlighting now works perfectly, synchronized with spoken audio
 
@@ -859,12 +859,12 @@ export const generateGapClips = (speechClips: Clip[], audioDuration: number): Cl
 ```typescript
 // Proper prop flow through React component hierarchy
 <LexicalTranscriptEditorContent
-  currentOriginalTime={currentOriginalTime}  // CRITICAL: This was missing
+  currentTime={currentTime}  // CRITICAL: This was missing
   // ... other props
 />
 
 <AudioSyncPlugin
-  currentOriginalTime={currentOriginalTime}  // Now receives valid time values
+  currentTime={currentTime}  // Now receives valid time values
   isPlaying={isPlaying}
   onSeekAudio={onWordClick}
 />

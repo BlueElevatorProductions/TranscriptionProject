@@ -30,7 +30,7 @@
 
 **Action Flow (Playback → Highlighting)**
 - JUCE emits `position { editedSec, originalSec }` via preload → `JuceAudioManager.onTransportEvent`.
-- Highlighting uses `currentOriginalTime` only. `AudioSyncPlugin` marks the `WordNode` where `start ≤ originalSec ≤ end`.
+- Highlighting uses edited `currentTime`. `AudioSyncPlugin` marks each `WordNode` where `editedStart ≤ currentTime ≤ editedEnd`.
 - Auto-scroll throttled; clicking a word seeks using a small bias (`-10ms`) to avoid boundary “ended” blips.
 
 **Reordering + EDL Rules**

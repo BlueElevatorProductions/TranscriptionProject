@@ -109,9 +109,9 @@ export class AudioManager {
 
     if (editedTime !== null) {
       // Update current time
-      this.dispatch({ 
-        type: 'UPDATE_PLAYBACK', 
-        payload: { currentTime: editedTime, currentOriginalTime: originalTime }
+      this.dispatch({
+        type: 'UPDATE_PLAYBACK',
+        payload: { currentTime: editedTime }
       });
 
       // Update highlighted word

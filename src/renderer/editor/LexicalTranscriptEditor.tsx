@@ -50,7 +50,6 @@ interface LexicalTranscriptEditorProps {
   segments?: Segment[];
   clips?: import('../types').Clip[];
   currentTime?: number; // edited time (UI)
-  currentOriginalTime?: number; // original time (for highlighting)
   onSegmentsChange: (segments: Segment[]) => void;
   onClipsChange?: (clips: import('../types').Clip[]) => void;
   onWordClick?: (timestamp: number) => void;
@@ -80,7 +79,6 @@ function LexicalTranscriptEditorContent({
   segments,
   clips,
   currentTime,
-  currentOriginalTime,
   onSegmentsChange,
   onClipsChange,
   onWordClick,
@@ -314,7 +312,7 @@ function LexicalTranscriptEditorContent({
       
       {/* Audio synchronization plugin */}
       <AudioSyncPlugin
-        currentOriginalTime={currentOriginalTime}
+        currentTime={currentTime}
         onSeekAudio={onWordClick}
         isPlaying={isPlaying}
       />
@@ -380,7 +378,6 @@ export function LexicalTranscriptEditor({
   segments,
   clips,
   currentTime,
-  currentOriginalTime,
   onSegmentsChange,
   onClipsChange,
   onWordClick,
@@ -458,7 +455,6 @@ export function LexicalTranscriptEditor({
               segments={safeSegments}
               clips={clips}
               currentTime={currentTime}
-              currentOriginalTime={currentOriginalTime}
               onSegmentsChange={onSegmentsChange}
               onClipsChange={onClipsChange}
               onWordClick={onWordClick}

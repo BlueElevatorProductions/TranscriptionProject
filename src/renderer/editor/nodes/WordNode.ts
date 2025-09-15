@@ -8,6 +8,8 @@ import { NodeKey, TextNode, LexicalNode, SerializedTextNode, EditorConfig } from
 export interface SerializedWordNode extends SerializedTextNode {
   startTime: number;
   endTime: number;
+  editedStartTime?: number;
+  editedEndTime?: number;
   speakerId: string;
   confidence?: number;
 }
@@ -15,6 +17,8 @@ export interface SerializedWordNode extends SerializedTextNode {
 export class WordNode extends TextNode {
   __startTime: number;
   __endTime: number;
+  __editedStartTime: number;
+  __editedEndTime: number;
   __speakerId: string;
   __confidence?: number;
   __isCurrentlyPlaying: boolean = false;
@@ -30,7 +34,9 @@ export class WordNode extends TextNode {
       node.__endTime,
       node.__speakerId,
       node.__confidence,
-      node.__key
+      node.__key,
+      node.__editedStartTime,
+      node.__editedEndTime
     );
   }
 
@@ -40,22 +46,28 @@ export class WordNode extends TextNode {
     endTime: number,
     speakerId: string,
     confidence?: number,
-    key?: NodeKey
+    key?: NodeKey,
+    editedStartTime?: number,
+    editedEndTime?: number
   ) {
     super(text, key);
     this.__startTime = startTime;
     this.__endTime = endTime;
     this.__speakerId = speakerId;
     this.__confidence = confidence;
+    this.__editedStartTime = editedStartTime ?? startTime;
+    this.__editedEndTime = editedEndTime ?? endTime;
   }
 
   createDOM(config: EditorConfig): HTMLElement {
     const element = super.createDOM(config);
     element.classList.add('lexical-word-node');
     
-    // Add timing data attributes for debugging/styling
-    element.setAttribute('data-start-time', this.__startTime.toString());
-    element.setAttribute('data-end-time', this.__endTime.toString());
+    // Add timing data attributes for debugging/styling (edited timeline)
+    element.setAttribute('data-start-time', this.__editedStartTime.toString());
+    element.setAttribute('data-end-time', this.__editedEndTime.toString());
+    element.setAttribute('data-original-start-time', this.__startTime.toString());
+    element.setAttribute('data-original-end-time', this.__endTime.toString());
     element.setAttribute('data-speaker-id', this.__speakerId);
     
     // Apply initial styling
@@ -70,11 +82,17 @@ export class WordNode extends TextNode {
     const updated = super.updateDOM(prevNode, element, config);
     
     // Update timing attributes if they changed
+    if (prevNode.__editedStartTime !== this.__editedStartTime) {
+      element.setAttribute('data-start-time', this.__editedStartTime.toString());
+    }
+    if (prevNode.__editedEndTime !== this.__editedEndTime) {
+      element.setAttribute('data-end-time', this.__editedEndTime.toString());
+    }
     if (prevNode.__startTime !== this.__startTime) {
-      element.setAttribute('data-start-time', this.__startTime.toString());
+      element.setAttribute('data-original-start-time', this.__startTime.toString());
     }
     if (prevNode.__endTime !== this.__endTime) {
-      element.setAttribute('data-end-time', this.__endTime.toString());
+      element.setAttribute('data-original-end-time', this.__endTime.toString());
     }
     if (prevNode.__speakerId !== this.__speakerId) {
       element.setAttribute('data-speaker-id', this.__speakerId);
@@ -107,6 +125,14 @@ export class WordNode extends TextNode {
     return this.__endTime;
   }
 
+  getEditedStart(): number {
+    return this.__editedStartTime;
+  }
+
+  getEditedEnd(): number {
+    return this.__editedEndTime;
+  }
+
   getSpeakerId(): string {
     return this.__speakerId;
   }
@@ -117,14 +143,14 @@ export class WordNode extends TextNode {
 
   // Check if this word should be highlighted at the given time
   isCurrentlyPlaying(currentTime: number = 0): boolean {
-    return currentTime >= this.__startTime && currentTime < this.__endTime;
+    return currentTime >= this.__editedStartTime && currentTime < this.__editedEndTime;
   }
 
   // Update timing information
   setTiming(startTime: number, endTime: number): WordNode {
     const writable = this.getWritable();
-    writable.__startTime = startTime;
-    writable.__endTime = endTime;
+    writable.__editedStartTime = startTime;
+    writable.__editedEndTime = endTime;
     return writable;
   }
 
@@ -151,6 +177,8 @@ export class WordNode extends TextNode {
       ...super.exportJSON(),
       startTime: this.__startTime,
       endTime: this.__endTime,
+      editedStartTime: this.__editedStartTime,
+      editedEndTime: this.__editedEndTime,
       speakerId: this.__speakerId,
       confidence: this.__confidence,
       type: 'word',
@@ -159,8 +187,8 @@ export class WordNode extends TextNode {
   }
 
   static importJSON(serializedNode: SerializedWordNode): WordNode {
-    const { text, startTime, endTime, speakerId, confidence } = serializedNode;
-    const node = new WordNode(text, startTime, endTime, speakerId, confidence);
+    const { text, startTime, endTime, editedStartTime, editedEndTime, speakerId, confidence } = serializedNode;
+    const node = new WordNode(text, startTime, endTime, speakerId, confidence, undefined, editedStartTime, editedEndTime);
     node.setFormat(serializedNode.format);
     node.setDetail(serializedNode.detail);
     node.setMode(serializedNode.mode);
@@ -191,9 +219,11 @@ export function $createWordNode(
   startTime: number,
   endTime: number,
   speakerId: string,
-  confidence?: number
+  confidence?: number,
+  editedStartTime?: number,
+  editedEndTime?: number
 ): WordNode {
-  return new WordNode(text, startTime, endTime, speakerId, confidence);
+  return new WordNode(text, startTime, endTime, speakerId, confidence, undefined, editedStartTime, editedEndTime);
 }
 
 export function $isWordNode(node: LexicalNode | null | undefined): node is WordNode {
