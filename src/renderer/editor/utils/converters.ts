@@ -175,13 +175,17 @@ export function clipsToEditorState(
     // Traverse full edited order including gaps to attach pills after speech or at the beginning of the first encountered speech
     let lastSpeechContainer: any = null;
     const containerById = new Map<string, any>();
+    let editedCursor = 0;
 
     // Preserve the incoming array order (no sort), since drag/drop already
     // provides the intended visual order
     const all = clips.slice();
     all.forEach((c) => {
+      const clipStartEdited = editedCursor;
+
       if (c.type === 'audio-only') {
         const dur = Math.max(0, (c.endTime ?? 0) - (c.startTime ?? 0));
+        editedCursor += dur;
         if (dur >= SPACER_VISUAL_THRESHOLD) {
           if (lastSpeechContainer) {
             // trailing spacer after last speech
@@ -205,7 +209,9 @@ export function clipsToEditorState(
       // No-op: initial gaps are handled later by attaching to earliest-by-original-time speech
 
       (c.words || []).forEach((w, wi) => {
-        const wordNode = $createWordNode(w.word, w.start, w.end, c.speaker, w.score);
+        const editedStart = clipStartEdited + (w.start - c.startTime);
+        const editedEnd = clipStartEdited + (w.end - c.startTime);
+        const wordNode = $createWordNode(w.word, w.start, w.end, c.speaker, w.score, editedStart, editedEnd);
         paragraph.append(wordNode);
         if (wi < c.words.length - 1) paragraph.append($createTextNode(' '));
       });
@@ -213,6 +219,7 @@ export function clipsToEditorState(
       root.append(container);
       lastSpeechContainer = container;
       containerById.set(c.id, container);
+      editedCursor += c.duration;
     });
 
     // Attach leading global gap (music intro) to the earliest-by-original-start speech clip, so it moves with that clip

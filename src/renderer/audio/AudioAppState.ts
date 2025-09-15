@@ -17,13 +17,13 @@ export interface TimelinePosition {
 export interface PlaybackState {
   isPlaying: boolean;
   currentTime: number;        // Current position in edited timeline
-  currentOriginalTime?: number; // Current position in original audio
   duration: number;          // Total duration of edited timeline
   volume: number;            // 0.0 to 1.0
   playbackRate: number;      // 0.25 to 4.0
   isReady: boolean;          // Audio loaded and ready
   currentWordId: string | null; // Currently highlighted word ID
   currentClipId: string | null; // Currently playing clip
+  edlApplying?: boolean;        // JUCE EDL is updating; defer seeks/sync
 }
 
 export interface TimelineState {
@@ -73,13 +73,13 @@ export const createInitialState = (): AudioAppState => ({
   playback: {
     isPlaying: false,
     currentTime: 0,
-    currentOriginalTime: 0,
     duration: 0,
     volume: 0.8,
     playbackRate: 1.0,
     isReady: false,
     currentWordId: null,
     currentClipId: null,
+    edlApplying: false,
   },
   timeline: {
     clips: [],

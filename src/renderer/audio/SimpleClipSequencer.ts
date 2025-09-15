@@ -27,9 +27,12 @@ export class SimpleClipSequencer {
    * Calculate clips in their reordered sequence
    */
   private calculateReorderedClips(clips: Clip[]): Clip[] {
-    return clips
-      .filter(clip => clip.status !== 'deleted') // Allow active and undefined status
-      .sort((a, b) => (a.order || 0) - (b.order || 0)); // Handle undefined order
+    // The order of clips is now determined by the array passed into updateClips.
+    // Previously this function re-sorted based on clip.order which could get out
+    // of sync with the caller's desired ordering. By relying purely on array
+    // order we ensure the sequencer reflects the timeline order maintained by
+    // the AudioManagers.
+    return clips.filter(clip => clip.status !== 'deleted');
   }
   
   /**

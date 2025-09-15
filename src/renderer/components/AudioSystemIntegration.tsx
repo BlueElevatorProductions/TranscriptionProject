@@ -74,25 +74,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     },
   });
 
-  // Normalize clips before sending to audio layer to prevent JUCE crashes
-  const normalizeClipsForAudio = useCallback((src: Clip[]): Clip[] => {
-    const EPS = 0.0005;
-    const safe = (n: any) => (typeof n === 'number' && isFinite(n) ? n : 0);
-    let out = src.map(c => ({
-      ...c,
-      startTime: safe(c.startTime),
-      endTime: Math.max(safe(c.startTime), safe(c.endTime)),
-    }));
-    // Filter zero/negative-duration speech clips
-    out = out.filter(c => {
-      const dur = (c.endTime ?? 0) - (c.startTime ?? 0);
-      if (c.type !== 'audio-only') return dur > EPS;
-      return dur >= 0; // keep gaps; they may be needed for continuity
-    });
-    // Renumber order sequentially
-    out = out.map((c, i) => ({ ...c, order: i }));
-    return out;
-  }, []);
+  // Removed normalizeClipsForAudio to avoid unintended structural changes
 
   // Keep audio system mode in sync with UI toggle (Listen/Edit)
   useEffect(() => {
@@ -233,7 +215,7 @@ useEffect(() => {
       setAudioPath(audioUrl);
 
       audioActions
-        .initialize(audioUrl, normalizeClipsForAudio(clips))
+        .initialize(audioUrl, clips)
         .then(() => {
           if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Initialized audio');
         })
@@ -258,6 +240,10 @@ useEffect(() => {
       }
       return;
     }
+    if (audioState.edlApplying) {
+      if (AUDIO_DEBUG) console.log('[AudioSystemIntegration] Skipping clip sync - EDL applying');
+      return;
+    }
     const hash = clips
       .map((c) => `${c.id}:${c.order}:${c.type}:${c.speaker || ''}:${c.startTime.toFixed(3)}:${c.endTime.toFixed(3)}:${c.words?.length || 0}`)
       .join('|');
@@ -268,15 +254,16 @@ useEffect(() => {
     if (AUDIO_DEBUG) {
       console.log('[AudioSystemIntegration] Syncing clips to audio system (de-duped)');
     }
-    audioActions.updateClips(normalizeClipsForAudio(clips));
-  }, [clips, audioState.isInitialized, normalizeClipsForAudio]);
+    // Only push if deduped hash says clips changed; raw clips are used to avoid artificial diffs
+    audioActions.updateClips(clips);
+  }, [clips, audioState.isInitialized]);
 
   // Recovery
   const handleRecoveryAttempt = useCallback(() => {
     setInitializationError(null);
     if (clips.length > 0 && audioUrl) {
       setTimeout(() => {
-        audioActions.initialize(audioUrl, normalizeClipsForAudio(clips)).catch((err) => {
+        audioActions.initialize(audioUrl, clips).catch((err) => {
           setInitializationError(`Recovery failed: ${err.message || err}`);
         });
       }, 1000);
@@ -354,9 +341,7 @@ useEffect(() => {
           key={`editor-v${editorVersion}`}
           clips={mode === 'listen' ? clips.filter(c => c.status !== 'deleted') : clips}
           currentTime={audioState.currentTime}
-          currentOriginalTime={
-            typeof audioState.currentOriginalTime === 'number' ? audioState.currentOriginalTime : 0
-          }
+          enableClickSeek={mode === 'listen'}
           isPlaying={audioState.isPlaying}
           readOnly={mode === 'listen' && !initializationError}
           onSegmentsChange={() => {}}
@@ -367,17 +352,34 @@ useEffect(() => {
               clips: { ...projectState.projectData.clips, clips: updatedClips },
             } as any;
             projectActions.updateProjectData(next);
-            if (audioState.isInitialized) audioActions.updateClips(updatedClips);
+            // Avoid pushing EDL updates from generic onClipsChange while in Edit mode.
+            // Reordering sends a dedicated 'clip-reorder' event that updates audio once.
+            if (mode === 'listen' && audioState.isInitialized) {
+              if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+                console.log('[AudioSystemIntegration] onClipsChange -> updateClips (listen mode)');
+              }
+              audioActions.updateClips(updatedClips);
+            } else {
+              if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+                console.log('[AudioSystemIntegration] onClipsChange: suppressed audio update in edit mode');
+              }
+            }
           }}
-          onWordClick={(ts) => {
-            const t = typeof ts === 'number' ? ts : 0;
-            // Clamp seek to the clicked clip's start to avoid crossing into the previous
-            // original clip when the first edited clip was reordered to the top.
-            const speechClips = clips.filter(c => c.type !== 'audio-only');
-            const containing = speechClips.find(c => t >= c.startTime && t <= c.endTime);
-            const clipStart = containing ? containing.startTime : 0;
-            const bias = Math.max(clipStart + 0.0005, t - 0.01);
-            audioActions.seekToOriginalTime(bias);
+          onWordSeek={(clipId, wordIndex) => {
+            const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+            if (AUDIO_DEBUG) {
+              console.log('[AudioSystemIntegration] onWordSeek:', { clipId, wordIndex });
+            }
+            audioActions.seekToWord(clipId, wordIndex);
+            if (mode === 'listen' && !audioState.isPlaying) {
+              audioActions.play().catch(() => {});
+            }
+          }}
+          onWordClick={(t) => {
+            // Fallback only; identity-based seek is preferred
+            if (typeof t === 'number') {
+              audioActions.seekToTime(t);
+            }
             if (mode === 'listen' && !audioState.isPlaying) {
               audioActions.play().catch(() => {});
             }

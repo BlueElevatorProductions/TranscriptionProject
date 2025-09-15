@@ -272,6 +272,38 @@ Components in `src/renderer/Legacy/components/` are **not active** and preserved
 
 ## Audio System Architecture (2025 Redesign)
 
+### Recent Changes (JUCE-only, Reordering, Mapping)
+
+This project now runs a JUCE-only audio backend. The previous HTML `<audio>`-based `AudioManager` was removed in favor of a single, robust path via `JuceAudioManager`. Key behavior updates:
+
+- JUCE-only backend
+  - `JuceAudioManager` is the sole engine. The HTML `AudioManager` and its tests were removed.
+  - The React hook `useAudioEditor` always constructs `JuceAudioManager`.
+
+- Clip reordering and EDL application
+  - EDL updates are sent as a contiguous edited timeline with per-clip original time metadata.
+  - Seeks are deferred while an EDL is applying; they flush only after a real `edlApplied` event.
+  - A short post-apply cooldown ignores stale position events (e.g., 0.0xx) to prevent UI regressions.
+  - Bridge syncs (“Syncing clips to audio system”) are gated while an EDL is applying to avoid competing updates.
+
+- Original vs edited time seeks (reordered timelines)
+  - When the EDL reflects a reorder, the transport prefers original-domain seeks for correctness. Word clicks map to original time; JUCE then plays the correct content, and the UI maps position back to edited time for highlighting.
+
+- Word deletion semantics (text-only)
+  - Deleting words does not remove or compress audio. Total duration equals the sum of active clip durations.
+  - EDLs no longer include per-word `deleted` arrays. Highlighting respects deleted words (they are not highlighted) while playback remains continuous.
+
+- Audio-only segments
+  - Audio-only clips (gaps, music cues, etc.) are fully included in time mapping and seeks. Word highlighting is suppressed in gaps by design.
+
+Files most impacted:
+- `src/renderer/audio/JuceAudioManager.ts` (EDL/seek ordering, apply discipline, original-time seek preference, sequencer sync)
+- `src/renderer/hooks/useAudioEditor.ts` (JUCE-only)
+- `src/renderer/components/AudioSystemIntegration.tsx` (clip sync gating while EDL applying)
+- `src/renderer/editor/plugins/AudioSyncPlugin.tsx` (deleted-word aware highlighting)
+- Removed: `src/renderer/audio/AudioManager.ts` and its HTML-audio tests
+
+
 The audio system is built around **3 core principles**: **Unified Control**, **Clean State Management**, and **Simple Integration**.
 
 ### Audio Architecture Stack (Bottom to Top)
@@ -817,7 +849,7 @@ private startHybridHighlighting(): void {
 
 **3. Word Highlighting Synchronization**
 - **Issue**: Word highlights completely missing during audio playback
-- **Root Cause**: React prop flow broken - `currentOriginalTime` not passed through component hierarchy
+- **Root Cause**: React prop flow broken - timeline time not passed through component hierarchy
 - **Solution**: Fixed missing parameter in LexicalTranscriptEditor function destructuring (line 264) and component prop passing (line 316)
 - **Result**: Real-time word highlighting now works perfectly, synchronized with spoken audio
 
@@ -859,12 +891,12 @@ export const generateGapClips = (speechClips: Clip[], audioDuration: number): Cl
 ```typescript
 // Proper prop flow through React component hierarchy
 <LexicalTranscriptEditorContent
-  currentOriginalTime={currentOriginalTime}  // CRITICAL: This was missing
+  currentTime={currentTime}  // CRITICAL: This was missing
   // ... other props
 />
 
 <AudioSyncPlugin
-  currentOriginalTime={currentOriginalTime}  // Now receives valid time values
+  currentTime={currentTime}  // Now receives valid time values
   isPlaying={isPlaying}
   onSeekAudio={onWordClick}
 />

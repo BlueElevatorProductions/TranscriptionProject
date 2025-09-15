@@ -9,16 +9,26 @@ import { $getRoot, $getSelection, $isElementNode, LexicalNode, ElementNode } fro
 import { WordNode, $isWordNode } from '../nodes/WordNode';
 
 interface AudioSyncPluginProps {
-  // Use original audio time ONLY for highlighting to match WordNode timings
-  currentOriginalTime?: number;
+  // Edited timeline time for highlighting
+  currentTime?: number;
   isPlaying: boolean;
   onSeekAudio?: (timestamp: number) => void;
+  // Enable simple click-to-seek in listen mode.
+  // When false (edit mode), allow modified-click (Cmd/Ctrl/Alt) to seek.
+  enableClickSeek?: boolean;
+  // Prefer seeking by identity so backend maps to edited time
+  onSeekWord?: (clipId: string, wordIndex: number) => void;
+  // Deleted word IDs to suppress highlighting (text-only deletions)
+  deletedWordIds?: Set<string>;
 }
 
 export default function AudioSyncPlugin({
-  currentOriginalTime,
+  currentTime,
   isPlaying,
   onSeekAudio,
+  enableClickSeek = false,
+  onSeekWord,
+  deletedWordIds,
 }: AudioSyncPluginProps) {
   const [editor] = useLexicalComposerContext();
   const animationFrameRef = useRef<number>();
@@ -30,28 +40,31 @@ export default function AudioSyncPlugin({
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Word highlighting synchronization - trigger on currentOriginalTime changes
+  // Word highlighting synchronization - trigger on currentTime changes
   useEffect(() => {
     const updateWordHighlights = () => {
       editor.update(() => {
         const root = $getRoot();
         const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
         let hasUpdates = false;
-        let currentlyPlayingWord = null;
+        let currentlyPlayingWord = null as null | { word: string; startTime: number; endTime: number; currentTime: number };
+        let highlightedCount = 0;
+        let blockedClipId: string | null = null;
+        const lastNonDeletedBeforeTByClip = new Map<string, WordNode>();
         
         // Only process when we have valid time data
-        if (typeof currentOriginalTime !== 'number' || currentOriginalTime < 0) {
+        if (typeof currentTime !== 'number' || currentTime < 0) {
           // Skip if time is invalid - this is normal during state transitions
           return;
         }
         
         if (AUDIO_DEBUG && isPlaying) {
-          console.log('[AudioSyncPlugin] Processing time update:', { 
-            currentOriginalTime, 
+          console.log('[AudioSyncPlugin] Processing time update:', {
+            currentTime,
             isPlaying
           });
         }
-        const t = currentOriginalTime;
+        const t = currentTime;
 
         // Determine first actual word start; don't highlight before the first word
         let minStart = Number.POSITIVE_INFINITY;
@@ -64,7 +77,7 @@ export default function AudioSyncPlugin({
               for (const c of children) stack.push(c);
             }
             if ((n as any).getType && (n as any).getType() === 'word') {
-              const start = (n as any).getStart?.();
+              const start = (n as any).getEditedStart?.();
               if (typeof start === 'number' && start < minStart) minStart = start;
             }
           }
@@ -76,20 +89,50 @@ export default function AudioSyncPlugin({
         }
 
         // Traverse all nodes to find WordNodes
+        const getWordDomInfo = (node: WordNode): { clipId: string | null; localIndex: number } => {
+          const el = editor.getElementByKey(node.getKey()) as HTMLElement | null;
+          if (!el) return { clipId: null, localIndex: -1 };
+          const container = el.closest('.lexical-clip-container') as HTMLElement | null;
+          const clipId = container?.getAttribute('data-clip-id') || null;
+          if (!container || !clipId) return { clipId: null, localIndex: -1 };
+          const allWords = Array.from(container.querySelectorAll<HTMLElement>('.lexical-word-node'));
+          const idx = allWords.indexOf(el);
+          return { clipId, localIndex: idx };
+        };
+
         const updateWordNode = (node: WordNode) => {
-          const shouldHighlight = node.isCurrentlyPlaying(t);
+          let shouldHighlight = node.isCurrentlyPlaying(t);
           const currentlyHighlighted = node.getLatest().__isCurrentlyPlaying;
+
+          // Candidate tracking for fallback: remember last non-deleted word in this clip before t
+          const editedStart = node.getEditedStart();
+          const { clipId, localIndex } = getWordDomInfo(node);
+          if (clipId && editedStart <= t) {
+            const isDeleted = !!(deletedWordIds && localIndex >= 0 && deletedWordIds.has(`${clipId}-word-${localIndex}`));
+            if (!isDeleted) {
+              lastNonDeletedBeforeTByClip.set(clipId, node);
+            }
+          }
+
+          // Suppress highlight for deleted words
+          if (shouldHighlight && deletedWordIds) {
+            const { clipId, localIndex } = getWordDomInfo(node);
+            if (clipId && localIndex >= 0 && deletedWordIds.has(`${clipId}-word-${localIndex}`)) {
+              shouldHighlight = false;
+              blockedClipId = clipId;
+            }
+          }
 
           if (shouldHighlight !== currentlyHighlighted) {
             node.setCurrentlyPlaying(shouldHighlight);
             hasUpdates = true;
-            
             if (shouldHighlight) {
+              highlightedCount++;
               currentlyPlayingWord = {
                 word: node.getTextContent(),
-                startTime: node.getStart(),
-                endTime: node.getEnd(),
-                currentTime: t
+                startTime: node.getEditedStart(),
+                endTime: node.getEditedEnd(),
+                currentTime: t,
               };
             }
           }
@@ -110,6 +153,19 @@ export default function AudioSyncPlugin({
         };
 
         traverseNodes(root);
+
+        // If we blocked a deleted word highlight and nothing else was highlighted, prefer
+        // the nearest previous non-deleted word in the same clip.
+        if (highlightedCount === 0 && blockedClipId) {
+          const candidate = lastNonDeletedBeforeTByClip.get(blockedClipId);
+          if (candidate) {
+            const was = candidate.getLatest().__isCurrentlyPlaying;
+            if (!was) {
+              candidate.setCurrentlyPlaying(true);
+              hasUpdates = true;
+            }
+          }
+        }
 
         // Debug logging every few updates
         if (AUDIO_DEBUG) {
@@ -166,39 +222,75 @@ export default function AudioSyncPlugin({
       });
     };
 
-    // Update word highlighting whenever currentOriginalTime changes
+    // Update word highlighting whenever currentTime changes
     updateWordHighlights();
-  }, [currentOriginalTime, isPlaying, editor]);
+  }, [currentTime, isPlaying, deletedWordIds, editor]);
   
   // Debug useEffect to track prop changes
   React.useEffect(() => {
     const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
     if (AUDIO_DEBUG) {
       console.log('[AudioSyncPlugin] Props changed:', {
-        currentOriginalTime,
-        type: typeof currentOriginalTime,
+        currentTime,
+        type: typeof currentTime,
         isPlaying
       });
     }
-  }, [currentOriginalTime, isPlaying]);
+  }, [currentTime, isPlaying]);
 
   // Handle word clicks for seeking
   useEffect(() => {
     const handleWordClick = (event: MouseEvent) => {
-      // In edit mode, allow Lexical to place the caret and handle editing
-      if (editor.isEditable()) {
+      const target = event.target as HTMLElement;
+      const modified = (event as MouseEvent).metaKey || (event as MouseEvent).ctrlKey || (event as MouseEvent).altKey;
+
+      // Only seek when enabled, or when user holds a modifier in edit mode
+      if (!enableClickSeek && !modified) {
+        const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+        if (AUDIO_DEBUG) console.log('[AudioSyncPlugin] Click ignored (edit mode, no modifier)');
         return;
       }
-      const target = event.target as HTMLElement;
       
-      // Check if clicked element is a word node
-      if (target.classList.contains('lexical-word-node')) {
-        const startTime = target.getAttribute('data-start-time');
-        if (startTime && onSeekAudio) {
-          const timestamp = parseFloat(startTime);
+      // Check if clicked element is (or is within) a word node
+      const wordEl = (target.closest && target.closest('.lexical-word-node')) as HTMLElement | null;
+      if (wordEl && wordEl.classList.contains('lexical-word-node')) {
+        // Try identity-based seek first: find enclosing clip and word index
+        const container = wordEl.closest('.lexical-clip-container') as HTMLElement | null;
+        const clipId = container?.getAttribute('data-clip-id') || undefined;
+        if (clipId && onSeekWord) {
+          const allWords = Array.from(container!.querySelectorAll<HTMLElement>('.lexical-word-node'));
+          const idx = allWords.indexOf(wordEl);
+          if (idx >= 0) {
+            const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+            if (AUDIO_DEBUG) {
+              console.log('[AudioSyncPlugin] Identity seek click:', {
+                clipId,
+                wordIndex: idx,
+                totalWordsInClip: allWords.length,
+                modifiedClick: modified,
+                enableClickSeek,
+              });
+            }
+            onSeekWord(clipId, idx);
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+
+        // Fallback to edited timeline timestamp if identity path unavailable
+        const editedStart = wordEl.getAttribute('data-start-time');
+        if (editedStart && onSeekAudio) {
+          const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+          if (AUDIO_DEBUG) {
+            console.log('[AudioSyncPlugin] Fallback edited-time seek click:', {
+              editedStart,
+              modifiedClick: modified,
+              enableClickSeek,
+            });
+          }
+          const timestamp = parseFloat(editedStart);
           onSeekAudio(timestamp);
-          
-          // Prevent default text selection behavior
           event.preventDefault();
           event.stopPropagation();
         }
@@ -214,7 +306,7 @@ export default function AudioSyncPlugin({
         editorElement.removeEventListener('click', handleWordClick, true);
       };
     }
-  }, [editor, onSeekAudio]);
+  }, [editor, onSeekAudio, onSeekWord, enableClickSeek]);
 
   // Auto-scroll to current word (optional feature)
   useEffect(() => {
@@ -227,7 +319,7 @@ export default function AudioSyncPlugin({
 
         const findCurrentWord = (node: LexicalNode): boolean => {
           if ($isWordNode(node as any)) {
-            if (node.isCurrentlyPlaying(currentOriginalTime)) {
+            if (node.isCurrentlyPlaying(currentTime)) {
               // Find the DOM element for this node
               const key = node.getKey();
               const element = editor.getElementByKey(key);
@@ -278,7 +370,7 @@ export default function AudioSyncPlugin({
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [currentOriginalTime, isPlaying, editor]);
+  }, [currentTime, isPlaying, editor]);
 
   // Handle keyboard shortcuts for audio control
   useEffect(() => {
@@ -304,7 +396,7 @@ export default function AudioSyncPlugin({
       if (event.shiftKey && (event.code === 'ArrowLeft' || event.code === 'ArrowRight')) {
         event.preventDefault();
         const seekAmount = event.code === 'ArrowLeft' ? -5 : 5;
-        const newTime = Math.max(0, (currentOriginalTime || 0) + seekAmount);
+        const newTime = Math.max(0, (currentTime || 0) + seekAmount);
         onSeekAudio?.(newTime);
       }
     };
@@ -317,7 +409,7 @@ export default function AudioSyncPlugin({
         editorElement.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [editor, currentOriginalTime, onSeekAudio]);
+  }, [editor, currentTime, onSeekAudio]);
 
   // Clean up on unmount
   useEffect(() => {
