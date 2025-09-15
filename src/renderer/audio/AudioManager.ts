@@ -335,15 +335,22 @@ export class AudioManager {
         const newIndices = [...state.timeline.reorderIndices];
         const [movedIndex] = newIndices.splice(fromIndex, 1);
         newIndices.splice(toIndex, 0, movedIndex);
-        
-        // Update sequencer with new order
-        const reorderedClips = newIndices.map(i => state.timeline.clips[i]);
+
+        // Update clip.order values to reflect the new sequence
+        const newClips = state.timeline.clips.map((clip, originalIdx) => ({
+          ...clip,
+          order: newIndices.indexOf(originalIdx),
+        }));
+
+        // Inform sequencer using the reordered clip array
+        const reorderedClips = newIndices.map(i => newClips[i]);
         this.sequencer.updateClips(reorderedClips);
-        
+
         return {
           ...state,
           timeline: {
             ...state.timeline,
+            clips: newClips,
             reorderIndices: newIndices,
             totalDuration: this.calculateTotalDuration(),
           },
