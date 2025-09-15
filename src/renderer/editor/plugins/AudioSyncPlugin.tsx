@@ -13,12 +13,19 @@ interface AudioSyncPluginProps {
   currentTime?: number;
   isPlaying: boolean;
   onSeekAudio?: (timestamp: number) => void;
+  // Enable simple click-to-seek in listen mode.
+  // When false (edit mode), allow modified-click (Cmd/Ctrl/Alt) to seek.
+  enableClickSeek?: boolean;
+  // Prefer seeking by identity so backend maps to edited time
+  onSeekWord?: (clipId: string, wordIndex: number) => void;
 }
 
 export default function AudioSyncPlugin({
   currentTime,
   isPlaying,
   onSeekAudio,
+  enableClickSeek = false,
+  onSeekWord,
 }: AudioSyncPluginProps) {
   const [editor] = useLexicalComposerContext();
   const animationFrameRef = useRef<number>();
@@ -185,20 +192,56 @@ export default function AudioSyncPlugin({
   // Handle word clicks for seeking
   useEffect(() => {
     const handleWordClick = (event: MouseEvent) => {
-      // In edit mode, allow Lexical to place the caret and handle editing
-      if (editor.isEditable()) {
+      const target = event.target as HTMLElement;
+      const modified = (event as MouseEvent).metaKey || (event as MouseEvent).ctrlKey || (event as MouseEvent).altKey;
+
+      // Only seek when enabled, or when user holds a modifier in edit mode
+      if (!enableClickSeek && !modified) {
+        const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+        if (AUDIO_DEBUG) console.log('[AudioSyncPlugin] Click ignored (edit mode, no modifier)');
         return;
       }
-      const target = event.target as HTMLElement;
       
-      // Check if clicked element is a word node
-      if (target.classList.contains('lexical-word-node')) {
-        const startTime = target.getAttribute('data-start-time');
-        if (startTime && onSeekAudio) {
-          const timestamp = parseFloat(startTime);
+      // Check if clicked element is (or is within) a word node
+      const wordEl = (target.closest && target.closest('.lexical-word-node')) as HTMLElement | null;
+      if (wordEl && wordEl.classList.contains('lexical-word-node')) {
+        // Try identity-based seek first: find enclosing clip and word index
+        const container = wordEl.closest('.lexical-clip-container') as HTMLElement | null;
+        const clipId = container?.getAttribute('data-clip-id') || undefined;
+        if (clipId && onSeekWord) {
+          const allWords = Array.from(container!.querySelectorAll<HTMLElement>('.lexical-word-node'));
+          const idx = allWords.indexOf(wordEl);
+          if (idx >= 0) {
+            const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+            if (AUDIO_DEBUG) {
+              console.log('[AudioSyncPlugin] Identity seek click:', {
+                clipId,
+                wordIndex: idx,
+                totalWordsInClip: allWords.length,
+                modifiedClick: modified,
+                enableClickSeek,
+              });
+            }
+            onSeekWord(clipId, idx);
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+
+        // Fallback to edited timeline timestamp if identity path unavailable
+        const editedStart = wordEl.getAttribute('data-start-time');
+        if (editedStart && onSeekAudio) {
+          const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+          if (AUDIO_DEBUG) {
+            console.log('[AudioSyncPlugin] Fallback edited-time seek click:', {
+              editedStart,
+              modifiedClick: modified,
+              enableClickSeek,
+            });
+          }
+          const timestamp = parseFloat(editedStart);
           onSeekAudio(timestamp);
-          
-          // Prevent default text selection behavior
           event.preventDefault();
           event.stopPropagation();
         }
@@ -214,7 +257,7 @@ export default function AudioSyncPlugin({
         editorElement.removeEventListener('click', handleWordClick, true);
       };
     }
-  }, [editor, onSeekAudio]);
+  }, [editor, onSeekAudio, onSeekWord, enableClickSeek]);
 
   // Auto-scroll to current word (optional feature)
   useEffect(() => {

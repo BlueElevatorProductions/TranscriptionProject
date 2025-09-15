@@ -50,9 +50,11 @@ interface LexicalTranscriptEditorProps {
   segments?: Segment[];
   clips?: import('../types').Clip[];
   currentTime?: number; // edited time (UI)
+  enableClickSeek?: boolean; // allow click-to-seek behavior
   onSegmentsChange: (segments: Segment[]) => void;
   onClipsChange?: (clips: import('../types').Clip[]) => void;
   onWordClick?: (timestamp: number) => void;
+  onWordSeek?: (clipId: string, wordIndex: number) => void;
   getSpeakerDisplayName: (speakerId: string) => string;
   onSpeakerNameChange?: (speakerId: string, newName: string) => void;
   speakers?: { [key: string]: string };
@@ -79,9 +81,11 @@ function LexicalTranscriptEditorContent({
   segments,
   clips,
   currentTime,
+  enableClickSeek,
   onSegmentsChange,
   onClipsChange,
   onWordClick,
+  onWordSeek,
   getSpeakerDisplayName,
   onSpeakerNameChange,
   speakers = {},
@@ -314,7 +318,9 @@ function LexicalTranscriptEditorContent({
       <AudioSyncPlugin
         currentTime={currentTime}
         onSeekAudio={onWordClick}
+        onSeekWord={onWordSeek}
         isPlaying={isPlaying}
+        enableClickSeek={!!enableClickSeek}
       />
       
       {/* Speaker management plugin */}
@@ -378,9 +384,11 @@ export function LexicalTranscriptEditor({
   segments,
   clips,
   currentTime,
+  enableClickSeek,
   onSegmentsChange,
   onClipsChange,
   onWordClick,
+  onWordSeek,
   getSpeakerDisplayName,
   onSpeakerNameChange,
   speakers = {},
@@ -454,12 +462,14 @@ export function LexicalTranscriptEditor({
             <LexicalTranscriptEditorContent
               segments={safeSegments}
               clips={clips}
-              currentTime={currentTime}
-              onSegmentsChange={onSegmentsChange}
-              onClipsChange={onClipsChange}
-              onWordClick={onWordClick}
-              getSpeakerDisplayName={getSpeakerDisplayName}
-              onSpeakerNameChange={onSpeakerNameChange}
+          currentTime={currentTime}
+          enableClickSeek={enableClickSeek}
+          onSegmentsChange={onSegmentsChange}
+          onClipsChange={onClipsChange}
+          onWordClick={onWordClick}
+          onWordSeek={onWordSeek}
+          getSpeakerDisplayName={getSpeakerDisplayName}
+          onSpeakerNameChange={onSpeakerNameChange}
               speakers={speakers}
               isPlaying={isPlaying}
               fontFamily={fontFamily}
