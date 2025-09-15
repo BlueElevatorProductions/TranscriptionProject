@@ -218,15 +218,27 @@ export class AudioManager {
       .filter(clip => clip && this.state.timeline.activeClipIds.has(clip.id));
   }
 
-  private calculateTotalDuration(): number {
-    const activeClips = this.getActiveClipsInOrder();
-    return activeClips.reduce((total, clip) => {
-      // Subtract deleted words duration
-      const deletedDuration = clip.words
-        .filter(word => this.state.timeline.deletedWordIds.has(generateWordId(clip.id, clip.words.indexOf(word))))
-        .reduce((sum, word) => sum + (word.end - word.start), 0);
-      
-      return total + (clip.duration - deletedDuration);
+  private calculateTotalDuration(
+    clips: Clip[] = this.state.timeline.clips,
+    reorderIndices: number[] = this.state.timeline.reorderIndices,
+    activeClipIds: Set<string> = this.state.timeline.activeClipIds,
+    deletedWordIds: Set<string> = this.state.timeline.deletedWordIds
+  ): number {
+    return reorderIndices.reduce((total, clipIndex) => {
+      const clip = clips[clipIndex];
+      if (!clip || !activeClipIds.has(clip.id)) {
+        return total;
+      }
+
+      const deletedDuration = clip.words.reduce((sum, word, wordIndex) => {
+        if (deletedWordIds.has(generateWordId(clip.id, wordIndex))) {
+          return sum + (word.end - word.start);
+        }
+        return sum;
+      }, 0);
+
+      const effectiveDuration = Math.max(0, clip.duration - deletedDuration);
+      return total + effectiveDuration;
     }, 0);
   }
 
@@ -265,14 +277,16 @@ export class AudioManager {
     switch (action.type) {
       case 'INITIALIZE_AUDIO': {
         const { audioUrl, clips } = action.payload;
-        
+
         // Initialize sequencer with clips
         this.sequencer.updateClips(clips);
-        
+
         // Create initial reorder indices (original order)
         const reorderIndices = clips.map((_, index) => index);
         const activeClipIds = new Set(clips.filter(c => c.status !== 'deleted').map(c => c.id));
-        
+        const deletedWordIds = state.timeline.deletedWordIds;
+        const totalDuration = this.calculateTotalDuration(clips, reorderIndices, activeClipIds, deletedWordIds);
+
         return {
           ...state,
           timeline: {
@@ -280,7 +294,7 @@ export class AudioManager {
             clips,
             activeClipIds,
             reorderIndices,
-            totalDuration: this.calculateTotalDuration(),
+            totalDuration,
           },
           isInitialized: true,
           error: null,
@@ -298,34 +312,33 @@ export class AudioManager {
         const clips = action.payload;
         this.sequencer.updateClips(clips);
         const activeClipIds = new Set(clips.filter(c => c.status !== 'deleted').map(c => c.id));
-        // Recompute reorder indices based on clip.order
-        console.log('[AudioManager] UPDATE_CLIPS: clip orders debug:');
-        clips.slice(0, 10).forEach((c, i) => {
-          console.log(`  [${i}] ${c.id.slice(0, 16)} order=${c.order}`);
-        });
-        
-        // Create a mapping from original clip positions to their new order
-        const sortedWithOriginalIndex = clips
-          .map((c, originalIndex) => ({ originalIndex, order: c.order ?? originalIndex }))
-          .sort((a, b) => a.order - b.order);
-        
-        console.log('[AudioManager] sortedWithOriginalIndex (first 10):');
-        sortedWithOriginalIndex.slice(0, 10).forEach((item, i) => {
-          console.log(`  newPos[${i}] = originalIndex[${item.originalIndex}] (order=${item.order})`);
-        });
-        
-        // reorderIndices[newPosition] = originalIndex
-        const sorted = sortedWithOriginalIndex.map(x => x.originalIndex);
-        console.log('[AudioManager] computed reorderIndices (first 10):', sorted.slice(0, 10));
-        
+        const reorderIndices = clips.map((_, i) => i);
+        const totalDuration = this.calculateTotalDuration(clips, reorderIndices, activeClipIds, state.timeline.deletedWordIds);
+
+        if (process.env.NODE_ENV !== 'production') {
+          const timelineOrder = reorderIndices
+            .map(index => clips[index])
+            .filter((clip): clip is Clip => Boolean(clip) && activeClipIds.has(clip.id))
+            .map(clip => clip.id);
+          const sequencerOrder = this.sequencer.getReorderedClips().map(clip => clip.id);
+          const ordersMatch =
+            timelineOrder.length === sequencerOrder.length &&
+            timelineOrder.every((id, idx) => id === sequencerOrder[idx]);
+          console.log('[AudioManager] UPDATE_CLIPS playback/EDL sync check:', {
+            timelineOrder,
+            sequencerOrder,
+            ordersMatch,
+          });
+        }
+
         return {
           ...state,
           timeline: {
             ...state.timeline,
             clips,
             activeClipIds,
-            reorderIndices: sorted,
-            totalDuration: this.calculateTotalDuration(),
+            reorderIndices,
+            totalDuration,
           },
         };
       }
@@ -346,13 +359,38 @@ export class AudioManager {
         const reorderedClips = newIndices.map(i => newClips[i]);
         this.sequencer.updateClips(reorderedClips);
 
+        const totalDuration = this.calculateTotalDuration(
+          newClips,
+          newIndices,
+          state.timeline.activeClipIds,
+          state.timeline.deletedWordIds
+        );
+
+        if (process.env.NODE_ENV !== 'production') {
+          const timelineOrder = newIndices
+            .map(i => newClips[i])
+            .filter((clip): clip is Clip => Boolean(clip) && state.timeline.activeClipIds.has(clip.id))
+            .map(clip => clip.id);
+          const sequencerOrder = this.sequencer.getReorderedClips().map(clip => clip.id);
+          const ordersMatch =
+            timelineOrder.length === sequencerOrder.length &&
+            timelineOrder.every((id, idx) => id === sequencerOrder[idx]);
+          console.log('[AudioManager] REORDER_CLIPS playback/EDL sync check:', {
+            fromIndex,
+            toIndex,
+            timelineOrder,
+            sequencerOrder,
+            ordersMatch,
+          });
+        }
+
         return {
           ...state,
           timeline: {
             ...state.timeline,
             clips: newClips,
             reorderIndices: newIndices,
-            totalDuration: this.calculateTotalDuration(),
+            totalDuration,
           },
         };
       }
@@ -361,13 +399,19 @@ export class AudioManager {
         const clipId = action.payload;
         const activeClipIds = new Set(state.timeline.activeClipIds);
         activeClipIds.delete(clipId);
-        
+        const totalDuration = this.calculateTotalDuration(
+          state.timeline.clips,
+          state.timeline.reorderIndices,
+          activeClipIds,
+          state.timeline.deletedWordIds
+        );
+
         return {
           ...state,
           timeline: {
             ...state.timeline,
             activeClipIds,
-            totalDuration: this.calculateTotalDuration(),
+            totalDuration,
           },
         };
       }
@@ -376,13 +420,19 @@ export class AudioManager {
         const clipId = action.payload;
         const activeClipIds = new Set(state.timeline.activeClipIds);
         activeClipIds.add(clipId);
-        
+        const totalDuration = this.calculateTotalDuration(
+          state.timeline.clips,
+          state.timeline.reorderIndices,
+          activeClipIds,
+          state.timeline.deletedWordIds
+        );
+
         return {
           ...state,
           timeline: {
             ...state.timeline,
             activeClipIds,
-            totalDuration: this.calculateTotalDuration(),
+            totalDuration,
           },
         };
       }
@@ -391,13 +441,19 @@ export class AudioManager {
         const wordIds = action.payload;
         const deletedWordIds = new Set(state.timeline.deletedWordIds);
         wordIds.forEach(id => deletedWordIds.add(id));
-        
+        const totalDuration = this.calculateTotalDuration(
+          state.timeline.clips,
+          state.timeline.reorderIndices,
+          state.timeline.activeClipIds,
+          deletedWordIds
+        );
+
         return {
           ...state,
           timeline: {
             ...state.timeline,
             deletedWordIds,
-            totalDuration: this.calculateTotalDuration(),
+            totalDuration,
           },
         };
       }
@@ -406,13 +462,19 @@ export class AudioManager {
         const wordIds = action.payload;
         const deletedWordIds = new Set(state.timeline.deletedWordIds);
         wordIds.forEach(id => deletedWordIds.delete(id));
-        
+        const totalDuration = this.calculateTotalDuration(
+          state.timeline.clips,
+          state.timeline.reorderIndices,
+          state.timeline.activeClipIds,
+          deletedWordIds
+        );
+
         return {
           ...state,
           timeline: {
             ...state.timeline,
             deletedWordIds,
-            totalDuration: this.calculateTotalDuration(),
+            totalDuration,
           },
         };
       }
