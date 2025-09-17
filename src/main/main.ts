@@ -46,8 +46,8 @@ class App {
   private readonly audioAnalyzer: AudioAnalyzer;
   private readonly audioConverter: AudioConverter;
   private readonly userPreferences: UserPreferencesService;
-  private mediaServer: http.Server | null = null;
-  private mediaPort: number | null = null;
+  private peaksServer: http.Server | null = null;
+  private peaksPort: number | null = null;
   private juceClient: JuceClient | null = null;
 
   constructor() {
@@ -68,46 +68,11 @@ class App {
     this.initialize();
   }
 
-  private startMediaServer(): void {
+  private startPeaksServer(): void {
     try {
       const server = http.createServer((req, res) => {
         const parsed = url.parse(req.url || '', true);
-        if (parsed.pathname === '/media') {
-          const src = parsed.query.src as string;
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          if (!src) {
-            res.writeHead(400, { 'Content-Type': 'text/plain' });
-            return res.end('Missing src');
-          }
-          const filePath = decodeURIComponent(src);
-          if (!fs.existsSync(filePath)) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            return res.end('Not found');
-          }
-          const stat = fs.statSync(filePath);
-          const mime = (mimeLookup(path.extname(filePath)) as string) || 'application/octet-stream';
-          const range = req.headers.range;
-          if (range) {
-            const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
-            const start = parseInt(startStr, 10);
-            const end = endStr ? parseInt(endStr, 10) : stat.size - 1;
-            const chunk = fs.createReadStream(filePath, { start, end });
-            res.writeHead(206, {
-              'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-              'Accept-Ranges': 'bytes',
-              'Content-Length': end - start + 1,
-              'Content-Type': mime,
-            });
-            chunk.pipe(res);
-          } else {
-            res.writeHead(200, {
-              'Content-Length': stat.size,
-              'Content-Type': mime,
-            });
-            fs.createReadStream(filePath).pipe(res);
-          }
-          return;
-        } else if (parsed.pathname === '/peaks') {
+        if (parsed.pathname === '/peaks') {
           // Compute or serve cached mono peaks for the given file path
           const src = parsed.query.src as string;
           const spp = Math.max(256, parseInt((parsed.query.samplesPerPixel as string) || '1024', 10));
@@ -204,13 +169,13 @@ class App {
       server.listen(0, '127.0.0.1', () => {
         const addr = server.address();
         if (typeof addr === 'object' && addr && addr.port) {
-          this.mediaServer = server;
-          this.mediaPort = addr.port;
-          console.log(`🎧 Media server listening on http://127.0.0.1:${addr.port}`);
+          this.peaksServer = server;
+          this.peaksPort = addr.port;
+          console.log(`📊 Peaks server listening on http://127.0.0.1:${addr.port}`);
         }
       });
     } catch (e) {
-      console.error('Failed to start media server:', e);
+      console.error('Failed to start peaks server:', e);
     }
   }
 
@@ -224,7 +189,7 @@ class App {
         console.error('Failed to start CrashReporter:', e);
       }
       this.createMainWindow();
-      this.startMediaServer();
+      this.startPeaksServer();
       this.setupMenu();
       this.setupIPC();
       this.setupJuceTransport();
@@ -251,7 +216,7 @@ class App {
     app.on('before-quit', () => {
       // Clean up resources before app quits
       this.audioConverter.cleanup().catch(console.error);
-      try { this.mediaServer?.close(); } catch {}
+      try { this.peaksServer?.close(); } catch {}
     });
 
     // Security: Prevent new window creation
@@ -354,6 +319,10 @@ class App {
       });
       ipcMain.handle('juce:setRate', async (_e, id: string, rate: number) => {
         try { await this.juceClient!.setRate(id, rate); return { success: true }; }
+        catch (e) { return { success: false, error: String(e) }; }
+      });
+      ipcMain.handle('juce:setTimeStretch', async (_e, id: string, ratio: number) => {
+        try { await this.juceClient!.setTimeStretch(id, ratio); return { success: true }; }
         catch (e) { return { success: false, error: String(e) }; }
       });
       ipcMain.handle('juce:setVolume', async (_e, id: string, value: number) => {
@@ -1021,12 +990,11 @@ class App {
           },
         });
 
-        const mediaUrl = (this.mediaPort)
-          ? `http://127.0.0.1:${this.mediaPort}/media?src=${encodeURIComponent(audioPath)}`
-          : pathToFileURL(audioPath).toString();
+        // Use direct file URL since JUCE handles audio directly
+        const fileUrl = pathToFileURL(audioPath).toString();
         const editorUrl = (isDev() && process.env.USE_LOCALHOST === 'true')
-          ? `http://localhost:3000/?audioEditor=1&src=${encodeURIComponent(mediaUrl)}`
-          : `file://${path.join(__dirname, '../../renderer/index.html')}?audioEditor=1&src=${encodeURIComponent(mediaUrl)}`;
+          ? `http://localhost:3000/?audioEditor=1&src=${encodeURIComponent(fileUrl)}&peaksPort=${this.peaksPort}`
+          : `file://${path.join(__dirname, '../../renderer/index.html')}?audioEditor=1&src=${encodeURIComponent(fileUrl)}&peaksPort=${this.peaksPort}`;
 
         await editorWin.loadURL(editorUrl);
         return { success: true };

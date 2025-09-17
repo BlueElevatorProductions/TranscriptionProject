@@ -11,11 +11,6 @@ type PeaksData = {
 function resolveFilePathFromSrc(src: string | undefined): string | null {
   if (!src) return null;
   try {
-    if (src.startsWith('http') && src.includes('/media')) {
-      const u = new URL(src);
-      const nested = u.searchParams.get('src');
-      return nested ? decodeURIComponent(nested) : null;
-    }
     if (src.startsWith('file://')) {
       const u = new URL(src);
       return decodeURIComponent(u.pathname);
@@ -25,41 +20,83 @@ function resolveFilePathFromSrc(src: string | undefined): string | null {
   return null;
 }
 
-export default function JuceEditorWindow({ src }: { src?: string }) {
+export default function JuceEditorWindow({ src, peaksPort }: { src?: string; peaksPort?: string }) {
   const [active, setActive] = useState<boolean>(document.hasFocus());
   const [editedSec, setEditedSec] = useState(0);
   const [durationSec, setDurationSec] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [peaks, setPeaks] = useState<PeaksData | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sessionId = 'default';
+  const sessionId = 'default'; // Use same session as main window to avoid conflicts
 
   const filePath = useMemo(() => resolveFilePathFromSrc(src), [src]);
 
+  // Query JUCE state on mount (don't load audio since main session already has it loaded)
+  useEffect(() => {
+    const queryInitialState = async () => {
+      if (!filePath) {
+        console.log('JuceEditorWindow: No filePath provided');
+        return;
+      }
+      try {
+        console.log(`JuceEditorWindow: Querying state for existing JUCE session "${sessionId}"`);
+        // Just query the existing session state instead of loading new audio
+        await window.juceTransport.queryState(sessionId);
+      } catch (error) {
+        console.error('JuceEditorWindow: Error querying JUCE state:', error);
+      }
+    };
+    
+    queryInitialState();
+    
+    // No cleanup needed since we're not controlling the main session
+  }, [filePath, sessionId]);
+
   // Subscribe to JUCE events
   useEffect(() => {
+    let lastPositionUpdate = 0;
+    
     const handler = (evt: any) => {
       if (!evt || evt.id !== sessionId) return;
+      
+      // Only log non-position events to reduce spam
+      if (evt.type !== 'position') {
+        console.log('JuceEditorWindow: JUCE event received:', evt);
+      }
+      
       switch (evt.type) {
         case 'loaded':
+          console.log(`JuceEditorWindow: Audio loaded, duration: ${evt.durationSec}s`);
           setDurationSec(evt.durationSec || 0);
           break;
         case 'state':
+          console.log(`JuceEditorWindow: State change - playing: ${evt.playing}`);
           setPlaying(!!evt.playing);
           break;
         case 'position':
-          setEditedSec(evt.editedSec || 0);
+          // Throttle position updates to prevent excessive re-renders
+          const now = Date.now();
+          if (now - lastPositionUpdate >= 50) { // Max 20 FPS
+            setEditedSec(evt.editedSec || 0);
+            lastPositionUpdate = now;
+          }
           break;
         case 'ended':
+          console.log('JuceEditorWindow: Playback ended');
           setPlaying(false);
           setEditedSec(durationSec);
           break;
         case 'error':
-          // keep console noise minimal; surface if useful
-          // console.error('JUCE error (editor):', evt.message);
+          console.error('JuceEditorWindow: JUCE error:', evt.message);
           break;
       }
     };
+    
+    if (!window.juceTransport) {
+      console.error('JuceEditorWindow: juceTransport not available on window object');
+      return;
+    }
+    
     window.juceTransport.onEvent(handler);
     // Ask for current state
     window.juceTransport.queryState(sessionId);
@@ -83,26 +120,25 @@ export default function JuceEditorWindow({ src }: { src?: string }) {
     const fetchPeaks = async () => {
       try {
         const fp = filePath;
-        if (!fp) return;
-        // Attempt to query peaks via the app's local server: use current location origin if available
-        // The `src` parameter likely includes the media server host: reuse its origin if HTTP
-        let base = '';
-        if (src && src.startsWith('http')) {
-          const u = new URL(src);
-          base = `${u.protocol}//${u.hostname}:${u.port}`;
+        if (!fp || !peaksPort) {
+          console.log('JuceEditorWindow: Missing filePath or peaksPort', { filePath: fp, peaksPort });
+          return;
         }
-        const url = `${base}/peaks?src=${encodeURIComponent(fp)}&samplesPerPixel=1024`;
+        // Use the peaks server with the correct port for waveform data
+        const url = `http://127.0.0.1:${peaksPort}/peaks?src=${encodeURIComponent(fp)}&samplesPerPixel=1024`;
+        console.log('JuceEditorWindow: Fetching peaks from:', url);
         const res = await fetch(url);
         if (!res.ok) throw new Error(`peaks ${res.status}`);
         const json = (await res.json()) as PeaksData;
+        console.log('JuceEditorWindow: Got peaks data:', { duration: json.durationSec, peaksLength: json.peaks.length });
         setPeaks(json);
         if (!durationSec && json.durationSec) setDurationSec(json.durationSec);
       } catch (e) {
-        // silently ignore if peaks unavailable
+        console.error('JuceEditorWindow: Failed to fetch peaks:', e);
       }
     };
     fetchPeaks();
-  }, [filePath, src, durationSec]);
+  }, [filePath, peaksPort, durationSec]);
 
   // Draw waveform
   useEffect(() => {
@@ -133,17 +169,33 @@ export default function JuceEditorWindow({ src }: { src?: string }) {
   }, [peaks, editedSec, durationSec]);
 
   const toggle = useCallback(async () => {
-    if (!active) return; // only active window sends commands
-    if (playing) await window.juceTransport.pause(sessionId);
-    else await window.juceTransport.play(sessionId);
+    if (!active) {
+      console.log('JuceEditorWindow: Ignoring play/pause - window not active');
+      return; // only active window sends commands
+    }
+    try {
+      console.log(`JuceEditorWindow: ${playing ? 'Pausing' : 'Playing'} audio`);
+      if (playing) await window.juceTransport.pause(sessionId);
+      else await window.juceTransport.play(sessionId);
+    } catch (error) {
+      console.error('JuceEditorWindow: Error toggling playback:', error);
+    }
   }, [playing, sessionId, active]);
 
   const onSeek = useCallback(async (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!active || durationSec <= 0) return;
-    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const t = (x / rect.width) * durationSec;
-    await window.juceTransport.seek(sessionId, t);
+    if (!active || durationSec <= 0) {
+      console.log('JuceEditorWindow: Ignoring seek - window not active or no duration');
+      return;
+    }
+    try {
+      const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const t = (x / rect.width) * durationSec;
+      console.log(`JuceEditorWindow: Seeking to ${t.toFixed(2)}s`);
+      await window.juceTransport.seek(sessionId, t);
+    } catch (error) {
+      console.error('JuceEditorWindow: Error seeking:', error);
+    }
   }, [active, durationSec, sessionId]);
 
   return (
@@ -153,6 +205,14 @@ export default function JuceEditorWindow({ src }: { src?: string }) {
           {filePath ? `File: ${filePath}` : 'No file'}
         </div>
         <div style={{ fontSize: 12, opacity: 0.7 }}>{active ? 'Active control' : 'Passive'}</div>
+      </div>
+      {/* Debug info */}
+      <div style={{ fontSize: 10, opacity: 0.5, marginBottom: 8 }}>
+        Debug: peaks={peaks ? `${peaks.peaks.length} points` : 'null'}, 
+        duration={durationSec}s, 
+        position={editedSec}s, 
+        session=shared-with-main,
+        peaksPort={peaksPort || 'missing'}
       </div>
       <div style={{ borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)' }}>
         <canvas ref={canvasRef} width={900} height={160} onClick={onSeek} style={{ width: '100%', height: 160, display: 'block', cursor: 'pointer' }} />

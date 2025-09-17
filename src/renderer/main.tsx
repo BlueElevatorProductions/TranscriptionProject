@@ -111,10 +111,11 @@ if (!rootElement) {
 const params = new URLSearchParams(window.location.search);
 const isAudioEditor = params.get('audioEditor') === '1';
 const audioSrc = params.get('src') || undefined; // already URL-encoded from main
+const peaksPort = params.get('peaksPort') || undefined;
 
 function AudioEditorWindow() {
   const src = audioSrc; // encoded URL passed from main
-  return <JuceEditorWindow src={src} />;
+  return <JuceEditorWindow src={src} peaksPort={peaksPort} />;
 }
 
 const root = ReactDOM.createRoot(rootElement);

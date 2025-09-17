@@ -24,7 +24,6 @@ interface Speaker {
 }
 import ColorSettings from '../Settings/ColorSettings';
 import ImportSettings from '../Settings/ImportSettings';
-import { GlassAudioPlayer } from './GlassAudioPlayer';
 import TopBar from './TopBar';
 
 interface NewUIShellProps {
@@ -230,6 +229,26 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   
   const [currentApiKeys, setCurrentApiKeys] = useState<{ [service: string]: string }>({});
   const [currentColor, setCurrentColor] = useState<string>('#003223');
+  const [transcriptTheme, setTranscriptTheme] = useState<'light' | 'dark'>('dark');
+
+  // Apply initial transcript theme on component mount
+  useEffect(() => {
+    const applyTranscriptTheme = (theme: 'light' | 'dark') => {
+      const root = document.documentElement;
+      
+      if (theme === 'light') {
+        // Light transcript theme - white background with black text
+        root.style.setProperty('--transcript-bg', '0 0% 100%');     // White background
+        root.style.setProperty('--transcript-text', '0 0% 0%');     // Black text
+      } else {
+        // Dark transcript theme - dark grey background with white text  
+        root.style.setProperty('--transcript-bg', '220 15% 15%');   // Dark grey background
+        root.style.setProperty('--transcript-text', '0 0% 95%');    // White text
+      }
+    };
+
+    applyTranscriptTheme(transcriptTheme);
+  }, [transcriptTheme]);
   
   // Font settings state - load from project or use defaults
   const [fontSettings, setFontSettings] = useState<FontSettings>({
@@ -249,8 +268,8 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   }, [selectedJob]);
   const { theme, setTheme } = useTheme();
 
-  // Get audio file path from project and convert to blob URL
-  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  // Get audio file path from project and convert to file URL
+  const [audioFileUrl, setAudioFileUrl] = useState<string | null>(null);
   
   const audioFilePath = useMemo(() => {
     const audio = projectState.projectData?.project?.audio as any;
@@ -268,11 +287,11 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   // Use direct file:// URL for audio playback (stream from disk)
   useEffect(() => {
     if (!audioFilePath || isConverting) {
-      setAudioBlobUrl(null);
+      setAudioFileUrl(null);
       return;
     }
     const fileUrl = `file://${encodeURI(audioFilePath)}`;
-    setAudioBlobUrl(fileUrl);
+    setAudioFileUrl(fileUrl);
   }, [audioFilePath, isConverting]);
 
   // Update font settings when project data changes
@@ -752,8 +771,10 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         <AudioSystemIntegration
           mode={mode as 'listen' | 'edit'}
           fontSettings={fontSettings}
-          audioUrl={audioBlobUrl || undefined}
+          audioUrl={audioFileUrl || undefined}
           disableAudio={isEditorOpen || isConverting}
+          isGlassPlayerVisible={isGlassPlayerVisible}
+          onCloseGlassPlayer={() => setIsGlassPlayerVisible(false)}
         />
       );
     }
@@ -772,16 +793,8 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         onSidebarToggle={handleSidebarToggle}
         projectName={projectState.projectData?.project?.name}
         projectStatus="Ready"
+        onOpenAudioEditor={handleOpenAudioEditor}
       />
-      {/* Quick control bar (temporary) */}
-      <div className="px-3 py-2 text-xs text-white/70 flex gap-2 items-center border-b border-white/10">
-        <button
-          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/20"
-          onClick={handleOpenAudioEditor}
-        >
-          Open Audio Editor (isolated)
-        </button>
-      </div>
       
       {/* Main horizontal layout */}
       <div className="flex flex-1 overflow-hidden">
@@ -810,19 +823,22 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           openPanel === 'clips' ? 'Clips' :
           openPanel === 'fonts' ? 'Font Settings' :
           openPanel === 'api' ? 'API Settings' :
-          openPanel === 'colors' ? 'Color Settings' :
+          openPanel === 'colors' ? 'Colors' :
           'Panel'
         }
       >
         {openPanel === 'speakers' && (
-          <div className="p-4">
-            <h2 className="text-lg font-semibold text-white mb-4">Speakers</h2>
-            <p className="text-white opacity-70 mb-4">Edit speaker names below. Changes persist to the project.</p>
+          <div className="px-4 py-0">
             <div className="space-y-3 mb-4">
               {speakers.map((speaker, index) => (
                 <div key={speaker.id} className="flex items-center gap-3">
                   <input
-                    className="flex-1 px-3 py-2 rounded bg-white bg-opacity-10 text-white border border-white border-opacity-20 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 text-sm min-w-0 placeholder:text-white placeholder:opacity-50"
+                    className="flex-1 px-3 py-2 rounded bg-white bg-opacity-10 border border-white border-opacity-20 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 text-sm min-w-0"
+                    style={{ 
+                      color: 'hsl(var(--text))', 
+                      backgroundColor: 'hsl(var(--text) / 0.1)',
+                      borderColor: 'hsl(var(--text) / 0.2)'
+                    }}
                     value={((projectState.globalSpeakers as any)[speaker.id] ?? '') as string}
                     onChange={(e) => {
                       const next = { ...projectState.globalSpeakers, [speaker.id]: e.target.value } as any;
@@ -830,17 +846,20 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
                     }}
                     placeholder={`Speaker ${index + 1}`}
                   />
-                  <button
-                    onClick={() => {
-                      // Remove this speaker from global speakers
-                      const { [speaker.id]: removed, ...remainingSpeakers } = projectState.globalSpeakers as any;
-                      projectActions.updateSpeakers(remainingSpeakers);
-                    }}
-                    className="flex-shrink-0 w-6 h-6 flex items-center justify-center text-white opacity-50 hover:opacity-100 hover:text-red-400 transition-colors text-sm font-bold"
-                    title="Remove speaker"
-                  >
-                    ×
-                  </button>
+                  {index > 0 && (
+                    <button
+                      onClick={() => {
+                        // Remove this speaker from global speakers
+                        const { [speaker.id]: removed, ...remainingSpeakers } = projectState.globalSpeakers as any;
+                        projectActions.updateSpeakers(remainingSpeakers);
+                      }}
+                      className="flex-shrink-0 w-6 h-6 flex items-center justify-center opacity-50 hover:opacity-100 hover:text-red-400 transition-colors text-sm font-bold"
+                      style={{ color: 'hsl(var(--text))' }}
+                      title="Remove speaker"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -866,17 +885,17 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
                 // For now, we'll just show it in the UI - ideally this should integrate with the project's speaker system
                 console.log('Added new speaker:', newSpeaker);
               }}
-              className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
+              className="w-full px-3 py-2 rounded text-sm font-medium transition-colors"
+              style={{ 
+                backgroundColor: 'hsl(220 15% 15%)', 
+                color: 'hsl(50 100% 95%)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'hsl(220 15% 10%)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'hsl(220 15% 15%)'}
             >
               + Add Speaker
             </button>
             
-            <button
-              onClick={() => setOpenPanel(null)}
-              className="mt-4 px-3 py-1 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30 text-sm"
-            >
-              Close
-            </button>
           </div>
         )}
         
@@ -989,6 +1008,8 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           <ColorSettings
             currentColor={currentColor}
             onColorChange={handleColorChange}
+            currentTranscriptTheme={transcriptTheme}
+            onTranscriptThemeChange={setTranscriptTheme}
             onClose={() => setOpenPanel(null)}
           />
         )}
@@ -1003,23 +1024,6 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
         </main>
       </div>
 
-      {/* Glass Audio Player */}
-      <GlassAudioPlayer
-        isVisible={isGlassPlayerVisible}
-        isPlaying={false}
-        currentTime={0}
-        duration={0}
-        volume={1}
-        speed={1}
-        fileName="Demo Audio"
-        onPlayPause={() => console.log('Play/Pause')}
-        onSeek={(time) => console.log('Seek to:', time)}
-        onSkipToClipStart={() => console.log('Skip to clip start')}
-        onSkipToClipEnd={() => console.log('Skip to clip end')}
-        onVolume={(volume) => console.log('Volume:', volume)}
-        onSpeedChange={(speed) => console.log('Speed:', speed)}
-        onClose={() => setIsGlassPlayerVisible(false)}
-      />
     </div>
   );
 };
