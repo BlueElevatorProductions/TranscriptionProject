@@ -1,0 +1,277 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;\f1\fnil\fcharset0 Menlo-Bold;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red86\green32\blue244;\red202\green51\blue35;
+\red170\green171\blue37;\red57\green192\blue38;\red56\green185\blue199;\red125\green125\blue125;\red175\green221\blue255;
+}
+{\*\expandedcolortbl;;\csgray\c0;\cssrgb\c41681\c25958\c96648;\cssrgb\c83899\c28663\c18026;
+\cssrgb\c72331\c71682\c18599;\cssrgb\c25706\c77963\c19557;\cssrgb\c25546\c77007\c82023;\cssrgb\c56352\c56352\c56352;\cssrgb\c73675\c89410\c100000;
+}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs22 \cf2 \CocoaLigature0  
+\f1\b \uc0\u55356 \u57251  How React Hooks Work
+\f0\b0 \
+\
+  
+\f1\b What are Hooks?
+\f0\b0 \
+\
+  Hooks are 
+\f1\b functions that let you "hook into" React features
+\f0\b0  like state,\
+  lifecycle, and side effects from functional components.\
+\
+  
+\f1\b Built-in Hooks You Already Know:
+\f0\b0 \
+\
+  \cf3 import\cf2  React, \{ useState, useEffect \} \cf3 from\cf2  \cf4 'react'\cf2 ;\
+\
+  \cf3 const\cf2  MyComponent = \cf5 () =>\cf2  \{\
+    \cf6 // useState hook - gives you state in a functional component\cf2 \
+    \cf3 const\cf2  [count, setCount] = useState(\cf6 0\cf2 );\
+\
+    \cf6 // useEffect hook - runs side effects (like componentDidMount/Update)\cf2 \
+    useEffect(\cf5 () =>\cf2  \{\
+      \cf7 console\cf2 .log(\cf4 'Component rendered or count changed'\cf2 );\
+    \}, [count]); \cf6 // Runs when 'count' changes\cf2 \
+\
+    \cf3 return\cf2  \cf8 <\cf3 div\cf8 >\cf2 Count: \{count\}\cf8 </\cf3 div\cf8 >\cf2 ;\
+  \};\
+\
+  
+\f1\b Custom Hooks = Reusable Logic
+\f0\b0 \
+\
+  A custom hook is just 
+\f1\b a JavaScript function that starts with "use"
+\f0\b0  and\
+  can call other hooks inside it.\
+\
+  ---\
+  
+\f1\b \uc0\u55357 \u56513  File Structure for Keyboard System
+\f0\b0 \
+\
+  
+\f1\b File Organization:
+\f0\b0 \
+\
+  src/renderer/\
+  \uc0\u9500 \u9472 \u9472  hooks/\
+  \uc0\u9474    \u9500 \u9472 \u9472  useAudioEditor.ts          # \u9989  Already exists\
+  \uc0\u9474    \u9492 \u9472 \u9472  useKeyboardManager.ts      # \u55356 \u56725  New file we'll create\
+  \uc0\u9500 \u9472 \u9472  components/\
+  \uc0\u9474    \u9492 \u9472 \u9472  AudioSystemIntegration.tsx # \u9989  Already exists - we'll modify\
+  \uc0\u9492 \u9472 \u9472  types/\
+      \uc0\u9492 \u9472 \u9472  keyboard.ts                # \u55356 \u56725  New file for keyboard types\
+\
+  
+\f1\b 1. Create the Hook (New File)
+\f0\b0 \
+\
+  \cf6 // src/renderer/hooks/useKeyboardManager.ts\cf2 \
+  \cf3 import\cf2  \{ useEffect \} \cf3 from\cf2  \cf4 'react'\cf2 ;\
+  \cf3 import\cf2  \{ AudioEditorActions, AudioEditorState \} \cf3 from\cf2  \cf4 './useAudioEditor'\cf2 ;\
+\
+  \cf3 interface\cf2  KeyboardContext \{\
+    \cf7 audioActions\cf2 : AudioEditorActions;\
+    audioState: AudioEditorState;\
+    mode: \cf4 'listen'\cf2  | \cf4 'edit'\cf2 ;\
+    \cf6 // ... other context\cf2 \
+  \}\
+\
+  \cf3 export\cf2  \cf3 const\cf2  useKeyboardManager = \cf5 (context: KeyboardContext) =>\cf2  \{\
+    useEffect(\cf5 () =>\cf2  \{\
+      \cf3 const\cf2  handleKeyDown = \cf5 (event: KeyboardEvent) =>\cf2  \{\
+        \cf6 // Handle spacebar\cf2 \
+        \cf3 if\cf2  (event.code === \cf4 'Space'\cf2 ) \{\
+          event.preventDefault();\
+          context.audioActions.togglePlayPause();\
+          \cf3 return\cf2 ;\
+        \}\
+\
+        \cf6 // Handle other keys...\cf2 \
+      \};\
+\
+      \cf7 document\cf2 .addEventListener(\cf4 'keydown'\cf2 , handleKeyDown);\
+\
+      \cf6 // Cleanup function - removes the listener when component unmounts\cf2 \
+      \cf3 return\cf2  \cf5 () =>\cf2  \{\
+        \cf7 document\cf2 .removeEventListener(\cf4 'keydown'\cf2 , handleKeyDown);\
+      \};\
+    \}, [context]); \cf6 // Re-run if context changes\cf2 \
+\
+    \cf6 // This hook doesn't return anything - it just sets up keyboard \cf2 \
+  \cf6 listeners\cf2 \
+  \};\
+\
+  
+\f1\b 2. Use the Hook (Existing File)
+\f0\b0 \
+\
+  \cf6 // src/renderer/components/AudioSystemIntegration.tsx\cf2 \
+  \cf3 import\cf2  React, \{ useState \} \cf3 from\cf2  \cf4 'react'\cf2 ;\
+  \cf3 import\cf2  \{ useAudioEditor \} \cf3 from\cf2  \cf4 '../hooks/useAudioEditor'\cf2 ;\
+  \cf3 import\cf2  \{ useKeyboardManager \} \cf3 from\cf2  \cf4 '../hooks/useKeyboardManager'\cf2 ; \cf6 // \uc0\u55356 \u56725  \cf2 \
+  \cf6 Import our new hook\cf2 \
+\
+  \cf3 export\cf2  \cf3 const\cf2  AudioSystemIntegration: React.FC<Props> = \cf5 (\{ mode, audioUrl \cf2 \
+  \cf5 \}) =>\cf2  \{\
+    \cf3 const\cf2  [audioState, audioActions] = useAudioEditor(\{...\});\
+\
+    \cf6 // \uc0\u55356 \u56725  Use our keyboard hook - just call it and pass the context\cf2 \
+    useKeyboardManager(\{\
+      audioActions,\
+      audioState,\
+      mode,\
+      \cf6 // ... other context data\cf2 \
+    \});\
+\
+    \cf3 return\cf2  (\
+      \cf8 <\cf3 SimpleTranscript\cf2 \
+  \cf8       \cf7 audioState\cf8 =\cf4 \{audioState\}\cf2 \
+  \cf8       \cf7 audioActions\cf8 =\cf4 \{audioActions\}\cf2 \
+  \cf8       // \cf7 ...\cf2 \
+  \cf8     />\cf2 \
+    );\
+  \};\
+\
+  ---\
+  
+\f1\b \uc0\u55357 \u56580  How This Works
+\f0\b0 \
+\
+  
+\f1\b The Magic:
+\f0\b0 \
+\
+  1. 
+\f1\b AudioSystemIntegration
+\f0\b0  component renders\
+  2. 
+\f1\b useKeyboardManager
+\f0\b0  hook runs and sets up keyboard listeners\
+  3. User presses spacebar\
+  4. 
+\f1\b handleKeyDown
+\f0\b0  function fires\
+  5. Calls 
+\f1\b audioActions.togglePlayPause()
+\f0\b0 \
+  6. 
+\f1\b useAudioEditor
+\f0\b0  hook updates 
+\f1\b audioState
+\f0\b0 \
+  7. 
+\f1\b AudioSystemIntegration
+\f0\b0  re-renders with new state\
+  8. 
+\f1\b SimpleTranscript
+\f0\b0  gets updated audio state and shows play/pause change\
+\
+  
+\f1\b Data Flow:
+\f0\b0 \
+\
+  User presses key \uc0\u8594  useKeyboardManager \u8594  audioActions.togglePlayPause()\
+  \uc0\u8594  AudioManager \u8594  audioState changes \u8594  Component re-renders\
+\
+  
+\f1\b Why This Pattern is Great:
+\f0\b0 \
+\
+  1. 
+\f1\b Separation of Concerns
+\f0\b0 : Keyboard logic is in one file\
+  2. 
+\f1\b Reusable
+\f0\b0 : Could use \cf9 useKeyboardManager\cf2  in other components\
+  3. 
+\f1\b Testable
+\f0\b0 : Can test keyboard logic separately\
+  4. 
+\f1\b Clean
+\f0\b0 : AudioSystemIntegration doesn't have messy keyboard code\
+\
+  ---\
+  
+\f1\b \uc0\u55357 \u56523  Hook Rules
+\f0\b0 \
+\
+  
+\f1\b Rules Hooks Must Follow:
+\f0\b0 \
+\
+  1. 
+\f1\b Only call hooks at the top level
+\f0\b0  - not inside loops, conditions, or\
+  nested functions\
+  2. 
+\f1\b Only call hooks from React functions
+\f0\b0  - components or other custom\
+  hooks\
+  3. 
+\f1\b Custom hooks start with "use"
+\f0\b0  - this is a convention React relies on\
+\
+  
+\f1\b Example of WRONG usage:
+\f0\b0 \
+\
+  \cf3 const\cf2  BadComponent = \cf5 () =>\cf2  \{\
+    \cf3 if\cf2  (someCondition) \{\
+      \cf3 const\cf2  [state, setState] = useState(\cf6 0\cf2 ); \cf6 // \uc0\u10060  Hook inside condition!\cf2 \
+    \}\
+\
+    \cf3 for\cf2  (\cf3 let\cf2  i = \cf6 0\cf2 ; i < \cf6 5\cf2 ; i++) \{\
+      useEffect(\cf5 () =>\cf2  \{\}); \cf6 // \uc0\u10060  Hook inside loop!\cf2 \
+    \}\
+  \};\
+\
+  
+\f1\b Example of CORRECT usage:
+\f0\b0 \
+\
+  \cf3 const\cf2  GoodComponent = \cf5 () =>\cf2  \{\
+    \cf3 const\cf2  [state, setState] = useState(\cf6 0\cf2 ); \cf6 // \uc0\u9989  Top level\cf2 \
+    useEffect(\cf5 () =>\cf2  \{\
+      \cf6 // \uc0\u9989  Top level\cf2 \
+      \cf3 if\cf2  (someCondition) \{\
+        \cf6 // \uc0\u9989  Logic inside hook is fine\cf2 \
+        setState(\cf6 5\cf2 );\
+      \}\
+    \});\
+  \};\
+\
+  ---\
+  
+\f1\b \uc0\u55356 \u57263  Summary
+\f0\b0 \
+\
+  - 
+\f1\b New file
+\f0\b0 : \cf9 src/renderer/hooks/useKeyboardManager.ts\cf2 \
+  - 
+\f1\b Modified file
+\f0\b0 : \cf9 AudioSystemIntegration.tsx\cf2  (just add one line to use the\
+   hook)\
+  - 
+\f1\b Hook pattern
+\f0\b0 : Create reusable logic, import and use it in components\
+  - 
+\f1\b Automatic integration
+\f0\b0 : Hook directly calls \cf9 audioActions\cf2 , which updates\
+  the audio system\
+\
+  This keeps our code 
+\f1\b organized
+\f0\b0 , 
+\f1\b reusable
+\f0\b0 , and 
+\f1\b easy to test
+\f0\b0 . The keyboard\
+  system becomes a clean "plugin" that any component can use by just\
+  importing and calling the hook!}

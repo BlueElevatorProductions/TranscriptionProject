@@ -431,7 +431,7 @@ export function LexicalTranscriptEditor({
         italic: 'italic',
         underline: 'underline',
         strikethrough: 'line-through',
-        highlight: 'bg-yellow-200 rounded px-1',
+        highlight: 'lexical-highlight',
       },
       paragraph: 'mb-6',
       root: 'transcript-editor-root relative',

@@ -1,0 +1,353 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;\f1\fnil\fcharset0 Menlo-Bold;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red116\green116\blue116;\red86\green32\blue244;
+\red175\green221\blue255;\red56\green185\blue199;\red170\green171\blue37;\red202\green51\blue35;\red57\green192\blue38;
+\red125\green125\blue125;}
+{\*\expandedcolortbl;;\csgray\c0;\csgenericrgb\c45371\c45371\c45371;\cssrgb\c41681\c25958\c96648;
+\cssrgb\c73675\c89410\c100000;\cssrgb\c25546\c77007\c82023;\cssrgb\c72331\c71682\c18599;\cssrgb\c83899\c28663\c18026;\cssrgb\c25706\c77963\c19557;
+\cssrgb\c56352\c56352\c56352;}
+\margl1440\margr1440\vieww11520\viewh16700\viewkind0
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs22 \cf2 \CocoaLigature0   
+\f1\b \'f0\'9f\'8e\'b5 Core Audio System Architecture
+\f0\b0 \
+  The new audio system is built around 
+\f1\b 3 core principles
+\f0\b0 : 
+\f1\b Unified Control
+\f0\b0 ,\
+  
+\f1\b Clean State Management
+\f0\b0 , and 
+\f1\b Simple Integration
+\f0\b0 .\
+  
+\f1\b Audio Architecture Stack (Bottom to Top):
+\f0\b0 \
+  
+\f1\b 1. AudioManager.ts\cf3  - The Engine
+\f0\b0 \cf2 \
+  \cf4 class AudioManager \cf2 \{\
+    \cf4 private\cf2  audioElement: HTMLAudioElement;\
+    \cf4 private\cf2  sequencer: SimpleClipSequencer;\
+    \cf4 private\cf2  state: AudioAppState;\
+  \}\
+  
+\f1\b What it does:
+\f0\b0 \
+  - 
+\f1\b Single HTML Audio Element
+\f0\b0 : One \cf5 <audio>\cf2  element controls all playback\
+  - 
+\f1\b Clip Sequencing
+\f0\b0 : Uses \cf5 SimpleClipSequencer\cf2  to map between original audio\
+   time and "edited timeline" (after reordering/deleting clips)\
+  - 
+\f1\b 50fps Word Highlighting
+\f0\b0 : Updates every 20ms to highlight current word\
+  smoothly\
+  - 
+\f1\b State Management
+\f0\b0 : Maintains centralized state via \cf5 AudioAppState\cf2 \
+  
+\f1\b Key Features:
+\f0\b0 \
+  - 
+\f1\b Timeline Conversion
+\f0\b0 : \cf5 originalTimeToEditedTime()\cf2  and\
+  \cf5 editedTimeToOriginalTime()\cf2 \
+  - 
+\f1\b Smart Error Handling
+\f0\b0 : Ignores errors when no audio source is set\
+  - 
+\f1\b Lazy Initialization
+\f0\b0 : Only creates audio resources when actually needed\
+  
+\f1\b 2. useAudioEditor.ts\cf3  - The React Interface
+\f0\b0 \cf2 \
+  \cf4 const\cf2  [audioState, audioActions] = useAudioEditor(\{\
+    \cf6 onError\cf2 : \cf7 (error) =>\cf2  \cf6 console\cf2 .error(error),\
+    \cf6 onWordHighlight\cf2 : \cf7 (wordId) =>\cf2  scrollToWord(wordId)\
+  \});\
+  
+\f1\b What it does:
+\f0\b0 \
+  - 
+\f1\b React Hook
+\f0\b0 : Provides clean React interface to AudioManager\
+  - 
+\f1\b Stable Callbacks
+\f0\b0 : Prevents infinite re-renders with stable callback\
+  refs\
+  - 
+\f1\b State Conversion
+\f0\b0 : Converts internal AudioAppState to React-friendly\
+  format\
+  
+\f1\b Actions Available:
+\f0\b0 \
+  - \cf5 play()\cf2 , \cf5 pause()\cf2 , \cf5 togglePlayPause()\cf2 \
+  - \cf5 seekToTime()\cf2 , \cf5 seekToWord(clipId, wordIndex)\cf2 \
+  - \cf5 setVolume()\cf2 , \cf5 setPlaybackRate()\cf2 \
+  - \cf5 updateClips()\cf2 , \cf5 deleteWords()\cf2 , \cf5 reorderClips()\cf2 \
+  
+\f1\b 3. AudioSystemIntegration.tsx\cf3  - The Bridge
+\f0\b0 \cf2 \
+  <AudioSystemIntegration\
+    mode=\cf8 "listen"\cf2  \cf9 // or "edit"\cf2 \
+    fontSettings=\{fontSettings\}\
+    audioUrl=\{audioFilePath\}\
+  />\
+  
+\f1\b What it does:
+\f0\b0 \
+  - 
+\f1\b Project Integration
+\f0\b0 : Bridges audio system with project data/contexts\
+  - 
+\f1\b Mode Switching
+\f0\b0 : Handles Listen vs Edit mode behaviors\
+  - 
+\f1\b Component Orchestration
+\f0\b0 : Manages SimpleTranscript + AudioErrorBoundary\
+  
+\f1\b 4. SimpleTranscript.tsx\cf3  - The UI
+\f0\b0 \cf2 \
+  
+\f1\b Listen Mode:
+\f0\b0 \
+  - Click word \'e2\'96\'ba Seek + Play immediately\
+  - Deleted content hidden\
+  - Clean reading experience\
+  
+\f1\b Edit Mode:
+\f0\b0 \
+  - Click word \'e2\'96\'ba Position cursor\
+  - Deleted content visible with strikethrough\
+  - Full editing capabilities\
+  
+\f1\b Data Flow:
+\f0\b0 \
+  User clicks word \'e2\'96\'ba SimpleTranscript \'e2\'96\'ba AudioSystemIntegration \'e2\'96\'ba \
+  useAudioEditor \'e2\'96\'ba AudioManager \'e2\'96\'ba HTML Audio Element \'e2\'96\'ba \
+  Word highlighting updates \'e2\'96\'ba SimpleTranscript re-renders\
+  
+\f1\b Why This Architecture Works:
+\f0\b0 \
+  1. 
+\f1\b Single Source of Truth
+\f0\b0 : AudioManager owns all audio state\
+  2. 
+\f1\b No Conflicts
+\f0\b0 : Only one system controls audio (vs. previous dual\
+  system)\
+  3. 
+\f1\b React-Friendly
+\f0\b0 : Clean hooks interface with stable callbacks\
+  4. 
+\f1\b Mode-Aware
+\f0\b0 : Automatically handles Listen vs Edit behaviors\
+  5. 
+\f1\b Error Recovery
+\f0\b0 : Comprehensive error boundaries and recovery\
+  ---\
+  
+\f1\b \'f0\'9f\'8e\'a8 CSS/Styling Architecture
+\f0\b0 \
+  The app uses 
+\f1\b Tailwind CSS
+\f0\b0  with 
+\f1\b CSS Custom Properties
+\f0\b0  for theming. Here's\
+  how it works:\
+  
+\f1\b CSS Integration Structure:
+\f0\b0 \
+  
+\f1\b 1. Tailwind Configuration (tailwind.config.js)
+\f0\b0 \
+  \cf6 module\cf2 .exports = \{\
+    \cf6 content\cf2 : [\cf8 './src/**/*.\{js,ts,jsx,tsx\}'\cf2 ],\
+    \cf6 theme\cf2 : \{\
+      \cf6 extend\cf2 : \{\
+        \cf6 colors\cf2 : \{\
+          \cf9 // Custom CSS variables for theming\cf2 \
+          \cf8 'main-bg'\cf2 : \cf8 'var(--color-main-bg)'\cf2 ,\
+          \cf8 'sidebar-bg'\cf2 : \cf8 'var(--color-sidebar-bg)'\cf2 ,\
+          \cf8 'text'\cf2 : \cf8 'var(--color-text)'\cf2 ,\
+          \cf8 'accent'\cf2 : \cf8 'var(--color-accent)'\cf2 ,\
+        \}\
+      \}\
+    \}\
+  \}\
+  
+\f1\b 2. CSS Custom Properties (index.css)
+\f0\b0 \
+  :root \{\
+    --color-main-bg: \cf9 #ffffff\cf2 ;\
+    --color-sidebar-bg: \cf9 #f8f9fa\cf2 ;\
+    --color-text: \cf9 #1a1a1a\cf2 ;\
+    --color-accent: \cf9 #007AFF\cf2 ;\
+    --color-border: \cf9 #e5e7eb\cf2 ;\
+    --color-hover-bg: \cf9 #f3f4f6\cf2 ;\
+  \}\
+  
+\f1\b 3. Component-Level Styling
+\f0\b0 \
+  \cf9 // Example from NewUIShell.tsx\cf2 \
+  <div className=\cf8 "flex h-screen bg-main-bg text-text overflow-hidden"\cf2 >\
+    \cf10 <\cf4 aside\cf10  \cf6 className\cf10 =\cf8 "w-64 bg-sidebar-bg border-r border-border"\cf10 >\cf2 \
+      \cf10 <\cf4 button\cf10  \cf6 className\cf10 =\cf8 "px-4 py-2 bg-accent text-white \cf2 \
+  \cf8 hover:bg-accent/90"\cf10 >\cf2 \
+        Listen\
+      \cf10 </\cf4 button\cf10 >\cf2 \
+    \cf10 </\cf4 aside\cf10 >\cf2 \
+  </div>\
+  
+\f1\b How to Add New CSS Components:
+\f0\b0 \
+  
+\f1\b Method 1: Tailwind Utility Classes (Recommended)
+\f0\b0 \
+  \cf9 // Use existing Tailwind classes\cf2 \
+  <div className=\cf8 "flex items-center gap-4 p-6 bg-white rounded-lg \cf2 \
+  \cf8 shadow-md"\cf2 >\
+    \cf10 <\cf4 button\cf10  \cf6 className\cf10 =\cf8 "px-4 py-2 bg-blue-500 text-white rounded \cf2 \
+  \cf8 hover:bg-blue-600 transition-colors"\cf10 >\cf2 \
+      Click Me\
+    \cf10 </\cf4 button\cf10 >\cf2 \
+  </div>\
+  
+\f1\b Method 2: Custom CSS Variables
+\f0\b0 \
+  \cf9 /* Add to index.css */\cf2 \
+  :root \{\
+    --color-success: \cf9 #10b981\cf2 ;\
+    --color-warning: \cf9 #f59e0b\cf2 ;\
+    --color-error: \cf9 #ef4444\cf2 ;\
+  \}\
+  \cf9 // Add to tailwind.config.js\cf2 \
+  \cf6 colors\cf2 : \{\
+    \cf8 'success'\cf2 : \cf8 'var(--color-success)'\cf2 ,\
+    \cf8 'warning'\cf2 : \cf8 'var(--color-warning)'\cf2 ,\
+    \cf8 'error'\cf2 : \cf8 'var(--color-error)'\cf2 ,\
+  \}\
+  \cf9 // Use in components\cf2 \
+  <div className=\cf8 "bg-success text-white p-4 rounded"\cf2 >\
+    Success message!\
+  </div>\
+  
+\f1\b Method 3: Component-Specific Styles
+\f0\b0 \
+  \cf9 // For complex components, create dedicated CSS modules\cf2 \
+  \cf4 import\cf2  styles \cf4 from\cf2  \cf8 './MyComponent.module.css'\cf2 ;\
+  \cf10 <\cf4 div\cf10  \cf6 className\cf10 =\cf8 \{\cf10 `$\{\cf6 styles.customComponent\cf10 \} \cf6 flex\cf10  \cf6 items-center\cf10 `\}>\cf2 \
+    Content\
+  \cf10 </\cf4 div\cf10 >\cf2 \
+  
+\f1\b Styling System Benefits:
+\f0\b0 \
+  1. 
+\f1\b Consistency
+\f0\b0 : CSS variables ensure consistent theming\
+  2. 
+\f1\b Performance
+\f0\b0 : Tailwind purges unused CSS automatically\
+  3. 
+\f1\b Maintainability
+\f0\b0 : Easy to change themes by updating CSS variables\
+  4. 
+\f1\b Developer Experience
+\f0\b0 : Tailwind's utility classes are fast to write\
+  5. 
+\f1\b Responsive
+\f0\b0 : Built-in responsive design with \cf5 sm:\cf2 , \cf5 md:\cf2 , \cf5 lg:\cf2  prefixes\
+  
+\f1\b Current Theme Structure:
+\f0\b0 \
+  - 
+\f1\b Main Background
+\f0\b0 : \cf5 bg-main-bg\cf2  (white)\
+  - 
+\f1\b Sidebar
+\f0\b0 : \cf5 bg-sidebar-bg\cf2  (light gray)\
+  - 
+\f1\b Text
+\f0\b0 : \cf5 text-text\cf2  (dark)\
+  - 
+\f1\b Accent
+\f0\b0 : \cf5 bg-accent\cf2  (blue)\
+  - 
+\f1\b Interactive States
+\f0\b0 : \cf5 hover:bg-hover-bg\cf2 , \cf5 transition-colors\cf2 \
+  
+\f1\b Adding Dark Mode (Example):
+\f0\b0 \
+  :root \{\
+    --color-main-bg: \cf9 #ffffff\cf2 ;\
+    --color-text: \cf9 #1a1a1a\cf2 ;\
+  \}\
+  [data-theme=\cf8 "dark"\cf2 ] \{\
+    --color-main-bg: \cf9 #1a1a1a\cf2 ;\
+    --color-text: \cf9 #ffffff\cf2 ;\
+  \}\
+  The app's CSS is designed to be 
+\f1\b modular
+\f0\b0 , 
+\f1\b themeable
+\f0\b0 , and 
+\f1\b maintainable
+\f0\b0 \
+  while leveraging Tailwind's utility-first approach for rapid development.\
+  ---\
+  
+\f1\b \'f0\'9f\'93\'8a Clip Lifecycle and State Management
+\f0\b0 \
+  Understanding how clips evolve through the application lifecycle:\
+  
+\f1\b Clip Types and Evolution:
+\f0\b0 \
+  1. 
+\f1\b 'initial'
+\f0\b0 : Created when audio is first imported, before transcription\
+     - Contains basic metadata and duration\
+     - No word-level data yet\
+     - Represents entire audio file as single clip\
+  2. 
+\f1\b 'transcribed'
+\f0\b0 : Generated after successful transcription\
+     - Contains full word-level timestamps\
+     - Speaker assignments\
+     - Segmented based on speaker changes\
+  3. 
+\f1\b 'speaker-change'
+\f0\b0 : Standard clips based on speaker boundaries\
+     - Most common type in final project\
+     - Generated from transcription segments\
+  4. 
+\f1\b 'paragraph-break'
+\f0\b0 : Clips split at natural paragraph breaks\
+     - Preserves speaker continuity\
+     - Improves readability\
+  5. 
+\f1\b 'user-created'
+\f0\b0 : Clips manually created/split by user\
+     - Result of editing operations\
+     - Custom clip boundaries\
+  
+\f1\b State Flow:
+\f0\b0 \
+  Audio Import \'e2\'86\'92 'initial' clip created \'e2\'86\'92 Transcription \'e2\'86\'92 \
+  'initial' replaced with 'transcribed' clips \'e2\'86\'92 User editing \'e2\'86\'92 \
+  Mix of 'transcribed', 'speaker-change', 'user-created' clips\
+  
+\f1\b Audio System Integration:
+\f0\b0 \
+  - AudioManager processes all clip types uniformly\
+  - SimpleClipSequencer handles timeline calculations\
+  - Mode switching affects clip visibility and interaction\
+  - Real-time state synchronization via AudioAppState\
+  This clip-centric approach ensures data consistency and \
+  enables sophisticated editing operations while maintaining \
+  audio playback synchronization. }

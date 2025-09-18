@@ -28,11 +28,8 @@ export class SimpleClipSequencer {
    */
   private calculateReorderedClips(clips: Clip[]): Clip[] {
     // The order of clips is now determined by the array passed into updateClips.
-    // Previously this function re-sorted based on clip.order which could get out
-    // of sync with the caller's desired ordering. By relying purely on array
-    // order we ensure the sequencer reflects the timeline order maintained by
-    // the AudioManagers.
-    return clips.filter(clip => clip.status !== 'deleted');
+    // Exclude only the initial placeholder; include audio-only so edited timeline includes silence/music.
+    return clips.filter(clip => clip.status !== 'deleted' && clip.type !== 'initial');
   }
   
   /**

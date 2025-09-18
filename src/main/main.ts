@@ -252,6 +252,27 @@ class App {
       const pendingAppliedById = new Map<string, number>();
       const getRev = (id: string) => edlRevisionById.get(id) ?? 0;
       const bumpRev = (id: string) => { const r = getRev(id) + 1; edlRevisionById.set(id, r); return r; };
+      const writeEdlDebug = (id: string, rev: number, clips: any[]) => {
+        try {
+          const ts = new Date().toISOString().replace(/[:.]/g, '-');
+          const base = process.env.EDL_DEBUG_DIR || '/tmp';
+          try { fs.mkdirSync(base, { recursive: true }); } catch {}
+          const fullPath = path.join(base, `edl_debug_${id}_${rev}_${ts}.json`);
+          const latestPath = path.join(base, `edl_debug_latest.json`);
+          const payload = {
+            timestamp: new Date().toISOString(),
+            sessionId: id,
+            revision: rev,
+            count: Array.isArray(clips) ? clips.length : 0,
+            edl: clips,
+          };
+          const json = JSON.stringify(payload, null, 2);
+          try { fs.writeFileSync(fullPath, json, 'utf8'); } catch {}
+          try { fs.writeFileSync(latestPath, json, 'utf8'); } catch {}
+        } catch (e) {
+          console.error('Failed to write EDL debug file:', e);
+        }
+      };
       // Forward JUCE events to renderer(s)
       const forward = (evt: JuceEvent) => {
         try {
@@ -297,6 +318,8 @@ class App {
           // Bump revision and mark pending apply; will be emitted on next position tick
           const rev = bumpRev(id);
           pendingAppliedById.set(id, rev);
+          // Write full, unfiltered EDL to /tmp for troubleshooting
+          writeEdlDebug(id, rev, clips as any);
           return { success: true, revision: rev };
         } catch (e) {
           return { success: false, error: String(e) };

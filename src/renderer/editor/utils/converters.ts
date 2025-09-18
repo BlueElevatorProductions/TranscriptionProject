@@ -152,7 +152,16 @@ export function clipsToEditorState(
     }
 
     const SPACER_VISUAL_THRESHOLD = 1.0; // show pills only if >= 1s
-    const attachSpacerToContainerEnd = (container: any, gap: Clip) => {
+
+    // Determine earliest-by-original-time speech to recognize a single leading global gap
+    let earliestSpeech = speech[0] || null;
+    for (const s of speech) {
+      if (!earliestSpeech || (s.startTime ?? 0) < (earliestSpeech.startTime ?? 0)) {
+        earliestSpeech = s;
+      }
+    }
+    const earliestStart = earliestSpeech ? (earliestSpeech.startTime ?? 0) : 0;
+    const attachSpacerToContainerEnd = (container: any, gap: Clip, editedStart: number, editedEnd: number) => {
       const duration = Math.max(0, (gap.endTime ?? 0) - (gap.startTime ?? 0));
       if (duration < SPACER_VISUAL_THRESHOLD) return;
       // Append spacer pill at the end of the first paragraph
@@ -169,7 +178,7 @@ export function clipsToEditorState(
       } else if (lastChild && (lastChild as any).getType && (lastChild as any).getType() === 'word') {
         paragraph.append($createTextNode(' '));
       }
-      paragraph.append($createSpacerNode(duration, gap.startTime, gap.endTime));
+      paragraph.append($createSpacerNode(duration, gap.startTime, gap.endTime, editedStart, editedEnd));
     };
 
     // Traverse full edited order including gaps to attach pills after speech or at the beginning of the first encountered speech
@@ -187,12 +196,20 @@ export function clipsToEditorState(
         const dur = Math.max(0, (c.endTime ?? 0) - (c.startTime ?? 0));
         editedCursor += dur;
         if (dur >= SPACER_VISUAL_THRESHOLD) {
+          // If this audio-only segment represents the leading global gap (0 → earliest speech start),
+          // do not attach it as a trailing spacer to the previous visual clip. It will be rendered once
+          // at the beginning of the earliest speech container below.
+          const isLeadingGlobalGap = Math.abs((c.startTime ?? 0) - 0) < 0.02 && Math.abs((c.endTime ?? 0) - earliestStart) < 0.02;
+          if (isLeadingGlobalGap) {
+            return;
+          }
           if (lastSpeechContainer) {
             // trailing spacer after last speech
             const paragraph = lastSpeechContainer.getChildren().find((n: any) => n.getType && n.getType() === 'paragraph') || $createParagraphNode();
             if (!paragraph.isAttached()) lastSpeechContainer.append(paragraph);
             paragraph.append($createTextNode(' '));
-            paragraph.append($createSpacerNode(dur, c.startTime, c.endTime));
+            const editedStart = editedCursor - dur;
+            paragraph.append($createSpacerNode(dur, c.startTime, c.endTime, editedStart, editedCursor));
           } else {
             // Initial global gaps before any speech are handled separately (attached to earliest speech)
             // Do nothing here to avoid pinning to the first visual clip.
@@ -223,11 +240,8 @@ export function clipsToEditorState(
     });
 
     // Attach leading global gap (music intro) to the earliest-by-original-start speech clip, so it moves with that clip
-    if (speech.length > 0) {
-      let earliest = speech[0];
-      for (const s of speech) {
-        if ((s.startTime ?? 0) < (earliest.startTime ?? 0)) earliest = s;
-      }
+    if (speech.length > 0 && earliestSpeech) {
+      const earliest = earliestSpeech;
       const leadDur = Math.max(0, (earliest.startTime ?? 0)); // from 0 to earliest speech start
       if (leadDur >= SPACER_VISUAL_THRESHOLD) {
         const target = containerById.get(earliest.id);
@@ -237,7 +251,8 @@ export function clipsToEditorState(
           const children = paragraph.getChildren();
           const firstChild = children[0] || null;
           paragraph.insertBefore($createTextNode(' '), firstChild);
-          paragraph.insertBefore($createSpacerNode(leadDur, 0, earliest.startTime), firstChild);
+          // Leading gap sits at edited 0 → leadDur
+          paragraph.insertBefore($createSpacerNode(leadDur, 0, earliest.startTime, 0, leadDur), firstChild);
           paragraph.insertBefore($createTextNode(' '), firstChild);
         }
       }

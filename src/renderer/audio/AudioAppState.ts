@@ -180,12 +180,22 @@ export const generateGapClips = (speechClips: Clip[], audioDuration: number): Cl
  * Merge speech and gap clips, ensuring continuous timeline coverage
  */
 export const createContinuousClips = (speechClips: Clip[], audioDuration: number): Clip[] => {
-  const gaps = generateGapClips(speechClips, audioDuration);
-  
+  // Only speech clips are input; clone and sort by original start time
+  const speech = speechClips
+    .filter(c => c.type !== 'audio-only')
+    .slice()
+    .sort((a, b) => a.startTime - b.startTime);
+
+  // Preserve original timings; do not merge leading intro into the first speech clip.
+  const adjustedSpeech: Clip[] = speech;
+
+  // Generate gaps, including any leading gap starting at 0
+  const gaps = generateGapClips(speech, audioDuration);
+
   // Merge and sort by start time, then assign sequential order
-  const merged = [...speechClips.filter(c => c.type !== 'audio-only'), ...gaps]
+  const merged = [...adjustedSpeech, ...gaps]
     .sort((a, b) => a.startTime - b.startTime)
     .map((clip, index) => ({ ...clip, order: index }));
-  
+
   return merged;
 };

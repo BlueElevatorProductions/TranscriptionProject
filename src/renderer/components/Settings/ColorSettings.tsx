@@ -219,6 +219,16 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({
         </div>
       </div>
 
+      {/* Highlight Color Section */}
+      <div className="mt-6 pt-4 border-t border-white border-opacity-20">
+        <label className="block text-sm font-medium mb-3" style={{ color: 'hsl(var(--text))' }}>Highlight Color</label>
+        <p className="text-xs opacity-70 mb-3" style={{ color: 'hsl(var(--text))' }}>
+          Choose the word highlight color for playback. Text color adjusts automatically for readability.
+        </p>
+
+        <HighlightColorSelector />
+      </div>
+
       {/* Transcript Theme Section */}
       <div className="mt-6 pt-4 border-t border-white border-opacity-20">
         <label className="block text-sm font-medium mb-3" style={{ color: 'hsl(var(--text))' }}>Transcript Theme</label>
@@ -295,3 +305,102 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({
 };
 
 export default ColorSettings;
+
+// --- Inline component: HighlightColorSelector ---
+
+const HL_OPTIONS: Array<{ id: string; name: string; hex: string }> = [
+  { id: 'yellow', name: 'Soft Yellow', hex: '#fef3c7' },
+  { id: 'orange', name: 'Amber', hex: '#fde68a' },
+  { id: 'lime', name: 'Lime', hex: '#d9f99d' },
+  { id: 'cyan', name: 'Cyan', hex: '#a5f3fc' },
+  { id: 'pink', name: 'Pink', hex: '#fbcfe8' },
+  { id: 'violet', name: 'Violet', hex: '#e9d5ff' },
+];
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return null;
+  return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
+}
+
+function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max - min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+  const srgb = [r, g, b].map(v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+}
+
+function setHighlightCssFromHex(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return;
+  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  const root = document.documentElement;
+  // Update background
+  root.style.setProperty('--highlight-bg', `${hsl.h} ${hsl.s}% ${hsl.l}%`);
+  // Auto text color: black for light backgrounds, white for dark
+  const lum = relativeLuminance(rgb);
+  const textHsl = lum > 0.6 ? '0 0% 0%' : '0 0% 98%';
+  root.style.setProperty('--highlight-text', textHsl);
+  // Outline: slightly darker/lighter variant
+  const outlineL = Math.max(0, Math.min(100, lum > 0.5 ? hsl.l - 20 : hsl.l + 20));
+  root.style.setProperty('--highlight-outline', `${hsl.h} ${Math.max(30, hsl.s)}% ${outlineL}%`);
+}
+
+const HighlightColorSelector: React.FC = () => {
+  const [selected, setSelected] = useState<string>(() => {
+    return localStorage.getItem('transcript-highlight-color') || HL_OPTIONS[0].hex;
+  });
+
+  useEffect(() => {
+    // Apply stored value on mount
+    setHighlightCssFromHex(selected);
+  }, []);
+
+  const handlePick = (hex: string) => {
+    setSelected(hex);
+    try { localStorage.setItem('transcript-highlight-color', hex); } catch {}
+    setHighlightCssFromHex(hex);
+  };
+
+  return (
+    <div className="space-y-3">
+      {HL_OPTIONS.map(opt => (
+        <div
+          key={opt.id}
+          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${selected === opt.hex ? 'bg-white bg-opacity-20 border border-white border-opacity-40' : 'bg-white bg-opacity-10 border border-white border-opacity-20 hover:bg-opacity-15'}`}
+          onClick={() => handlePick(opt.hex)}
+        >
+          <div
+            className="w-8 h-8 rounded border-2 border-white border-opacity-30 flex items-center justify-center"
+            style={{ backgroundColor: opt.hex }}
+          >
+            {selected === opt.hex && <Check size={16} style={{ color: 'hsl(var(--text))' }} />}
+          </div>
+          <div className="flex-1">
+            <div className="font-medium" style={{ color: 'hsl(var(--text))' }}>{opt.name}</div>
+            <div className="opacity-60 text-xs" style={{ color: 'hsl(var(--text))' }}>{opt.hex}</div>
+          </div>
+          {selected === opt.hex && <div className="w-2 h-2 bg-white rounded-full opacity-80"></div>}
+        </div>
+      ))}
+    </div>
+  );
+};

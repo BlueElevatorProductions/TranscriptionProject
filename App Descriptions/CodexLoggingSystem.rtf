@@ -1,0 +1,46 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red116\green116\blue116;}
+{\*\expandedcolortbl;;\csgray\c0;\csgenericrgb\c45371\c45371\c45371;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs22 \cf2 \CocoaLigature0 Here\'92s how I can read logs myself without you pasting anything:\
+\
+  - Deterministic log locations\
+      - EDL dumps: I write every \cf3 juce:updateEdl\cf2  payload to JSON files at\
+  \cf3 $EDL_DEBUG_DIR\cf2  (fallback \cf3 /tmp\cf2 ).\
+          - Files: \cf3 edl_debug_latest.json\cf2  and\
+  \cf3 edl_debug_<sessionId>_<revision>_<timestamp>.json\cf2 \
+      - JUCE backend logs: The backend writes to \cf3 $JUCE_DEBUG_DIR/juce_debug.log\cf2 \
+  (fallback \cf3 /tmp/juce_debug.log\cf2 ).\
+      - Build logs: The launcher writes the native backend build output to \cf3 logs/\cf2 \
+  \cf3 juce_build_YYYYmmdd_HHMMSS.log\cf2 .\
+      - Electron/Vite logs: The launcher writes to \cf3 logs/electron_*.log\cf2  and \cf3 logs/\cf2 \
+  \cf3 vite_*.log\cf2 .\
+  - Launcher exports and directories\
+      - \cf3 start-transcription.sh\cf2  exports:\
+          - \cf3 EDL_DEBUG_DIR=/Users/\'85/ClaudeTranscriptionProject/logs/edl\cf2 \
+          - \cf3 JUCE_DEBUG_DIR=/Users/\'85/ClaudeTranscriptionProject/logs/juce\cf2 \
+      - It creates these folders and echoes their paths at launch, so I know\
+  exactly where to look.\
+  - Backend and main logging\
+      - Backend logs detailed boundary decisions (play/seek, pos, jump\
+  decisions) to \cf3 juce_debug.log\cf2 .\
+      - Main process logs the exact backend path/env/PID at spawn so we can\
+  verify the correct binary and env are in use.\
+  - How I read them\
+      - I use direct file reads (e.g., \cf3 tail\cf2 , \cf3 head\cf2 , \cf3 ls\cf2 ) against:\
+          - \cf3 /Users/\'85/ClaudeTranscriptionProject/logs/edl/edl_debug_latest.json\cf2 \
+          - \cf3 /Users/\'85/ClaudeTranscriptionProject/logs/juce/juce_debug.log\cf2 \
+          - \cf3 /Users/\'85/ClaudeTranscriptionProject/logs/juce_build_*.log\cf2 \
+          - \cf3 /Users/\'85/ClaudeTranscriptionProject/logs/electron_*.log\cf2 \
+      - If logs aren\'92t present in \cf3 $JUCE_DEBUG_DIR\cf2 , I also check \cf3 /tmp/\cf2 \
+  \cf3 juce_debug.log\cf2  as a fallback.\
+  - No fallback on build failures\
+      - The launcher now aborts on backend build errors and missing binaries,\
+  making failures obvious and ensuring logs reflect the latest code.\
+\
+  With this setup, after you run the launcher and reproduce, I can autonomously\
+  inspect EDL and backend logs from your project\'92s \cf3 logs\cf2  directory and diagnose\
+  issues without requiring console copy/paste.}

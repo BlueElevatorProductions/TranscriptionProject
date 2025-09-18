@@ -43,6 +43,25 @@ export default function AudioSyncPlugin({
   // Word highlighting synchronization - trigger on currentTime changes
   useEffect(() => {
     const updateWordHighlights = () => {
+      // 1) Update spacer (gap pill) highlighting regardless of word minStart
+      try {
+        const editorRootEl = editor.getRootElement();
+        if (editorRootEl && typeof currentTime === 'number' && currentTime >= 0) {
+          const spacers = editorRootEl.querySelectorAll<HTMLElement>('.lexical-spacer-node');
+          spacers.forEach((el) => {
+            const s = parseFloat(el.getAttribute('data-edited-start-sec') || el.getAttribute('data-start-sec') || 'NaN');
+            const e = parseFloat(el.getAttribute('data-edited-end-sec') || el.getAttribute('data-end-sec') || 'NaN');
+            if (!Number.isFinite(s) || !Number.isFinite(e)) return;
+            if (currentTime >= s && currentTime <= e) {
+              el.classList.add('playing');
+            } else {
+              el.classList.remove('playing');
+            }
+          });
+        }
+      } catch {}
+
+      // 2) Word highlighting within editor state
       editor.update(() => {
         const root = $getRoot();
         const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
@@ -84,7 +103,7 @@ export default function AudioSyncPlugin({
         });
         if (!isFinite(minStart)) minStart = 0;
         if (t < minStart) {
-          // Early stage (e.g., music intro) — avoid highlighting
+          // Early stage (e.g., music intro) — avoid word highlighting (but spacers already handled)
           return;
         }
 

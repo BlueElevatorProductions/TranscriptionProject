@@ -14,8 +14,12 @@ import {
 
 export interface SerializedSpacerNode extends SerializedLexicalNode {
   durationSec: number;
+  // Original audio timeline positions
   startSec: number;
   endSec: number;
+  // Edited (contiguous) timeline positions for highlighting
+  editedStartSec?: number;
+  editedEndSec?: number;
   type: 'spacer';
   version: 1;
 }
@@ -24,24 +28,48 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
   __durationSec: number;
   __startSec: number;
   __endSec: number;
+  __editedStartSec: number;
+  __editedEndSec: number;
 
   static getType(): string {
     return 'spacer';
   }
 
   static clone(node: SpacerNode): SpacerNode {
-    return new SpacerNode(node.__durationSec, node.__startSec, node.__endSec, node.__key);
+    return new SpacerNode(
+      node.__durationSec,
+      node.__startSec,
+      node.__endSec,
+      node.__editedStartSec,
+      node.__editedEndSec,
+      node.__key
+    );
   }
 
-  constructor(durationSec: number, startSec: number, endSec: number, key?: NodeKey) {
+  constructor(
+    durationSec: number,
+    startSec: number,
+    endSec: number,
+    editedStartSec?: number,
+    editedEndSec?: number,
+    key?: NodeKey
+  ) {
     super(key);
     this.__durationSec = durationSec;
     this.__startSec = startSec;
     this.__endSec = endSec;
+    this.__editedStartSec = editedStartSec ?? startSec;
+    this.__editedEndSec = editedEndSec ?? endSec;
   }
 
   static importJSON(json: SerializedSpacerNode): SpacerNode {
-    return new SpacerNode(json.durationSec, json.startSec, json.endSec);
+    return new SpacerNode(
+      json.durationSec,
+      json.startSec,
+      json.endSec,
+      json.editedStartSec,
+      json.editedEndSec
+    );
   }
 
   exportJSON(): SerializedSpacerNode {
@@ -49,6 +77,8 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
       durationSec: this.__durationSec,
       startSec: this.__startSec,
       endSec: this.__endSec,
+      editedStartSec: this.__editedStartSec,
+      editedEndSec: this.__editedEndSec,
       type: 'spacer',
       version: 1,
     };
@@ -58,6 +88,13 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
     const el = document.createElement('span');
     el.className = 'lexical-spacer-node';
     el.setAttribute('data-spacer', 'true');
+    // Provide timing data for highlighting sync
+    // Original time domain (for seeking purposes)
+    el.setAttribute('data-start-sec', String(this.__startSec));
+    el.setAttribute('data-end-sec', String(this.__endSec));
+    // Edited time domain (for highlighting)
+    el.setAttribute('data-edited-start-sec', String(this.__editedStartSec));
+    el.setAttribute('data-edited-end-sec', String(this.__editedEndSec));
     el.setAttribute('contenteditable', 'false');
     return el;
   }
@@ -105,8 +142,14 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
   isKeyboardSelectable(): boolean { return true; }
 }
 
-export function $createSpacerNode(durationSec: number, startSec: number, endSec: number): SpacerNode {
-  return new SpacerNode(durationSec, startSec, endSec);
+export function $createSpacerNode(
+  durationSec: number,
+  startSec: number,
+  endSec: number,
+  editedStartSec?: number,
+  editedEndSec?: number
+): SpacerNode {
+  return new SpacerNode(durationSec, startSec, endSec, editedStartSec, editedEndSec);
 }
 
 export function $isSpacerNode(node: LexicalNode | null | undefined): node is SpacerNode {

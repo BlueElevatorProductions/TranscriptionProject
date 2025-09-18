@@ -67,6 +67,8 @@ describe('JuceAudioManager edited-only transport', () => {
     (mgr as any).state.isInitialized = true;
     const clips = makeClipsReordered();
     mgr.updateClips(clips);
+    (mgr as any).state.playback.isReady = true;
+    (mgr as any).state.playback.duration = clips.reduce((acc: number, clip: any) => acc + clip.duration, 0);
     // edlApplying set true; seek should be queued
     mgr.seekToEditedTime(5);
     expect(calls.find(c => c[0] === 'seek')).toBeUndefined();
@@ -82,6 +84,8 @@ describe('JuceAudioManager edited-only transport', () => {
     (mgr as any).state.isInitialized = true;
     const clips = makeClipsReordered();
     mgr.updateClips(clips);
+    (mgr as any).state.playback.isReady = true;
+    (mgr as any).state.playback.duration = clips.reduce((acc: number, clip: any) => acc + clip.duration, 0);
     emit({ type: 'edlApplied', id: 'default', revision: 2 });
     // Click within original clipA at 6.0s; in reordered [B,A], B dur ~9.83, so edited target ≈ 9.83 + (6.0 - 2.88) = 12.95
     mgr.seekToOriginalTime(6.0);
@@ -90,6 +94,38 @@ describe('JuceAudioManager edited-only transport', () => {
     const editedSec = seekCall[1];
     expect(editedSec).toBeGreaterThan(12.9);
     expect(editedSec).toBeLessThan(13.1);
+  });
+
+  test('seekToEditedTime always issues edited seconds even when preferOriginalSeek is true', async () => {
+    const { emit, calls } = setupTransportMock();
+    const mgr = new (JuceAudioManager as any)({
+      onStateChange: () => {},
+      onError: () => {},
+      onWordHighlight: () => {},
+      onClipChange: () => {},
+    });
+
+    (mgr as any).state.isInitialized = true;
+    const clips = makeClipsReordered();
+    mgr.updateClips(clips);
+    emit({ type: 'edlApplied', id: 'default', revision: 3 });
+
+    (mgr as any).state.playback.isReady = true;
+    (mgr as any).state.playback.duration = clips.reduce((acc: number, clip: any) => acc + clip.duration, 0);
+
+    // Sanity check: sequencer maps edited time to a different original time when reordered
+    const sequencer = (mgr as any).sequencer;
+    const mapped = sequencer.editedTimeToOriginalTime(5);
+    expect(mapped).toBeDefined();
+    expect(mapped.originalTime).not.toBeCloseTo(5);
+
+    expect((mgr as any).preferOriginalSeek).toBe(true);
+
+    await mgr.seekToEditedTime(5);
+    const seekCalls = calls.filter((c: any[]) => c[0] === 'seek');
+    expect(seekCalls.length).toBeGreaterThan(0);
+    const [, issuedSec] = seekCalls[seekCalls.length - 1];
+    expect(issuedSec).toBeCloseTo(5, 5);
   });
 
   test('drops stale position events by revision', () => {

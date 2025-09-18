@@ -130,7 +130,12 @@ export class JuceAudioManager {
 
   async seekToEditedTime(editedTime: number, setIntent: boolean = true): Promise<void> {
     if (!this.state.playback.isReady) return;
-    const clamped = Math.max(0, Math.min(editedTime, this.state.playback.duration));
+    // Guard against stale/zero playback.duration by falling back to sequencer's total edited duration
+    const fallbackMax = this.sequencer.getTotalEditedDuration();
+    const maxDur = (Number.isFinite(this.state.playback.duration) && this.state.playback.duration > 0)
+      ? this.state.playback.duration
+      : fallbackMax;
+    const clamped = Math.max(0, Math.min(editedTime, maxDur));
     if (setIntent) {
       this.lastSeekIntent = { kind: 'edited', editedTime: clamped, createdAt: Date.now(), attempts: 0 };
     }
@@ -147,12 +152,7 @@ export class JuceAudioManager {
         const pr = await this.transport!.pause(this.sessionId);
         if (!pr.success) this.callbacks.onError(pr.error || 'pause failed before seek');
       }
-      // If timeline is reordered, prefer seeking via original domain
-      let targetSec = clamped;
-      if (this.preferOriginalSeek) {
-        const mapped = this.sequencer.editedTimeToOriginalTime(clamped);
-        if (mapped && Number.isFinite(mapped.originalTime)) targetSec = mapped.originalTime;
-      }
+      const targetSec = clamped;
       const sr = await this.transport!.seek(this.sessionId, targetSec);
       if (!sr.success) {
         this.callbacks.onError(sr.error || 'seek failed');
@@ -174,62 +174,38 @@ export class JuceAudioManager {
       this.pendingSeekOriginal = Math.max(0, originalSec);
       return;
     }
-    // Build ordered list of active clips (including audio-only) in edited order
-    const { clips, activeClipIds } = this.state.timeline;
-    const ordered = this.state.timeline.reorderIndices
-      .map((i) => clips[i])
-      .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
 
-    // Detect reordered timeline (temporal discontinuity in original time)
-    let isReordered = false;
-    for (let i = 1; i < ordered.length; i++) {
-      if (ordered[i].startTime < ordered[i - 1].endTime) {
-        isReordered = true;
+    const ordered = this.sequencer.getReorderedClips();
+    if (!ordered.length) return;
+
+    const EPS = 0.02; // tolerate tiny boundary biases
+    let targetClip: Clip | null = null;
+
+    for (const clip of ordered) {
+      const within = originalSec >= clip.startTime && originalSec <= clip.endTime;
+      const nearStart = originalSec >= clip.startTime - EPS && originalSec < clip.startTime + EPS;
+      if (within || nearStart) {
+        targetClip = clip;
         break;
       }
     }
 
-    const EPS = 0.02; // tolerate tiny boundary biases
+    if (!targetClip) return;
 
-    if (isReordered) {
-      // Include audio-only segments: pick the clip whose ORIGINAL time range contains the request
-      let targetClip = ordered.find(c => originalSec >= c.startTime && originalSec <= c.endTime);
-      if (!targetClip) {
-        // If we're within EPS before a clip start, snap into that clip
-        targetClip = ordered.find(c => originalSec >= c.startTime - EPS && originalSec < c.startTime + EPS);
-      }
-      if (!targetClip) return;
+    const normalizedOriginal = Math.min(
+      targetClip.endTime,
+      Math.max(targetClip.startTime, originalSec)
+    );
+    const edited = this.sequencer.originalTimeToEditedTime(normalizedOriginal, targetClip.id);
+    if (edited == null) return;
 
-      const offsetWithinClip = Math.max(0, originalSec - targetClip.startTime);
-
-      // Map to contiguous edited timeline by summing durations up to the target clip
-      let contiguousTime = 0;
-      for (const clip of ordered) {
-        if (clip.id === targetClip.id) {
-          const seekTime = contiguousTime + offsetWithinClip;
-          if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
-            console.log(`[seekToOriginalTime] REORDERED: ${originalSec.toFixed(3)}s (clip ${targetClip.id.slice(-8)}) → edited ${seekTime.toFixed(3)}s`);
-          }
-          this.seekToEditedTime(seekTime);
-          return;
-        }
-        contiguousTime += clip.duration;
-      }
-      return;
+    if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+      console.log(
+        `[seekToOriginalTime] ORIGINAL ${normalizedOriginal.toFixed(3)}s (clip ${targetClip.id.slice(-8)}) → edited ${edited.toFixed(3)}s`
+      );
     }
 
-    // Original order: linear map along the edited timeline (include audio-only)
-    let acc = 0;
-    for (const c of ordered) {
-      const within = originalSec >= c.startTime && originalSec <= c.endTime;
-      const nearStart = originalSec >= c.startTime - EPS && originalSec < c.startTime + EPS;
-      if (within || nearStart) {
-        const edited = acc + Math.max(0, originalSec - c.startTime);
-        this.seekToEditedTime(edited);
-        return;
-      }
-      acc += c.duration;
-    }
+    this.seekToEditedTime(edited);
   }
 
   seekToWord(clipId: string, wordIndex: number): void {
@@ -288,8 +264,16 @@ export class JuceAudioManager {
     this.edlApplying = true;
     this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { edlApplying: true } as any });
     if (this.edlApplyFallbackTid) { clearTimeout(this.edlApplyFallbackTid); this.edlApplyFallbackTid = null; }
-    // Cross-window sync: publish full clips to main so other windows (Audio Editor) can mirror
-    try { (window as any).electronAPI?.clipsSet?.(clips); } catch {}
+    // Cross-window sync: publish the ordered active clips that match EDL
+    try {
+      const state = this.state;
+      const orderedActive = this.buildOrderedActiveClips(
+        clips,
+        state.timeline.reorderIndices,
+        state.timeline.activeClipIds
+      );
+      (window as any).electronAPI?.clipsSet?.(orderedActive);
+    } catch {}
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
     // Fallback timer in case 'edlApplied' is not emitted
     this.edlApplyFallbackTid = window.setTimeout(() => {
@@ -319,10 +303,14 @@ export class JuceAudioManager {
     this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { edlApplying: true } as any });
     if (this.edlApplyFallbackTid) { clearTimeout(this.edlApplyFallbackTid); this.edlApplyFallbackTid = null; }
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
-    // Publish new ordering to other windows
+    // Publish new ordering to other windows (ordered active set)
     try {
-      const next = this.state.timeline.clips;
-      (window as any).electronAPI?.clipsSet?.(next);
+      const orderedActive = this.buildOrderedActiveClips(
+        this.state.timeline.clips,
+        this.state.timeline.reorderIndices,
+        this.state.timeline.activeClipIds
+      );
+      (window as any).electronAPI?.clipsSet?.(orderedActive);
     } catch {}
     this.edlApplyFallbackTid = window.setTimeout(() => {
       if (this.edlApplying) {
@@ -517,9 +505,11 @@ export class JuceAudioManager {
   }
 
   private calculateTotalDuration(clips: Clip[], activeIds?: Set<string>): number {
-    // Sum durations only for active clips; word deletions are text-only
+    // Sum durations for all active clips (including audio-only), but exclude initial placeholder
     const ids = activeIds || this.state.timeline.activeClipIds;
-    return clips.reduce((total, clip) => (clip && ids.has(clip.id) ? total + clip.duration : total), 0);
+    return clips.reduce((total, clip) => (
+      clip && ids.has(clip.id) && clip.type !== 'initial' ? total + clip.duration : total
+    ), 0);
   }
 
   private onTransportEvent(evt: JuceEvent) {
@@ -660,7 +650,12 @@ export class JuceAudioManager {
   private computeEditedTargetFromIntent(): number | null {
     if (!this.lastSeekIntent) return null;
     if (this.lastSeekIntent.kind === 'edited') {
-      return Math.max(0, Math.min(this.lastSeekIntent.editedTime, this.state.playback.duration));
+      // Clamp using a reliable max duration; fall back to sequencer total if playback.duration is stale/zero
+      const fallbackMax = this.sequencer.getTotalEditedDuration();
+      const maxDur = (Number.isFinite(this.state.playback.duration) && this.state.playback.duration > 0)
+        ? this.state.playback.duration
+        : fallbackMax;
+      return Math.max(0, Math.min(this.lastSeekIntent.editedTime, maxDur));
     }
     // word intent: map current word to edited time via sequencer
     const { clipId, wordIndex } = this.lastSeekIntent;
@@ -787,19 +782,23 @@ export class JuceAudioManager {
     return result;
   }
 
-  /** Build the playable sequence for the sequencer: active clips in edited order, excluding 'initial' type. */
+  /** Build the playable sequence for the sequencer: active clips (including audio-only) in edited order. */
   private buildOrderedActiveClips(clips: Clip[], reorderIndices: number[], activeClipIds: Set<string>): Clip[] {
     return reorderIndices
       .map((i) => clips[i])
+      // Exclude only initial placeholder; include audio-only gaps so playback covers all audio
       .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
   }
 
   private async pushEdl(): Promise<void> {
     // Build EDL from current state — always contiguous edited timeline
     const { clips, reorderIndices, activeClipIds } = this.state.timeline;
-    const ordered = reorderIndices
+    let ordered = reorderIndices
       .map((i) => clips[i])
+      // Build EDL from active clips; include audio-only to preserve all timing
       .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
+    // Do NOT alter original clip times here. Edited timeline starts at 0 via
+    // contiguous mapping below; original start/end remain authoritative.
     const gapCount = ordered.filter((c: any) => c?.type === 'audio-only').length;
 
     const contiguousTimeline = this.calculateContiguousTimeline(ordered);
