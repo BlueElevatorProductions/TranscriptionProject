@@ -255,7 +255,8 @@ class App {
       const writeEdlDebug = (id: string, rev: number, clips: any[]) => {
         try {
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
-          const base = '/tmp';
+          const base = process.env.EDL_DEBUG_DIR || '/tmp';
+          try { fs.mkdirSync(base, { recursive: true }); } catch {}
           const fullPath = path.join(base, `edl_debug_${id}_${rev}_${ts}.json`);
           const latestPath = path.join(base, `edl_debug_latest.json`);
           const payload = {
