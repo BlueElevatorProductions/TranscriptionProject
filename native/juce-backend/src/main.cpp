@@ -316,6 +316,10 @@ public:
 
   void play() {
     std::lock_guard<std::mutex> lock(mutex);
+    {
+      std::ofstream df("/tmp/juce_debug.log", std::ios::app);
+      df << "[JUCE] play() called" << std::endl;
+    }
     transportSource.start();
     g.playing = true;
     emitState();
@@ -342,6 +346,10 @@ public:
   void seek(double editedSec) {
     std::lock_guard<std::mutex> lock(mutex);
     const double orig = editedToOriginal(editedSec);
+    {
+      std::ofstream df("/tmp/juce_debug.log", std::ios::app);
+      df << "[JUCE] seek edited=" << editedSec << " -> original=" << orig << std::endl;
+    }
     transportSource.setPosition(orig);
     g.editedSec = editedSec;
     emitPositionFromTransport();

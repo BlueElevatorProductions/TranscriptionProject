@@ -42,10 +42,12 @@ if [ -n "$JUCE_BACKEND_PATH_ENV" ]; then
   export VITE_USE_JUCE=true
   export VITE_AUDIO_DEBUG=true
   export EDL_DEBUG_DIR="$LOG_DIR/edl"
+  export JUCE_DEBUG_DIR="$LOG_DIR/juce"
   echo "✅ JUCE backend: $JUCE_BACKEND_PATH" | tee -a "$ELECTRON_LOG"
   echo "   VITE_USE_JUCE=true" | tee -a "$ELECTRON_LOG"
   echo "   VITE_AUDIO_DEBUG=true" | tee -a "$ELECTRON_LOG"
   echo "   EDL_DEBUG_DIR=$EDL_DEBUG_DIR" | tee -a "$ELECTRON_LOG"
+  echo "   JUCE_DEBUG_DIR=$JUCE_DEBUG_DIR" | tee -a "$ELECTRON_LOG"
   if [ -w "$JUCE_BACKEND_PATH" ]; then chmod +x "$JUCE_BACKEND_PATH" 2>/dev/null || true; fi
 else
   echo "❌ JUCE backend not found. Aborting launch." | tee -a "$ELECTRON_LOG"
