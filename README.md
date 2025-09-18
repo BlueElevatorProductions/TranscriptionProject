@@ -54,12 +54,16 @@ TranscriptionProject is a desktop application designed for content creators, jou
   - Word/spacer clicks use a -10ms seek bias to avoid boundary “ended” blips.
   - Reordered playback correctness: when a later clip is moved to the top, clicks in the new first clip always start that clip — UI clamps seeks to the clicked clip’s start and the audio layer snaps within a small EPS at boundaries. If the JUCE backend reports only edited-time in `position` events, a fallback enables original-time seeks during reorders to keep playback and highlighting aligned.
 
-- Spacer pills (UI-only) for audio-only gaps
-  - New `SpacerNode` renders silent/music gaps as inline pills, keeping the UI aligned with the EDL without separate “gap clip” containers.
+- Spacer pills + gap playback
+  - `SpacerNode` renders silent/music gaps as inline pills. Playback includes gaps — the JUCE EDL carries audio‑only segments so timing is continuous.
   - Pills are shown only for gaps ≥ 1.0s; sub‑1s are visually absorbed into neighboring text.
   - Trailing/intermediate gaps: pills attach after the preceding speech clip based on explicit audio‑only clips in edited array order.
   - Leading intro gap: exactly one pill attaches to the earliest-by-original‑time speech clip; it moves with that clip when dragged.
-  - Pills are UI‑only; they do not modify audio EDL or exports. Pills are keyboard‑selectable (select + delete removes them).
+  - Pills highlight during playback and are keyboard‑selectable (select + delete removes them). Clicking a pill seeks to that gap.
+
+- Highlight customization
+  - Colors Panel includes a “Highlight Color” section (presets: Yellow, Amber, Lime, Cyan, Pink, Violet).
+  - Highlights use CSS variables with automatic contrast (white/black text) for readability in Light/Dark transcript themes.
 
 - Merge + delete semantics (gap-aware)
   - Merge Above/Below: robust id‑based logic skips gaps and splices the inclusive range (prev/gaps/curr) into a single merged speech clip with a fresh id; renumbers orders afterwards.
@@ -79,7 +83,7 @@ Developer refs
 
 ### Developer Cheatsheet
 
-- Spacer pills (UI-only)
+- Spacer pills
   - Threshold: gaps ≥ 1.0s become pills; tweak `SPACER_VISUAL_THRESHOLD` in `src/renderer/editor/utils/converters.ts`.
   - Placement:
     - Trailing/intermediate: attached after the preceding speech clip when an explicit `audio-only` clip appears in the edited array.
