@@ -109,10 +109,8 @@ export class WordNode extends TextNode {
   private updatePlaybackState(element: HTMLElement, isPlaying: boolean) {
     if (isPlaying) {
       element.classList.add('currently-playing');
-      element.classList.add('bg-yellow-200', 'rounded', 'px-1', 'shadow-sm');
     } else {
       element.classList.remove('currently-playing');
-      element.classList.remove('bg-yellow-200', 'rounded', 'px-1', 'shadow-sm');
     }
   }
 

@@ -50,7 +50,10 @@ build_juce_backend() {
 }
 
 # Build backend and resolve binary
-build_juce_backend || true
+build_juce_backend || {
+  echo "❌ JUCE backend build failed. Aborting launch." | tee -a "$ELECTRON_LOG"
+  exit 1
+}
 
 echo "🔎 Resolving JUCE backend binary..." | tee -a "$ELECTRON_LOG"
 JUCE_BACKEND_PATH_ENV="${JUCE_BACKEND_PATH:-}"
@@ -71,18 +74,18 @@ if [ -z "$JUCE_BACKEND_PATH_ENV" ]; then
 fi
 
 if [ -z "$JUCE_BACKEND_PATH_ENV" ]; then
-  echo "❌ JUCE backend binary not found after build. Continuing without JUCE (renderer-only)." | tee -a "$ELECTRON_LOG"
-  export VITE_USE_JUCE=false
-else
-  export JUCE_BACKEND_PATH="$JUCE_BACKEND_PATH_ENV"
-  export VITE_USE_JUCE=true
-  if [ -w "$JUCE_BACKEND_PATH" ]; then chmod +x "$JUCE_BACKEND_PATH" 2>/dev/null || true; fi
+  echo "❌ JUCE backend binary not found after build. Aborting launch." | tee -a "$ELECTRON_LOG"
+  exit 1
 fi
+
+export JUCE_BACKEND_PATH="$JUCE_BACKEND_PATH_ENV"
+export VITE_USE_JUCE=true
+if [ -w "$JUCE_BACKEND_PATH" ]; then chmod +x "$JUCE_BACKEND_PATH" 2>/dev/null || true; fi
 export VITE_AUDIO_DEBUG=true
 export EDL_DEBUG_DIR="$LOG_DIR/edl"
 export JUCE_DEBUG_DIR="$LOG_DIR/juce"
 mkdir -p "$EDL_DEBUG_DIR" "$JUCE_DEBUG_DIR" 2>/dev/null || true
-echo "✅ JUCE backend: ${JUCE_BACKEND_PATH:-'(none)'}" | tee -a "$ELECTRON_LOG"
+echo "✅ JUCE backend: ${JUCE_BACKEND_PATH}" | tee -a "$ELECTRON_LOG"
 echo "   VITE_USE_JUCE=${VITE_USE_JUCE}" | tee -a "$ELECTRON_LOG"
 echo "   VITE_AUDIO_DEBUG=true" | tee -a "$ELECTRON_LOG"
 echo "   EDL_DEBUG_DIR=$EDL_DEBUG_DIR" | tee -a "$ELECTRON_LOG"

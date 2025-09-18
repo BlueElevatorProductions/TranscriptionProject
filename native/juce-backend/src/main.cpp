@@ -293,6 +293,85 @@ private:
 };
 
 class Backend : public juce::HighResolutionTimer {
+private:
+  juce::AudioDeviceManager deviceManager;
+  juce::AudioSourcePlayer player;
+  juce::AudioFormatManager formatManager;
+  juce::AudioTransportSource transportSource;
+  juce::ResamplingAudioSource resampler{ &transportSource, false, 2 };
+  bool useResampler { true };
+  bool timerIsRunning { false };
+  double playbackRate { 1.0 };
+  std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
+  std::mutex mutex;
+  std::vector<Segment> segments;
+  bool isContiguousTimeline = false;
+  bool contiguousInitialized = false;
+  // Forward declaration for use in earlier methods
+  void endPlayback();
+  void handleStandardTimelinePlayback();
+  void handleContiguousTimelinePlayback();
+  void emitPositionContiguous();
+
+  juce::AudioSource& transportOrResampler() {
+    if (useResampler) return resampler; else return transportSource;
+  }
+
+  static void emitState() { ::emitState(); }
+  static void emitLoaded() { ::emitLoaded(); }
+  void emitPositionFromTransport() {
+    const double es = g.editedSec.load();
+    const double os = editedToOriginal(es);
+    emit(std::string("{") +
+         "\"type\":\"position\",\"id\":\"" + g.id + "\",\"editedSec\":" + std::to_string(es) +
+         ",\"originalSec\":" + std::to_string(os) + "}");
+  }
+
+  // EDL mapping helpers
+  int segmentFor(double orig) const {
+    for (size_t i = 0; i < segments.size(); ++i) {
+      const auto& s = segments[i];
+      const double os = s.hasOriginal() ? s.originalStart : s.start;
+      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
+      if (orig >= os && orig < oe) return (int)i;
+    }
+    return -1;
+  }
+  double originalToEdited(double orig) const {
+    if (segments.empty()) return orig;
+    double accEdited = 0.0;
+    for (const auto& s : segments) {
+      const double os = s.hasOriginal() ? s.originalStart : s.start;
+      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
+      const double odur = std::max(1e-9, oe - os);
+      const double edur = std::max(1e-9, s.dur);
+      if (orig < os) return accEdited;
+      if (orig < oe) {
+        const double r = (orig - os) / odur;
+        return accEdited + r * edur;
+      }
+      accEdited += edur;
+    }
+    return accEdited;
+  }
+  double editedToOriginal(double ed) const {
+    if (segments.empty()) return ed;
+    double accEdited = 0.0;
+    for (const auto& s : segments) {
+      const double os = s.hasOriginal() ? s.originalStart : s.start;
+      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
+      const double odur = std::max(1e-9, oe - os);
+      const double edur = std::max(1e-9, s.dur);
+      if (ed <= accEdited + edur) {
+        const double r = (ed - accEdited) / edur;
+        return os + r * odur;
+      }
+      accEdited += edur;
+    }
+    const auto& last = segments.back();
+    return last.hasOriginal() ? last.originalEnd : last.end;
+  }
+
 public:
   Backend() {
     formatManager.registerBasicFormats();
@@ -439,14 +518,18 @@ public:
       contiguousInitialized = false;
     }
     
-    // Snap current position to start of first segment if outside any
+    // Snap current position to current edited target if outside any segment
     if (!segments.empty()) {
       const double pos = transportSource.getCurrentPosition();
       bool inside = false;
-      for (const auto& s : segments) { if (pos >= s.start && pos < s.end) { inside = true; break; } }
+      for (const auto& s : segments) {
+        const double os = s.hasOriginal() ? s.originalStart : s.start;  // compare in original domain
+        const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
+        if (pos >= os && pos < oe) { inside = true; break; }
+      }
       if (!inside) {
-        transportSource.setPosition(segments.front().start);
-        g.editedSec = 0.0;
+        const double targetOrig = editedToOriginal(g.editedSec.load());
+        transportSource.setPosition(targetOrig);
         emitPositionFromTransport();
       }
     }
@@ -462,35 +545,44 @@ public:
     else handleStandardTimelinePlayback();
   }
   
-  void handleStandardTimelinePlayback() {
-    double pos = transportSource.getCurrentPosition(); // original domain
-    {
-      std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(3);
-      oss << "[JUCE][STD] pos=" << pos;
-      if (!segments.empty()) {
-        const auto& s0 = segments[0];
-        const double os0 = s0.hasOriginal() ? s0.originalStart : s0.start;
-        const double oe0 = s0.hasOriginal() ? s0.originalEnd   : s0.end;
-        oss << " firstOrig=" << os0 << "-" << oe0;
-      }
-      juceDLog(oss.str());
-    }
-    
+};
+
+// ---- Out-of-class definitions for complex methods ----
+void Backend::endPlayback() {
+  transportSource.stop();
+  g.playing = false;
+  emit("{\"type\":\"ended\",\"id\":\"" + g.id + "\"}");
+}
+
+void Backend::handleStandardTimelinePlayback() {
+  double pos = transportSource.getCurrentPosition(); // original domain
+  {
+    std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(3);
+    oss << "[JUCE][STD] pos=" << pos;
     if (!segments.empty()) {
-      // Robustly advance across any number of boundaries with loop protection
-      int loopCount = 0;
-      const int maxLoops = 10; // Prevent infinite loops
-      
-      while (loopCount < maxLoops) {
-        loopCount++;
-        int segIdx = segmentFor(pos);
-        
-        if (segIdx < 0) {
-          // Position is not in any segment
-          {
-            const double firstOs = segments.front().hasOriginal() ? segments.front().originalStart : segments.front().start;
-            const double firstOe = segments.front().hasOriginal() ? segments.front().originalEnd   : segments.front().end;
-            if (pos < firstOs) {
+      const auto& s0 = segments[0];
+      const double os0 = s0.hasOriginal() ? s0.originalStart : s0.start;
+      const double oe0 = s0.hasOriginal() ? s0.originalEnd   : s0.end;
+      oss << " firstOrig=" << os0 << "-" << oe0;
+    }
+    juceDLog(oss.str());
+  }
+
+  if (!segments.empty()) {
+    // Robustly advance across any number of boundaries with loop protection
+    int loopCount = 0;
+    const int maxLoops = 10; // Prevent infinite loops
+
+    while (loopCount < maxLoops) {
+      loopCount++;
+      int segIdx = segmentFor(pos);
+
+      if (segIdx < 0) {
+        // Position is not in any segment
+        {
+          const double firstOs = segments.front().hasOriginal() ? segments.front().originalStart : segments.front().start;
+          const double firstOe = segments.front().hasOriginal() ? segments.front().originalEnd   : segments.front().end;
+          if (pos < firstOs) {
             // Before first segment - jump to first segment start
             double newPos = firstOs;
             transportSource.setPosition(newPos);
@@ -528,36 +620,37 @@ public:
             continue;
           }
         }
-        
+
         // Position is within a segment
         const auto& s = segments[segIdx];
         {
           const double se = s.hasOriginal() ? s.originalEnd : s.end;
           if (pos >= se - 1e-6) {
-          // At or past end of current segment
-          if (segIdx + 1 < (int)segments.size()) {
-            // Jump to next segment
-            const auto& sn = segments[segIdx + 1];
-            double newPos = sn.hasOriginal() ? sn.originalStart : sn.start;
-            transportSource.setPosition(newPos);
-            pos = newPos;
+            // At or past end of current segment
+            if (segIdx + 1 < (int)segments.size()) {
+              // Jump to next segment
+              const auto& sn = segments[segIdx + 1];
+              double newPos = sn.hasOriginal() ? sn.originalStart : sn.start;
+              transportSource.setPosition(newPos);
+              pos = newPos;
               {
                 std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(3);
                 oss << "[JUCE][STD] Boundary advance to idx=" << (segIdx+1) << " os=" << pos;
                 juceDLog(oss.str());
               }
-            continue;
-          } else {
-            // No more segments - end playback
-            endPlayback();
-            return;
+              continue;
+            } else {
+              // No more segments - end playback
+              endPlayback();
+              return;
+            }
           }
+
+          // Position is valid within current segment - exit loop
+          break;
         }
-        
-        // Position is valid within current segment - exit loop
-        break;
       }
-      
+
       if (loopCount >= maxLoops) {
         if (const char* debug = getenv("VITE_AUDIO_DEBUG")) {
           if (strcmp(debug, "true") == 0) {
@@ -568,201 +661,116 @@ public:
         endPlayback();
         return;
       }
-    } else if (pos >= g.durationSec) {
-      endPlayback();
-      return;
     }
-    
-    g.editedSec = originalToEdited(pos);
-    emitPositionFromTransport();
+  } else if (pos >= g.durationSec) {
+    endPlayback();
+    return;
   }
-  
-  void handleContiguousTimelinePlayback() {
-    double pos = transportSource.getCurrentPosition(); // original audio time
-    
-    if (!contiguousInitialized && segments.size() > 0 && segments[0].hasOriginal()) {
-      // On first call, jump to the first reordered segment's original position
-      transportSource.setPosition(segments[0].originalStart);
-      g.editedSec.store(segments[0].start);
-      contiguousInitialized = true;
-      
-      std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
-      debugFile << "[JUCE] CONTIGUOUS: Initialized to first segment orig=" << segments[0].originalStart << std::endl;
-      debugFile.flush();
-      
-      emitPositionFromTransport();
-      return;
+
+  g.editedSec = originalToEdited(pos);
+  emitPositionFromTransport();
+}
+
+void Backend::handleContiguousTimelinePlayback() {
+  double pos = transportSource.getCurrentPosition(); // original audio time
+
+  if (!contiguousInitialized && segments.size() > 0 && segments[0].hasOriginal()) {
+    // Initialize to the current edited position's corresponding original time,
+    // to respect any user seek that happened just before playback.
+    const double targetOrig = editedToOriginal(g.editedSec.load());
+    transportSource.setPosition(targetOrig);
+    contiguousInitialized = true;
+
+    std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+    debugFile << "[JUCE] CONTIGUOUS: Initialized at edited=" << g.editedSec.load() << " -> orig=" << targetOrig << std::endl;
+    debugFile.flush();
+
+    emitPositionFromTransport();
+    return; // Avoid using stale 'pos' from before setPosition
+  }
+
+  // Find which segment we're currently playing (by original position)
+  int segIdx = -1;
+  for (size_t i = 0; i < segments.size(); i++) {
+    if (segments[i].hasOriginal() &&
+        pos >= segments[i].originalStart &&
+        pos < segments[i].originalEnd) {
+      segIdx = i;
+      break;
     }
-    
-    // Find which segment we're currently playing (by original position)
-    int segIdx = -1;
-    for (size_t i = 0; i < segments.size(); i++) {
-      if (segments[i].hasOriginal() && 
-          pos >= segments[i].originalStart && 
-          pos < segments[i].originalEnd) {
-        segIdx = i;
-        break;
-      }
-    }
-    
-    if (segIdx >= 0) {
-      // We're in a valid segment - calculate contiguous time position
-      const auto& seg = segments[segIdx];
-      double relativePos = (pos - seg.originalStart) / (seg.originalEnd - seg.originalStart);
-      double contiguousTime = seg.start + relativePos * (seg.end - seg.start);
-      g.editedSec.store(contiguousTime);
-      
-      // Check if we're near the end of current segment
-      if (pos >= seg.originalEnd - 0.05) { // 50ms tolerance
-        if (segIdx + 1 < (int)segments.size() && segments[segIdx + 1].hasOriginal()) {
-          // Jump to next reordered segment's original position
-          double nextOriginalStart = segments[segIdx + 1].originalStart;
-          transportSource.setPosition(nextOriginalStart);
-          
-          std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
-          debugFile << "[JUCE] CONTIGUOUS: Advanced to segment " << (segIdx + 1) 
-                    << " orig=" << nextOriginalStart << std::endl;
-          debugFile.flush();
-        } else {
-          // No more segments - end playback
-          endPlayback();
-          return;
-        }
-      }
-    } else {
-      // Not in any segment - find next segment or end
-      bool foundNext = false;
-      for (size_t i = 0; i < segments.size(); i++) {
-        if (segments[i].hasOriginal() && pos < segments[i].originalStart) {
-          transportSource.setPosition(segments[i].originalStart);
-          g.editedSec.store(segments[i].start);
-          foundNext = true;
-          
-          std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
-          debugFile << "[JUCE] CONTIGUOUS: Jumped to segment " << i 
-                    << " orig=" << segments[i].originalStart << std::endl;
-          debugFile.flush();
-          break;
-        }
-      }
-      
-      if (!foundNext) {
+  }
+
+  if (segIdx >= 0) {
+    // We're in a valid segment - calculate contiguous time position
+    const auto& seg = segments[segIdx];
+    double relativePos = (pos - seg.originalStart) / (seg.originalEnd - seg.originalStart);
+    double contiguousTime = seg.start + relativePos * (seg.end - seg.start);
+    g.editedSec.store(contiguousTime);
+
+    // Check if we're near the end of current segment
+    if (pos >= seg.originalEnd - 0.05) { // 50ms tolerance
+      if (segIdx + 1 < (int)segments.size() && segments[segIdx + 1].hasOriginal()) {
+        // Jump to next reordered segment's original position
+        double nextOriginalStart = segments[segIdx + 1].originalStart;
+        transportSource.setPosition(nextOriginalStart);
+
+        std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+        debugFile << "[JUCE] CONTIGUOUS: Advanced to segment " << (segIdx + 1)
+                  << " orig=" << nextOriginalStart << std::endl;
+        debugFile.flush();
+      } else {
+        // No more segments - end playback
         endPlayback();
         return;
       }
     }
-    
-    emitPositionFromTransport();
-  }
-  
-  void emitPositionContiguous() {
-    // For contiguous timeline, editedSec is correct, but we need to calculate originalSec
-    const double es = g.editedSec.load();
-    double os = es; // Default fallback
-    
-    // Find which contiguous segment we're in
+  } else {
+    // Not in any segment - find next segment or end
+    bool foundNext = false;
     for (size_t i = 0; i < segments.size(); i++) {
-      if (es >= segments[i].start && es < segments[i].end) {
-        // We're in segment i - but segments[i] contains contiguous times
-        // We need to reverse-engineer what original time this corresponds to
-        // For now, we'll use a placeholder approach
-        os = es; // This needs proper mapping - will be improved next
+      if (segments[i].hasOriginal() && pos < segments[i].originalStart) {
+        transportSource.setPosition(segments[i].originalStart);
+        g.editedSec.store(segments[i].start);
+        foundNext = true;
+
+        std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+        debugFile << "[JUCE] CONTIGUOUS: Jumped to segment " << i
+                  << " orig=" << segments[i].originalStart << std::endl;
+        debugFile.flush();
         break;
       }
     }
-    
-    emit(std::string("{") +
-         "\"type\":\"position\",\"id\":\"" + g.id + "\",\"editedSec\":" + std::to_string(es) +
-         ",\"originalSec\":" + std::to_string(os) + "}");
-  }
 
-private:
-  juce::AudioDeviceManager deviceManager;
-  juce::AudioSourcePlayer player;
-  juce::AudioFormatManager formatManager;
-  juce::AudioTransportSource transportSource;
-  juce::ResamplingAudioSource resampler{ &transportSource, false, 2 };
-  bool useResampler { true };
-  bool timerIsRunning { false };
-  double playbackRate { 1.0 };
-  std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
-  std::mutex mutex;
-  std::vector<Segment> segments;
-  bool isContiguousTimeline = false;
-  bool contiguousInitialized = false;
-
-  juce::AudioSource& transportOrResampler() {
-    if (useResampler) return resampler; else return transportSource;
-  }
-
-  static void emitState() {
-    ::emitState();
-  }
-
-  static void emitLoaded() {
-    ::emitLoaded();
-  }
-
-  void emitPositionFromTransport() {
-    const double es = g.editedSec.load();
-    const double os = editedToOriginal(es);
-    emit(std::string("{") +
-         "\"type\":\"position\",\"id\":\"" + g.id + "\",\"editedSec\":" + std::to_string(es) +
-         ",\"originalSec\":" + std::to_string(os) + "}");
-  }
-
-  // EDL mapping helpers
-  int segmentFor(double orig) const {
-    for (size_t i = 0; i < segments.size(); ++i) {
-      const auto& s = segments[i];
-      const double os = s.hasOriginal() ? s.originalStart : s.start;
-      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
-      if (orig >= os && orig < oe) return (int)i;
+    if (!foundNext) {
+      endPlayback();
+      return;
     }
-    return -1;
-  }
-  double originalToEdited(double orig) const {
-    if (segments.empty()) return orig;
-    double accEdited = 0.0;
-    for (const auto& s : segments) {
-      const double os = s.hasOriginal() ? s.originalStart : s.start;
-      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
-      const double odur = std::max(1e-9, oe - os);
-      const double edur = std::max(1e-9, s.dur);
-      if (orig < os) return accEdited; // before this segment in original domain
-      if (orig < oe) {
-        const double r = (orig - os) / odur;
-        return accEdited + r * edur;
-      }
-      accEdited += edur;
-    }
-    return accEdited;
-  }
-  double editedToOriginal(double ed) const {
-    if (segments.empty()) return ed;
-    double accEdited = 0.0;
-    for (const auto& s : segments) {
-      const double os = s.hasOriginal() ? s.originalStart : s.start;
-      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
-      const double odur = std::max(1e-9, oe - os);
-      const double edur = std::max(1e-9, s.dur);
-      if (ed <= accEdited + edur) {
-        const double r = (ed - accEdited) / edur;
-        return os + r * odur;
-      }
-      accEdited += edur;
-    }
-    // Past end → clamp to end of last segment
-    const auto& last = segments.back();
-    return last.hasOriginal() ? last.originalEnd : last.end;
   }
 
-  void endPlayback() {
-    transportSource.stop();
-    g.playing = false;
-    emit("{\"type\":\"ended\",\"id\":\"" + g.id + "\"}");
+  emitPositionFromTransport();
+}
+
+void Backend::emitPositionContiguous() {
+  // For contiguous timeline, editedSec is correct, but we need to calculate originalSec
+  const double es = g.editedSec.load();
+  double os = es; // Default fallback
+
+  // Find which contiguous segment we're in
+  for (size_t i = 0; i < segments.size(); i++) {
+    if (es >= segments[i].start && es < segments[i].end) {
+      // We're in segment i - but segments[i] contains contiguous times
+      // We need to reverse-engineer what original time this corresponds to
+      // For now, we'll use a placeholder approach
+      os = es; // This needs proper mapping - will be improved next
+      break;
+    }
   }
-};
+
+  emit(std::string("{") +
+       "\"type\":\"position\",\"id\":\"" + g.id + "\",\"editedSec\":" + std::to_string(es) +
+       ",\"originalSec\":" + std::to_string(os) + "}");
+}
+
 #endif // USE_JUCE
 
 int main() {
@@ -870,6 +878,8 @@ int main() {
           segs.push_back(seg);
         }
       }
+      // Trust renderer-provided originalStartSec/originalEndSec. Do not coerce
+      // the first segment's originalStart to 0, even when edited starts at 0.
       backend.updateEdl(std::move(segs));
       continue;
     }

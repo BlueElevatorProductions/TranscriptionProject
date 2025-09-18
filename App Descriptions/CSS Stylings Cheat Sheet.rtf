@@ -1,0 +1,346 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;\f1\fnil\fcharset0 Menlo-BoldItalic;\f2\fnil\fcharset0 Menlo-Italic;
+\f3\fnil\fcharset0 Menlo-Bold;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red116\green116\blue116;\red84\green102\blue116;
+\red57\green192\blue38;\red56\green185\blue199;\red202\green51\blue35;\red175\green221\blue255;\red125\green125\blue125;
+\red86\green32\blue244;}
+{\*\expandedcolortbl;;\csgray\c0;\csgenericrgb\c45371\c45371\c45371;\csgenericrgb\c32843\c40054\c45344;
+\cssrgb\c25706\c77963\c19557;\cssrgb\c25546\c77007\c82023;\cssrgb\c83899\c28663\c18026;\cssrgb\c73675\c89410\c100000;\cssrgb\c56352\c56352\c56352;
+\cssrgb\c41681\c25958\c96648;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs22 \cf2 \CocoaLigature0  
+\f1\i\b \ul \uc0\u55356 \u57256  CSS Design System Cheat Sheet v2.0
+\f0\i0\b0 \ulnone \
+\
+  
+\f2\i Complete guide with exact line numbers for your token-controlled system
+\f0\i0 \
+\
+  ---\
+  
+\f3\b \uc0\u55356 \u57263  Quick Change Guide - Exact Line Numbers
+\f0\b0 \
+\
+  
+\f3\b \uc0\u55356 \u57256  Primary Color Changes\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 230\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;        \cf5 /* Sidebar glass base color \cf2 \
+  \cf5 */\cf2 \
+  Line \cf5 19\cf2 : --panel-hsl: \cf5 230\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;          \cf5 /* Panel glass base color */\cf2 \
+  Line \cf5 26\cf2 : --accent: \cf5 45\cf2  \cf5 100%\cf2  \cf5 70%\cf2 ;             \cf5 /* Bright yellow accent */\cf2 \
+  Line \cf5 13\cf2 : --sidebar: \cf5 230\cf2  \cf5 45%\cf2  \cf5 4%\cf2 ;             \cf5 /* Sidebar solid fallback */\cf2 \
+\
+  
+\f3\b \uc0\u10024  Glass Effect Opacity\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 23\cf2 : --opacity-glass-heavy: \cf5 0.8\cf2 ;        \cf5 /* 80% - Very opaque */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.7\cf2 ;       \cf5 /* 70% - Standard glass */\cf2 \
+  Line \cf5 25\cf2 : --opacity-glass-light: \cf5 0.5\cf2 ;        \cf5 /* 50% - More transparent */\cf2 \
+  Line \cf5 26\cf2 : --opacity-glass-subtle: \cf5 0.3\cf2 ;       \cf5 /* 30% - Very subtle */\cf2 \
+\
+  
+\f3\b \uc0\u55356 \u57098  Blur Strength\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 83\cf2 : --backdrop-blur: \cf6 blur\cf2 (\cf5 25px\cf2 );       \cf5 /* Heavy blur strength */\cf2 \
+\
+  ---\
+  
+\f3\b \uc0\u55356 \u57096  Complete Color System
+\f0\b0 \
+\
+  
+\f3\b \uc0\u55357 \u56740  Background Colors\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 9\cf2 :  --bg: \cf5 230\cf2  \cf5 35%\cf2  \cf5 7%\cf2 ;                  \cf5 /* Deep navy main background \cf2 \
+  \cf5 */\cf2 \
+  Line \cf5 10\cf2 : --surface: \cf5 230\cf2  \cf5 25%\cf2  \cf5 12%\cf2 ;            \cf5 /* Lighter surfaces/cards */\cf2 \
+  Line \cf5 13\cf2 : --sidebar: \cf5 230\cf2  \cf5 45%\cf2  \cf5 4%\cf2 ;             \cf5 /* Very dark sidebar base */\cf2 \
+\
+  
+\f3\b Usage:
+\f0\b0 \
+  background: \cf6 hsl\cf2 (\cf6 var\cf2 (--bg));          \cf5 /* Main background */\cf2 \
+  background: \cf6 hsl\cf2 (\cf6 var\cf2 (--surface));     \cf5 /* Cards, modals */\cf2 \
+\
+  \cf5 // Tailwind classes\cf2 \
+  className=\cf7 "bg-bg"\cf2            \cf5 // Deep navy\cf2 \
+  className=\cf7 "bg-surface"\cf2       \cf5 // Card backgrounds\cf2 \
+\
+  
+\f3\b \uc0\u55357 \u56541  Text Colors\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 29\cf2 : --text: \cf5 0\cf2  \cf5 0%\cf2  \cf5 95%\cf2 ;                  \cf5 /* Primary light text */\cf2 \
+  Line \cf5 30\cf2 : --text-muted: \cf5 220\cf2  \cf5 10%\cf2  \cf5 50%\cf2 ;         \cf5 /* Secondary/muted text */\cf2 \
+  Line \cf5 31\cf2 : --text-on-dark: \cf5 0\cf2  \cf5 0%\cf2  \cf5 98%\cf2 ;          \cf5 /* White text on dark \cf2 \
+  \cf5 backgrounds */\cf2 \
+\
+  
+\f3\b Usage:
+\f0\b0 \
+  color: \cf6 hsl\cf2 (\cf6 var\cf2 (--text));           \cf5 /* Primary text */\cf2 \
+  color: \cf6 hsl\cf2 (\cf6 var\cf2 (--text-muted));     \cf5 /* Secondary text */\cf2 \
+  color: \cf6 hsl\cf2 (\cf6 var\cf2 (--text-on-dark));   \cf5 /* White on dark */\cf2 \
+\
+  \cf5 // Tailwind classes\cf2 \
+  className=\cf7 "text-text"\cf2            \cf5 // Primary text\cf2 \
+  className=\cf7 "text-text-muted"\cf2      \cf5 // Muted text\cf2 \
+  className=\cf7 "text-text-on-dark"\cf2    \cf5 // White text\cf2 \
+\
+  
+\f3\b \uc0\u55357 \u57313  Interactive Colors\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 26\cf2 : --accent: \cf5 45\cf2  \cf5 100%\cf2  \cf5 70%\cf2 ;             \cf5 /* Bright yellow accent */\cf2 \
+  Line \cf5 27\cf2 : --accent-hover: \cf5 205\cf2  \cf5 90%\cf2  \cf5 55%\cf2 ;       \cf5 /* Hover state */\cf2 \
+  Line \cf5 28\cf2 : --warn: \cf5 29\cf2  \cf5 100%\cf2  \cf5 64%\cf2 ;               \cf5 /* Orange warnings */\cf2 \
+  Line \cf5 29\cf2 : --success: \cf5 142\cf2  \cf5 76%\cf2  \cf5 36%\cf2 ;            \cf5 /* Green success */\cf2 \
+  Line \cf5 30\cf2 : --error: \cf5 0\cf2  \cf5 84%\cf2  \cf5 60%\cf2 ;                \cf5 /* Red errors */\cf2 \
+\
+  ---\
+  
+\f3\b \uc0\u10024  Glass Effects - Your Signature Look
+\f0\b0 \
+\
+  
+\f3\b \uc0\u55357 \u56615  Master Controls\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Change these to instantly update all glass effects:\
+\
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 230\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;        \cf5 /* Sidebar color base */\cf2 \
+  Line \cf5 19\cf2 : --panel-hsl: \cf5 230\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;          \cf5 /* Panel color base */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.7\cf2 ;       \cf5 /* Sidebar transparency */\cf2 \
+  Line \cf5 25\cf2 : --opacity-glass-light: \cf5 0.5\cf2 ;        \cf5 /* Panel transparency */\cf2 \
+  Line \cf5 83\cf2 : --backdrop-blur: \cf6 blur\cf2 (\cf5 25px\cf2 );       \cf5 /* Blur strength */\cf2 \
+\
+  
+\f3\b \uc0\u55356 \u57256  Quick Color Changes
+\f0\b0 \
+\
+  \cf5 /* Green sidebar & panels */\cf2 \
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 162\cf2  \cf5 100%\cf2  \cf5 10%\cf2 ;\
+\
+  \cf5 /* Purple sidebar & panels */\cf2 \
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 280\cf2  \cf5 70%\cf2  \cf5 15%\cf2 ;\
+\
+  \cf5 /* Red sidebar & panels */\cf2 \
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 0\cf2  \cf5 80%\cf2  \cf5 20%\cf2 ;\
+\
+  \cf5 /* Different colors for sidebar vs panels */\cf2 \
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 230\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;    \cf5 /* Blue sidebar */\cf2 \
+  Line \cf5 19\cf2 : --panel-hsl: \cf5 162\cf2  \cf5 100%\cf2  \cf5 10%\cf2 ;     \cf5 /* Green panels */\cf2 \
+\
+  
+\f3\b \uc0\u55357 \u56487  Quick Transparency Changes
+\f0\b0 \
+\
+  \cf5 /* More opaque (less transparent) */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.9\cf2 ;   \cf5 /* 90% opacity */\cf2 \
+  Line \cf5 25\cf2 : --opacity-glass-light: \cf5 0.8\cf2 ;    \cf5 /* 80% opacity */\cf2 \
+\
+  \cf5 /* More transparent */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.4\cf2 ;   \cf5 /* 40% opacity */\cf2 \
+  Line \cf5 25\cf2 : --opacity-glass-light: \cf5 0.3\cf2 ;    \cf5 /* 30% opacity */\cf2 \
+\
+  \cf5 /* Very subtle glass effect */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.2\cf2 ;   \cf5 /* 20% opacity */\cf2 \
+  Line \cf5 25\cf2 : --opacity-glass-light: \cf5 0.15\cf2 ;   \cf5 /* 15% opacity */\cf2 \
+\
+  
+\f3\b \uc0\u55356 \u57088  Blur Intensity
+\f0\b0 \
+\
+  \cf5 /* Light blur */\cf2 \
+  Line \cf5 83\cf2 : --backdrop-blur: \cf6 blur\cf2 (\cf5 10px\cf2 );\
+\
+  \cf5 /* Heavy blur */\cf2 \
+  Line \cf5 83\cf2 : --backdrop-blur: \cf6 blur\cf2 (\cf5 40px\cf2 );\
+\
+  \cf5 /* No blur (just transparency) */\cf2 \
+  Line \cf5 83\cf2 : --backdrop-blur: \cf6 blur\cf2 (\cf5 0px\cf2 );\
+\
+  ---\
+  
+\f3\b \uc0\u55356 \u57256  Semantic State Colors (\cf8 design-tokens.css\cf2 )
+\f0\b0 \
+\
+  
+\f3\b Status Indicators
+\f0\b0 \
+\
+  Line \cf5 36\cf2 : --success-bg: \cf5 142\cf2  \cf5 76%\cf2  \cf5 90%\cf2 ;         \cf5 /* Light green background */\cf2 \
+  Line \cf5 37\cf2 : --success-text: \cf5 142\cf2  \cf5 76%\cf2  \cf5 25%\cf2 ;       \cf5 /* Dark green text */\cf2 \
+  Line \cf5 40\cf2 : --warn-bg: \cf5 29\cf2  \cf5 100%\cf2  \cf5 88%\cf2 ;            \cf5 /* Light orange background */\cf2 \
+  Line \cf5 41\cf2 : --warn-text: \cf5 29\cf2  \cf5 100%\cf2  \cf5 35%\cf2 ;          \cf5 /* Dark orange text */\cf2 \
+  Line \cf5 44\cf2 : --error-bg: \cf5 0\cf2  \cf5 84%\cf2  \cf5 92%\cf2 ;             \cf5 /* Light red background */\cf2 \
+  Line \cf5 45\cf2 : --error-text: \cf5 0\cf2  \cf5 84%\cf2  \cf5 35%\cf2 ;           \cf5 /* Dark red text */\cf2 \
+\
+  
+\f3\b Usage:
+\f0\b0 \
+  \cf5 // Success badge\cf2 \
+  <span className=\cf7 "bg-success-bg text-success-text px-sm py-xs rounded-sm"\cf2 >\
+    Completed\
+  </span>\
+\
+  \cf5 // Warning badge\cf2 \
+  \cf9 <\cf10 span\cf9  \cf6 className\cf9 =\cf7 "bg-warn-bg text-warn-text px-sm py-xs rounded-sm"\cf9 >\cf2 \
+    Processing\
+  \cf9 </\cf10 span\cf9 >\cf2 \
+\
+  
+\f3\b Button Variants\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 55\cf2 : --button-primary: \cf6 var\cf2 (--accent);           \cf5 /* Uses yellow accent\cf2 \
+  \cf5  */\cf2 \
+  Line \cf5 56\cf2 : --button-primary-hover: \cf6 var\cf2 (--accent-hover); \cf5 /* Hover state */\cf2 \
+  Line \cf5 57\cf2 : --button-secondary: \cf6 var\cf2 (--surface);        \cf5 /* Surface color */\cf2 \
+  Line \cf5 58\cf2 : --button-secondary-hover: \cf6 var\cf2 (--border-muted); \cf5 /* Light hover */\cf2 \
+\
+  ---\
+  
+\f3\b \uc0\u55357 \u56528  Layout & Spacing (\cf8 design-tokens.css\cf2 )
+\f0\b0 \
+\
+  
+\f3\b Spacing Scale
+\f0\b0 \
+\
+  Line \cf5 96\cf2 :  --spacing-xs: \cf5 4px\cf2 ;      \cf5 /* Extra small - tight spacing */\cf2 \
+  Line \cf5 97\cf2 :  --spacing-sm: \cf5 8px\cf2 ;      \cf5 /* Small - compact layouts */\cf2 \
+  Line \cf5 98\cf2 :  --spacing-md: \cf5 12px\cf2 ;     \cf5 /* Medium - standard spacing */\cf2 \
+  Line \cf5 99\cf2 :  --spacing-lg: \cf5 16px\cf2 ;     \cf5 /* Large - comfortable spacing */\cf2 \
+  Line \cf5 100\cf2 : --spacing-xl: \cf5 24px\cf2 ;     \cf5 /* Extra large - section spacing */\cf2 \
+  Line \cf5 101\cf2 : --spacing-\cf5 2\cf2 xl: \cf5 32px\cf2 ;    \cf5 /* 2X large - major sections */\cf2 \
+\
+  
+\f3\b Border Radius\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 106\cf2 : --radius-sm: \cf5 6px\cf2 ;       \cf5 /* Subtle curves */\cf2 \
+  Line \cf5 107\cf2 : --radius-md: \cf5 10px\cf2 ;      \cf5 /* Standard rounded */\cf2 \
+  Line \cf5 108\cf2 : --radius-lg: \cf5 16px\cf2 ;      \cf5 /* Prominent curves */\cf2 \
+  Line \cf5 109\cf2 : --radius-xl: \cf5 24px\cf2 ;      \cf5 /* Very rounded */\cf2 \
+\
+  
+\f3\b Shadows\cf3  (\cf4 design-tokens.css\cf3 )
+\f0\b0 \cf2 \
+\
+  Line \cf5 70\cf2 : --shadow-sm: \cf5 0\cf2  \cf5 1px\cf2  \cf5 3px\cf2  \cf6 hsl\cf2 (\cf6 var\cf2 (--text) / \cf5 0.1\cf2 );      \cf5 /* Subtle */\cf2 \
+  Line \cf5 71\cf2 : --shadow-md: \cf5 0\cf2  \cf5 2px\cf2  \cf5 8px\cf2  \cf6 hsl\cf2 (\cf6 var\cf2 (--text) / \cf5 0.1\cf2 );      \cf5 /* Medium */\cf2 \
+  Line \cf5 72\cf2 : --shadow-lg: \cf5 0\cf2  \cf5 4px\cf2  \cf5 12px\cf2  \cf6 hsl\cf2 (\cf6 var\cf2 (--text) / \cf5 0.15\cf2 );    \cf5 /* High */\cf2 \
+  Line \cf5 75\cf2 : --shadow-accent: \cf5 0\cf2  \cf5 4px\cf2  \cf5 12px\cf2  \cf6 hsl\cf2 (\cf6 var\cf2 (--accent) / \cf5 0.3\cf2 ); \cf5 /* Glow */\cf2 \
+\
+  ---\
+  
+\f3\b \uc0\u55357 \u56612  Typography (\cf8 design-tokens.css\cf2 )
+\f0\b0 \
+\
+  
+\f3\b Font Families
+\f0\b0 \
+\
+  Line \cf5 89\cf2 : --font-sidebar: Arial, ui-sans-serif...     /* UI elements */\
+  Line \cf5 90\cf2 : --font-transcript: Avenir, -apple-system... /* Content */\
+  Line \cf5 91\cf2 : --font-mono: \cf7 'SF Mono'\cf2 , Monaco...           /* Code/data */\
+\
+  
+\f3\b Usage:
+\f0\b0 \
+  font-family: \cf6 var\cf2 (--font-sidebar);      \cf5 /* UI elements */\cf2 \
+  font-family: \cf6 var\cf2 (--font-transcript);   \cf5 /* Body text */\cf2 \
+  font-family: \cf6 var\cf2 (--font-mono);         \cf5 /* Code blocks */\cf2 \
+\
+  \cf5 // Tailwind classes\cf2 \
+  className=\cf7 "font-sidebar"\cf2       \cf5 // Arial for UI\cf2 \
+  className=\cf7 "font-transcript"\cf2    \cf5 // Avenir for content\cf2 \
+  className=\cf7 "font-mono"\cf2          \cf5 // Monospace\cf2 \
+\
+  ---\
+  
+\f3\b \uc0\u55357 \u56960  Common Scenarios
+\f0\b0 \
+\
+  
+\f3\b \uc0\u55356 \u57256  Change Entire App Theme
+\f0\b0 \
+\
+  \cf5 /* Cyberpunk Blue (current) */\cf2 \
+  Line \cf5 9\cf2 :  --bg: \cf5 230\cf2  \cf5 35%\cf2  \cf5 7%\cf2 ;\
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 230\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;\
+  Line \cf5 26\cf2 : --accent: \cf5 45\cf2  \cf5 100%\cf2  \cf5 70%\cf2 ;\
+\
+  \cf5 /* Dark Green Theme */\cf2 \
+  Line \cf5 9\cf2 :  --bg: \cf5 140\cf2  \cf5 35%\cf2  \cf5 7%\cf2 ;\
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 140\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;\
+  Line \cf5 26\cf2 : --accent: \cf5 140\cf2  \cf5 100%\cf2  \cf5 70%\cf2 ;\
+\
+  \cf5 /* Purple Theme */\cf2 \
+  Line \cf5 9\cf2 :  --bg: \cf5 280\cf2  \cf5 35%\cf2  \cf5 7%\cf2 ;\
+  Line \cf5 18\cf2 : --sidebar-hsl: \cf5 280\cf2  \cf5 45%\cf2  \cf5 10%\cf2 ;\
+  Line \cf5 26\cf2 : --accent: \cf5 280\cf2  \cf5 100%\cf2  \cf5 70%\cf2 ;\
+\
+  
+\f3\b \uc0\u55357 \u56615  Adjust Glass Opacity for Better Visibility
+\f0\b0 \
+\
+  \cf5 /* More opaque (easier to read text) */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.9\cf2 ;   \cf5 /* Sidebar */\cf2 \
+  Line \cf5 25\cf2 : --opacity-glass-light: \cf5 0.8\cf2 ;    \cf5 /* Panels */\cf2 \
+\
+  \cf5 /* More transparent (more glass-like) */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.4\cf2 ;   \cf5 /* Sidebar */\cf2 \
+  Line \cf5 25\cf2 : --opacity-glass-light: \cf5 0.3\cf2 ;    \cf5 /* Panels */\cf2 \
+\
+  
+\f3\b \uc0\u9889  Create Dramatic Glass Effects
+\f0\b0 \
+\
+  \cf5 /* Heavy blur + subtle transparency */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.3\cf2 ;\
+  Line \cf5 83\cf2 : --backdrop-blur: \cf6 blur\cf2 (\cf5 50px\cf2 );\
+\
+  \cf5 /* Light blur + heavy transparency */\cf2 \
+  Line \cf5 24\cf2 : --opacity-glass-medium: \cf5 0.8\cf2 ;\
+  Line \cf5 83\cf2 : --backdrop-blur: \cf6 blur\cf2 (\cf5 5px\cf2 );\
+\
+  ---\
+  
+\f3\b \uc0\u55356 \u57263  Component Examples
+\f0\b0 \
+\
+  
+\f3\b Glass Panel
+\f0\b0 \
+\
+  <div className=\cf7 "vibrancy-panel rounded-lg p-xl shadow-md"\cf2 >\
+    \cf9 <\cf10 h3\cf9  \cf6 className\cf9 =\cf7 "text-text font-medium mb-md"\cf9 >\cf2 Glass Panel\cf9 </\cf10 h3\cf9 >\cf2 \
+    \cf9 <\cf10 p\cf9  \cf6 className\cf9 =\cf7 "text-text-muted"\cf9 >\cf2 Content with frosted glass effect\cf9 </\cf10 p\cf9 >\cf2 \
+  </div>\
+\
+  
+\f3\b Status Badge
+\f0\b0 \
+\
+  <span className=\cf7 "inline-flex px-sm py-xs rounded-sm bg-success-bg \cf2 \
+  \cf7 text-success-text font-medium"\cf2 >\
+    Live Updates Working!\
+  </span>\
+\
+  
+\f3\b Primary Button
+\f0\b0 \
+\
+  <button className=\cf7 "bg-button-primary text-text-on-dark px-lg py-md \cf2 \
+  \cf7 rounded-md shadow-accent hover:bg-button-primary-hover \cf2 \
+  \cf7 transition-colors"\cf2 >\
+    Save Changes\
+  </button>}

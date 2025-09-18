@@ -186,21 +186,11 @@ export const createContinuousClips = (speechClips: Clip[], audioDuration: number
     .slice()
     .sort((a, b) => a.startTime - b.startTime);
 
-  // Merge leading intro into the first speech clip instead of creating a gap
-  let adjustedSpeech: Clip[] = speech;
-  if (speech.length > 0 && speech[0].startTime > 0) {
-    const first = speech[0];
-    const extendedFirst: Clip = {
-      ...first,
-      startTime: 0,
-      duration: first.endTime - 0,
-    } as Clip;
-    adjustedSpeech = [extendedFirst, ...speech.slice(1)];
-  }
+  // Preserve original timings; do not merge leading intro into the first speech clip.
+  const adjustedSpeech: Clip[] = speech;
 
-  // Generate gaps but drop any leading gap starting at 0 (we merged it)
-  const allGaps = generateGapClips(speech, audioDuration);
-  const gaps = allGaps.filter(g => !(g.startTime <= 0.000001));
+  // Generate gaps, including any leading gap starting at 0
+  const gaps = generateGapClips(speech, audioDuration);
 
   // Merge and sort by start time, then assign sequential order
   const merged = [...adjustedSpeech, ...gaps]

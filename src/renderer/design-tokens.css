@@ -73,6 +73,12 @@
     --player-text: 50 100% 95%;
     --hover-bg: 220 15% 25%;
     --panel-bg-blur: hsla(220 15% 15% / var(--panel-bg-opacity));
+
+    /* Transcript highlight (word playback) */
+    /* Defaults to a soft yellow with dark text for contrast */
+    --highlight-bg: 45 96% 88%;            /* approx #fef3c7 */
+    --highlight-text: 0 0% 10%;            /* near black for light highlight */
+    --highlight-outline: 42 96% 50%;       /* approx #f59e0b border */
     
     /* Shadcn/UI Mappings */
     --background: var(--bg);

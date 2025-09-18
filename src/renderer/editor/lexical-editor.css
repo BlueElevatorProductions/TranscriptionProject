@@ -16,9 +16,18 @@
 }
 
 .lexical-word-node.currently-playing {
-  background-color: #fef3c7;
-  box-shadow: 0 0 0 2px #f59e0b;
+  background-color: hsl(var(--highlight-bg));
+  color: hsl(var(--highlight-text));
+  box-shadow: 0 0 0 2px hsl(var(--highlight-outline));
   border-radius: 4px;
+}
+
+/* Generic text highlight (formatting) */
+.lexical-highlight {
+  background-color: hsl(var(--highlight-bg));
+  color: hsl(var(--highlight-text));
+  border-radius: 4px;
+  padding: 0 2px;
 }
 
 /* Spacer pill styling */
@@ -29,11 +38,18 @@
   margin: 0 4px;
   font-size: 12px;
   line-height: 1;
-  background: rgba(107, 114, 128, 0.15); /* gray-500/15 */
-  color: #374151; /* gray-700 */
-  border: 1px solid rgba(55, 65, 81, 0.25); /* gray-700/25 */
+  background: rgba(107, 114, 128, 0.15); /* default */
+  color: #374151;
+  border: 1px solid rgba(55, 65, 81, 0.25);
   border-radius: 6px;
   pointer-events: auto;
+}
+
+.lexical-spacer-node.playing {
+  background-color: hsl(var(--highlight-bg));
+  color: hsl(var(--highlight-text));
+  border-color: hsl(var(--highlight-outline));
+  box-shadow: 0 0 0 2px hsl(var(--highlight-outline));
 }
 
 /* Speaker nodes */

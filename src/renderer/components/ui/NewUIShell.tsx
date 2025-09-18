@@ -560,12 +560,41 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
       }
     };
     
+    const setHighlightCssFromHex = (hex: string) => {
+      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      if (!m) return;
+      const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+      const rr = r/255, gg = g/255, bb = b/255;
+      const max = Math.max(rr, gg, bb), min = Math.min(rr, gg, bb);
+      let h = 0, s = 0; let l = (max + min) / 2;
+      if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max - min);
+        switch (max) {
+          case rr: h = (gg - bb) / d + (gg < bb ? 6 : 0); break;
+          case gg: h = (bb - rr) / d + 2; break;
+          case bb: h = (rr - gg) / d + 4; break;
+        }
+        h /= 6;
+      }
+      const H = Math.round(h * 360), S = Math.round(s * 100), L = Math.round(l * 100);
+      const root = document.documentElement;
+      root.style.setProperty('--highlight-bg', `${H} ${S}% ${L}%`);
+      const srgb = [r, g, b].map(v => { v/=255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); });
+      const lum = 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
+      root.style.setProperty('--highlight-text', lum > 0.6 ? '0 0% 0%' : '0 0% 98%');
+      const outlineL = Math.max(0, Math.min(100, lum > 0.5 ? L - 20 : L + 20));
+      root.style.setProperty('--highlight-outline', `${H} ${Math.max(30, S)}% ${outlineL}%`);
+    };
+
     const loadColorPreference = () => {
       try {
         const savedColor = localStorage.getItem('app-color-theme');
         if (savedColor) {
           setCurrentColor(savedColor);
         }
+        const hl = localStorage.getItem('transcript-highlight-color');
+        if (hl) setHighlightCssFromHex(hl);
       } catch (error) {
         console.error('Failed to load color preference:', error);
       }

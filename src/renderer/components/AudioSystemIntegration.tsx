@@ -128,14 +128,60 @@ useEffect(() => {
       return;
     }
 
-    // Reorder flat clip array
-    const newSegments = [...allSegments];
-    const [moved] = newSegments.splice(srcIdx, 1);
-    const insertAt = placeBefore ? tgtIdx : tgtIdx + 1;
-    newSegments.splice(insertAt, 0, moved);
+    // Build speech/gap partitions
+    const speeches = allSegments.filter(c => c.type !== 'audio-only' && c.type !== 'initial');
+    const gaps = allSegments.filter(c => c.type === 'audio-only');
 
-    // Renumber
-    const renumbered = newSegments.map((seg, i) => ({ ...seg, order: i } as Clip));
+    // Compute original-time ordering for speeches
+    const speechesByOriginal = [...speeches].sort((a, b) => a.startTime - b.startTime);
+    const earliestSpeechId = speechesByOriginal[0]?.id;
+
+    // Helper to find trailing gap for a speech: gap whose start == speech.end (±eps)
+    const EPS = 1e-3;
+    const gapAfterBySpeechId = new Map<string, Clip | undefined>();
+    for (let i = 0; i < speechesByOriginal.length; i++) {
+      const sp = speechesByOriginal[i];
+      const next = speechesByOriginal[i + 1];
+      const trailing = gaps.find(g => Math.abs(g.startTime - sp.endTime) < 0.005 && (!next || Math.abs(g.endTime - next.startTime) < 0.01));
+      gapAfterBySpeechId.set(sp.id, trailing);
+    }
+    // Leading gap: gap that ends exactly at earliestSpeech.start
+    let leadingGap: Clip | undefined;
+    if (earliestSpeechId) {
+      const earliestSpeech = speechesByOriginal[0];
+      leadingGap = gaps.find(g => Math.abs(g.endTime - earliestSpeech.startTime) < 0.01 && g.startTime <= 0 + 10);
+    }
+
+    // Build edited speech order by moving src speech before/after target speech
+    const speechOrder = speeches.map(c => c.id);
+    const srcSpeechIdx = speechOrder.indexOf(srcClipId);
+    const tgtSpeechIdx = speechOrder.indexOf(targetClipId);
+    if (srcSpeechIdx === -1 || tgtSpeechIdx === -1) return;
+    const [movedSpeechId] = speechOrder.splice(srcSpeechIdx, 1);
+    const speechInsertAt = placeBefore ? tgtSpeechIdx : tgtSpeechIdx + 1;
+    speechOrder.splice(speechInsertAt, 0, movedSpeechId);
+
+    // Rebuild final sequence: for each speech in edited order,
+    // - If it is the earliest-by-original, prepend its leading gap (if exists)
+    // - Append its trailing gap (if exists)
+    const byId = new Map(allSegments.map(c => [c.id, c] as const));
+    const rebuilt: Clip[] = [];
+    for (const speechId of speechOrder) {
+      if (speechId === earliestSpeechId && leadingGap) {
+        rebuilt.push({ ...leadingGap });
+      }
+      const speech = byId.get(speechId)!;
+      rebuilt.push({ ...speech });
+      const trailing = gapAfterBySpeechId.get(speechId);
+      if (trailing) rebuilt.push({ ...trailing });
+    }
+
+    // Preserve any gaps not matched (safety) by appending them at the end, maintaining original order
+    const usedIds = new Set(rebuilt.map(c => c.id));
+    for (const g of gaps) { if (!usedIds.has(g.id)) rebuilt.push({ ...g }); }
+
+    // Renumber final sequence
+    const renumbered = rebuilt.map((seg, i) => ({ ...seg, order: i } as Clip));
 
     // Persist to project + audio
     const nextProject = {
@@ -148,7 +194,7 @@ useEffect(() => {
     projectActions.updateProjectData(nextProject);
     
     if (AUDIO_DEBUG) {
-      console.log('[onClipReorder] sending to JUCE:', renumbered.map(c => `${c.id}:${c.order}`));
+      console.log('[onClipReorder] sending to JUCE (renumbered order):', renumbered.map(c => `${c.type}-${c.id.slice(-4)}:${c.order}`));
     }
     
     audioActions.updateClips(renumbered);
@@ -377,7 +423,10 @@ useEffect(() => {
             }
             audioActions.seekToWord(clipId, wordIndex);
             if (mode === 'listen' && !audioState.isPlaying) {
-              audioActions.play().catch(() => {});
+              // Give backend a brief moment to process seek before starting playback
+              setTimeout(() => {
+                audioActions.play().catch(() => {});
+              }, 60);
             }
           }}
           onWordClick={(t) => {
