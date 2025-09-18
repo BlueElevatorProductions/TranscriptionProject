@@ -16,17 +16,51 @@ ELECTRON_LOG="$LOG_DIR/electron_$(date +%Y%m%d_%H%M%S).log"
   echo "=========================="
 } >> "$ELECTRON_LOG"
 
-# Resolve JUCE backend binary path (for JuceClient)
-echo "🔎 Looking for JUCE backend binary..."
+build_juce_backend() {
+  echo "🔨 Building JUCE backend..." | tee -a "$ELECTRON_LOG"
+  local JUCE_SRC_DIR_DEFAULT="$ROOT_DIR/TranscriptionProject/native/JUCE"
+  local JUCE_DIR_ENV="${JUCE_DIR:-}"
+  if [ -z "$JUCE_DIR_ENV" ]; then
+    if [ -d "$JUCE_SRC_DIR_DEFAULT" ]; then
+      export JUCE_DIR="$JUCE_SRC_DIR_DEFAULT"
+    else
+      echo "❌ JUCE source not found. Set JUCE_DIR to your JUCE path." | tee -a "$ELECTRON_LOG"
+      return 1
+    fi
+  fi
+
+  local BUILD_DIR="$ROOT_DIR/TranscriptionProject/native/juce-backend/build"
+  mkdir -p "$BUILD_DIR"
+  local BUILD_LOG="$LOG_DIR/juce_build_$(date +%Y%m%d_%H%M%S).log"
+  (
+    cd "$BUILD_DIR"
+    echo "📦 CMake configure (USE_JUCE=ON, JUCE_DIR=$JUCE_DIR)" | tee -a "$ELECTRON_LOG"
+    cmake -DUSE_JUCE=ON -DCMAKE_BUILD_TYPE=Release -DJUCE_DIR="$JUCE_DIR" .. 2>&1 | tee -a "$BUILD_LOG"
+    echo "🏗️  CMake build (Release)" | tee -a "$ELECTRON_LOG"
+    cmake --build . --config Release 2>&1 | tee -a "$BUILD_LOG"
+  )
+  local status=$?
+  if [ $status -ne 0 ]; then
+    echo "❌ JUCE backend build failed. See $BUILD_LOG" | tee -a "$ELECTRON_LOG"
+    # Print the last 60 lines to the main log for quick visibility
+    tail -n 60 "$BUILD_LOG" >> "$ELECTRON_LOG" 2>/dev/null || true
+    return $status
+  fi
+  echo "✅ JUCE backend build completed. Log: $BUILD_LOG" | tee -a "$ELECTRON_LOG"
+}
+
+# Build backend and resolve binary
+build_juce_backend || true
+
+echo "🔎 Resolving JUCE backend binary..." | tee -a "$ELECTRON_LOG"
 JUCE_BACKEND_PATH_ENV="${JUCE_BACKEND_PATH:-}"
 if [ -z "$JUCE_BACKEND_PATH_ENV" ]; then
+  # Prefer freshly built binary
   CANDIDATES=(
-    "$ROOT_DIR/resources/juce/juce-backend"
-    "$ROOT_DIR/resources/juce/juce-backend.exe"
-    "$ROOT_DIR/TranscriptionProject/resources/juce/juce-backend"
-    "$ROOT_DIR/TranscriptionProject/resources/juce/juce-backend.exe"
     "$ROOT_DIR/TranscriptionProject/native/juce-backend/build/juce-backend"
-    "$ROOT_DIR/TranscriptionProject/native/juce-backend/juce-backend"
+    "$ROOT_DIR/TranscriptionProject/native/juce-backend/build/Release/juce-backend"
+    "$ROOT_DIR/TranscriptionProject/resources/juce/juce-backend"
+    "$ROOT_DIR/resources/juce/juce-backend"
   )
   for c in "${CANDIDATES[@]}"; do
     if [ -f "$c" ]; then
@@ -36,24 +70,23 @@ if [ -z "$JUCE_BACKEND_PATH_ENV" ]; then
   done
 fi
 
-# Fail if JUCE backend not found
-if [ -n "$JUCE_BACKEND_PATH_ENV" ]; then
+if [ -z "$JUCE_BACKEND_PATH_ENV" ]; then
+  echo "❌ JUCE backend binary not found after build. Continuing without JUCE (renderer-only)." | tee -a "$ELECTRON_LOG"
+  export VITE_USE_JUCE=false
+else
   export JUCE_BACKEND_PATH="$JUCE_BACKEND_PATH_ENV"
   export VITE_USE_JUCE=true
-  export VITE_AUDIO_DEBUG=true
-  export EDL_DEBUG_DIR="$LOG_DIR/edl"
-  export JUCE_DEBUG_DIR="$LOG_DIR/juce"
-  echo "✅ JUCE backend: $JUCE_BACKEND_PATH" | tee -a "$ELECTRON_LOG"
-  echo "   VITE_USE_JUCE=true" | tee -a "$ELECTRON_LOG"
-  echo "   VITE_AUDIO_DEBUG=true" | tee -a "$ELECTRON_LOG"
-  echo "   EDL_DEBUG_DIR=$EDL_DEBUG_DIR" | tee -a "$ELECTRON_LOG"
-  echo "   JUCE_DEBUG_DIR=$JUCE_DEBUG_DIR" | tee -a "$ELECTRON_LOG"
   if [ -w "$JUCE_BACKEND_PATH" ]; then chmod +x "$JUCE_BACKEND_PATH" 2>/dev/null || true; fi
-else
-  echo "❌ JUCE backend not found. Aborting launch." | tee -a "$ELECTRON_LOG"
-  echo "   Build it with: cd TranscriptionProject && scripts/build-juce.sh" | tee -a "$ELECTRON_LOG"
-  exit 1
 fi
+export VITE_AUDIO_DEBUG=true
+export EDL_DEBUG_DIR="$LOG_DIR/edl"
+export JUCE_DEBUG_DIR="$LOG_DIR/juce"
+mkdir -p "$EDL_DEBUG_DIR" "$JUCE_DEBUG_DIR" 2>/dev/null || true
+echo "✅ JUCE backend: ${JUCE_BACKEND_PATH:-'(none)'}" | tee -a "$ELECTRON_LOG"
+echo "   VITE_USE_JUCE=${VITE_USE_JUCE}" | tee -a "$ELECTRON_LOG"
+echo "   VITE_AUDIO_DEBUG=true" | tee -a "$ELECTRON_LOG"
+echo "   EDL_DEBUG_DIR=$EDL_DEBUG_DIR" | tee -a "$ELECTRON_LOG"
+echo "   JUCE_DEBUG_DIR=$JUCE_DEBUG_DIR" | tee -a "$ELECTRON_LOG"
 
 # Clean any existing processes
 echo "🧹 Cleaning up..."

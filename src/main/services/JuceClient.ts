@@ -124,10 +124,14 @@ export class JuceClient implements Transport {
     this.stdoutBuffer = '';
     const { binaryPath, args, env, name } = this.options;
     try {
+      console.log(`[JUCE] Spawning backend '${name}' at: ${binaryPath}`);
+      if (process.env.JUCE_BACKEND_PATH) console.log(`[JUCE] JUCE_BACKEND_PATH env: ${process.env.JUCE_BACKEND_PATH}`);
+      if (process.env.JUCE_DEBUG_DIR) console.log(`[JUCE] JUCE_DEBUG_DIR env: ${process.env.JUCE_DEBUG_DIR}`);
       this.child = spawn(binaryPath, args, {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+      console.log(`[JUCE] Spawned PID: ${this.child.pid}`);
     } catch (e) {
       this.emitError(`Failed to spawn JUCE backend (${name}) at ${binaryPath}: ${e}`);
       throw e;
@@ -246,4 +250,3 @@ export class JuceClient implements Transport {
 }
 
 export default JuceClient;
-
