@@ -438,11 +438,10 @@ public:
     std::lock_guard<std::mutex> lock(mutex);
     if (!g.playing) return;
     
-    if (isContiguousTimeline) {
-      handleContiguousTimelinePlayback();
-    } else {
-      handleStandardTimelinePlayback();
-    }
+    // With edited/original mapping fixed, both modes operate correctly.
+    // Prefer contiguous handler if detected, else standard.
+    if (isContiguousTimeline) handleContiguousTimelinePlayback();
+    else handleStandardTimelinePlayback();
   }
   
   void handleStandardTimelinePlayback() {
@@ -680,28 +679,46 @@ private:
   int segmentFor(double orig) const {
     for (size_t i = 0; i < segments.size(); ++i) {
       const auto& s = segments[i];
-      if (orig >= s.start && orig < s.end) return (int)i;
+      const double os = s.hasOriginal() ? s.originalStart : s.start;
+      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
+      if (orig >= os && orig < oe) return (int)i;
     }
     return -1;
   }
   double originalToEdited(double orig) const {
     if (segments.empty()) return orig;
-    double acc = 0.0;
+    double accEdited = 0.0;
     for (const auto& s : segments) {
-      if (orig < s.start) return acc;
-      if (orig < s.end) return acc + (orig - s.start);
-      acc += s.dur;
+      const double os = s.hasOriginal() ? s.originalStart : s.start;
+      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
+      const double odur = std::max(1e-9, oe - os);
+      const double edur = std::max(1e-9, s.dur);
+      if (orig < os) return accEdited; // before this segment in original domain
+      if (orig < oe) {
+        const double r = (orig - os) / odur;
+        return accEdited + r * edur;
+      }
+      accEdited += edur;
     }
-    return acc;
+    return accEdited;
   }
   double editedToOriginal(double ed) const {
     if (segments.empty()) return ed;
-    double acc = 0.0;
+    double accEdited = 0.0;
     for (const auto& s : segments) {
-      if (ed <= acc + s.dur) return s.start + (ed - acc);
-      acc += s.dur;
+      const double os = s.hasOriginal() ? s.originalStart : s.start;
+      const double oe = s.hasOriginal() ? s.originalEnd   : s.end;
+      const double odur = std::max(1e-9, oe - os);
+      const double edur = std::max(1e-9, s.dur);
+      if (ed <= accEdited + edur) {
+        const double r = (ed - accEdited) / edur;
+        return os + r * odur;
+      }
+      accEdited += edur;
     }
-    return segments.empty() ? ed : segments.back().end;
+    // Past end → clamp to end of last segment
+    const auto& last = segments.back();
+    return last.hasOriginal() ? last.originalEnd : last.end;
   }
 
   void endPlayback() {
