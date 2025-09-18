@@ -259,8 +259,16 @@ export class JuceAudioManager {
     this.edlApplying = true;
     this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { edlApplying: true } as any });
     if (this.edlApplyFallbackTid) { clearTimeout(this.edlApplyFallbackTid); this.edlApplyFallbackTid = null; }
-    // Cross-window sync: publish full clips to main so other windows (Audio Editor) can mirror
-    try { (window as any).electronAPI?.clipsSet?.(clips); } catch {}
+    // Cross-window sync: publish the ordered active clips that match EDL
+    try {
+      const state = this.state;
+      const orderedActive = this.buildOrderedActiveClips(
+        clips,
+        state.timeline.reorderIndices,
+        state.timeline.activeClipIds
+      );
+      (window as any).electronAPI?.clipsSet?.(orderedActive);
+    } catch {}
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
     // Fallback timer in case 'edlApplied' is not emitted
     this.edlApplyFallbackTid = window.setTimeout(() => {
@@ -290,10 +298,14 @@ export class JuceAudioManager {
     this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { edlApplying: true } as any });
     if (this.edlApplyFallbackTid) { clearTimeout(this.edlApplyFallbackTid); this.edlApplyFallbackTid = null; }
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
-    // Publish new ordering to other windows
+    // Publish new ordering to other windows (ordered active set)
     try {
-      const next = this.state.timeline.clips;
-      (window as any).electronAPI?.clipsSet?.(next);
+      const orderedActive = this.buildOrderedActiveClips(
+        this.state.timeline.clips,
+        this.state.timeline.reorderIndices,
+        this.state.timeline.activeClipIds
+      );
+      (window as any).electronAPI?.clipsSet?.(orderedActive);
     } catch {}
     this.edlApplyFallbackTid = window.setTimeout(() => {
       if (this.edlApplying) {

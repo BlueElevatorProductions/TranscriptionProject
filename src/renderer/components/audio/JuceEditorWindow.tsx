@@ -206,7 +206,7 @@ export default function JuceEditorWindow({ src, peaksPort }: { src?: string; pea
   // Build contiguous edited timeline ranges from synced clips
   const editedClips = useMemo(() => {
     const playable = (clips || [])
-      .filter((c: any) => c && c.type !== 'audio-only' && c.status !== 'deleted');
+      .filter((c: any) => c && c.type !== 'initial' && c.status !== 'deleted');
     // Sort by provided order; fallback to array order
     const sorted = [...playable].sort((a: any, b: any) => {
       const ao = typeof a.order === 'number' ? a.order : playable.indexOf(a);
