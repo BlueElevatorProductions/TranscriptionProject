@@ -780,9 +780,14 @@ export class JuceAudioManager {
   private async pushEdl(): Promise<void> {
     // Build EDL from current state — always contiguous edited timeline
     const { clips, reorderIndices, activeClipIds } = this.state.timeline;
-    const ordered = reorderIndices
+    let ordered = reorderIndices
       .map((i) => clips[i])
       .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
+    // Ensure first clip starts at 0 (merge musical intro into first speech clip)
+    if (ordered.length > 0 && ordered[0].startTime > 0) {
+      const first = ordered[0];
+      ordered = [{ ...first, startTime: 0, duration: first.endTime - 0 }, ...ordered.slice(1)];
+    }
     const gapCount = ordered.filter((c: any) => c?.type === 'audio-only').length;
 
     const contiguousTimeline = this.calculateContiguousTimeline(ordered);
