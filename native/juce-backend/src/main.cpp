@@ -11,6 +11,8 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <cstdlib>
+#include <string>
 
 #ifdef USE_JUCE
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -29,6 +31,20 @@ struct State {
 
 static State g;
 static std::mutex gMutex;
+
+// --- Debug logging helpers (write to JUCE_DEBUG_DIR or /tmp) ---
+static std::string juceDebugPath() {
+  const char* dir = std::getenv("JUCE_DEBUG_DIR");
+  std::string base = (dir && *dir) ? std::string(dir) : std::string("/tmp");
+  // We do not attempt to create directories here to keep dependencies light.
+  return base + "/juce_debug.log";
+}
+static void juceDLog(const std::string& line) {
+  try {
+    std::ofstream f(juceDebugPath(), std::ios::app);
+    f << line << std::endl;
+  } catch (...) {}
+}
 
 static void emit(const std::string& json) {
   std::cout << json << "\n";
@@ -316,10 +332,7 @@ public:
 
   void play() {
     std::lock_guard<std::mutex> lock(mutex);
-    {
-      std::ofstream df("/tmp/juce_debug.log", std::ios::app);
-      df << "[JUCE] play() called" << std::endl;
-    }
+    juceDLog("[JUCE] play() called");
     transportSource.start();
     g.playing = true;
     emitState();
@@ -346,10 +359,7 @@ public:
   void seek(double editedSec) {
     std::lock_guard<std::mutex> lock(mutex);
     const double orig = editedToOriginal(editedSec);
-    {
-      std::ofstream df("/tmp/juce_debug.log", std::ios::app);
-      df << "[JUCE] seek edited=" << editedSec << " -> original=" << orig << std::endl;
-    }
+    juceDLog(std::string("[JUCE] seek edited=") + std::to_string(editedSec) + " -> original=" + std::to_string(orig));
     transportSource.setPosition(orig);
     g.editedSec = editedSec;
     emitPositionFromTransport();
@@ -378,7 +388,7 @@ public:
     for (auto& s : segments) s.dur = std::max(0.0, s.end - s.start);
     
     // Enhanced debug logging - write to file to see what JUCE receives
-    std::ofstream debugFile("/tmp/juce_debug.log", std::ios::app);
+    std::ofstream debugFile(juceDebugPath(), std::ios::app);
     debugFile << "[JUCE] updateEdl received " << segments.size() << " segments at " 
               << std::time(nullptr) << std::endl;
     
@@ -454,6 +464,17 @@ public:
   
   void handleStandardTimelinePlayback() {
     double pos = transportSource.getCurrentPosition(); // original domain
+    {
+      std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(3);
+      oss << "[JUCE][STD] pos=" << pos;
+      if (!segments.empty()) {
+        const auto& s0 = segments[0];
+        const double os0 = s0.hasOriginal() ? s0.originalStart : s0.start;
+        const double oe0 = s0.hasOriginal() ? s0.originalEnd   : s0.end;
+        oss << " firstOrig=" << os0 << "-" << oe0;
+      }
+      juceDLog(oss.str());
+    }
     
     if (!segments.empty()) {
       // Robustly advance across any number of boundaries with loop protection
@@ -474,10 +495,10 @@ public:
             double newPos = firstOs;
             transportSource.setPosition(newPos);
             pos = newPos;
-            if (const char* debug = getenv("VITE_AUDIO_DEBUG")) {
-              if (strcmp(debug, "true") == 0) {
-                std::cerr << "[JUCE] Jumped to first segment at t=" << pos << std::endl;
-              }
+            {
+              std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(3);
+              oss << "[JUCE][STD] Jump to first os=" << pos;
+              juceDLog(oss.str());
             }
             continue;
           } else {
@@ -491,10 +512,10 @@ public:
                 transportSource.setPosition(newPos);
                 pos = newPos;
                 foundNext = true;
-                if (const char* debug = getenv("VITE_AUDIO_DEBUG")) {
-                  if (strcmp(debug, "true") == 0) {
-                    std::cerr << "[JUCE] Jumped to segment " << i << " at t=" << pos << std::endl;
-                  }
+                {
+                  std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(3);
+                  oss << "[JUCE][STD] Jump to next idx=" << i << " os=" << pos;
+                  juceDLog(oss.str());
                 }
                 break;
               }
@@ -520,11 +541,11 @@ public:
             double newPos = sn.hasOriginal() ? sn.originalStart : sn.start;
             transportSource.setPosition(newPos);
             pos = newPos;
-            if (const char* debug = getenv("VITE_AUDIO_DEBUG")) {
-              if (strcmp(debug, "true") == 0) {
-                std::cerr << "[JUCE] Jumped to next segment at t=" << pos << std::endl;
+              {
+                std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(3);
+                oss << "[JUCE][STD] Boundary advance to idx=" << (segIdx+1) << " os=" << pos;
+                juceDLog(oss.str());
               }
-            }
             continue;
           } else {
             // No more segments - end playback
