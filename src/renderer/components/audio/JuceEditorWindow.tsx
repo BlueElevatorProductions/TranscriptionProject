@@ -255,6 +255,18 @@ export default function JuceEditorWindow({ src, peaksPort }: { src?: string; pea
     // No cleanup needed since we're not controlling the main session
   }, [filePath, sessionId]);
 
+  // Helper: map original time -> edited time using current editedClips
+  const mapOriginalToEdited = useCallback((tOrig: number): number | null => {
+    for (const ec of editedClips) {
+      const denom = Math.max(1e-9, ec.originalEnd - ec.originalStart);
+      if (tOrig >= ec.originalStart && tOrig <= ec.originalEnd) {
+        const r = (tOrig - ec.originalStart) / denom;
+        return ec.editedStart + r * (ec.editedEnd - ec.editedStart);
+      }
+    }
+    return null;
+  }, [editedClips]);
+
   // Subscribe to JUCE events
   useEffect(() => {
     
@@ -275,10 +287,18 @@ export default function JuceEditorWindow({ src, peaksPort }: { src?: string; pea
           console.log(`JuceEditorWindow: State change - playing: ${evt.playing}`);
           setPlaying(!!evt.playing);
           break;
-        case 'position':
-          setEditedSec(evt.editedSec || 0);
-          setDisplaySec(evt.editedSec || 0);
+        case 'position': {
+          const ee = typeof evt.editedSec === 'number' ? evt.editedSec : 0;
+          setEditedSec(ee);
+          const oe = (evt as any).originalSec;
+          if (typeof oe === 'number') {
+            const mapped = mapOriginalToEdited(oe);
+            setDisplaySec(typeof mapped === 'number' ? mapped : ee);
+          } else {
+            setDisplaySec(ee);
+          }
           break;
+        }
         case 'ended':
           console.log('JuceEditorWindow: Playback ended');
           setPlaying(false);
