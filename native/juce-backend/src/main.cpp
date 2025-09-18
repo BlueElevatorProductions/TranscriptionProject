@@ -819,16 +819,19 @@ int main() {
         size_t pe3 = line.find_first_of(",}\n", co + 1);
         int order = 0; try { order = std::stoi(line.substr(co + 1, (pe3 == std::string::npos ? line.size() : pe3) - (co + 1))); } catch (...) {}
         
-        // Parse optional originalStartSec and originalEndSec
+        // Parse optional originalStartSec and originalEndSec within current item window
+        // Current item window is from after endSec (pe2) up to before the next item's "id" or end of line
         double origStart = -1, origEnd = -1;
-        size_t posKey = line.find("\"originalStartSec\"", pe3 == std::string::npos ? co : pe3);
-        if (posKey != std::string::npos) {
+        size_t windowStart = (pe2 == std::string::npos ? (ce + 1) : pe2);
+        size_t nextId = line.find("\"id\"", pe3 == std::string::npos ? windowStart : pe3);
+        size_t windowEnd = (nextId == std::string::npos ? line.size() : nextId);
+        size_t posKey = line.find("\"originalStartSec\"", windowStart);
+        if (posKey != std::string::npos && posKey < windowEnd) {
           size_t cos = line.find(':', posKey);
           size_t pe4 = line.find_first_of(",}\n", cos + 1);
           try { origStart = std::stod(line.substr(cos + 1, (pe4 == std::string::npos ? line.size() : pe4) - (cos + 1))); } catch (...) {}
-          
-          size_t poeKey = line.find("\"originalEndSec\"", pe4 == std::string::npos ? cos : pe4);
-          if (poeKey != std::string::npos) {
+          size_t poeKey = line.find("\"originalEndSec\"", (pe4 == std::string::npos ? (cos + 1) : pe4));
+          if (poeKey != std::string::npos && poeKey < windowEnd) {
             size_t coe = line.find(':', poeKey);
             size_t pe5 = line.find_first_of(",}\n", coe + 1);
             try { origEnd = std::stod(line.substr(coe + 1, (pe5 == std::string::npos ? line.size() : pe5) - (coe + 1))); } catch (...) {}
