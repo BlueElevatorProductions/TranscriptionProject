@@ -458,9 +458,12 @@ public:
         
         if (segIdx < 0) {
           // Position is not in any segment
-          if (pos < segments.front().start) {
+          {
+            const double firstOs = segments.front().hasOriginal() ? segments.front().originalStart : segments.front().start;
+            const double firstOe = segments.front().hasOriginal() ? segments.front().originalEnd   : segments.front().end;
+            if (pos < firstOs) {
             // Before first segment - jump to first segment start
-            double newPos = segments.front().start;
+            double newPos = firstOs;
             transportSource.setPosition(newPos);
             pos = newPos;
             if (const char* debug = getenv("VITE_AUDIO_DEBUG")) {
@@ -473,9 +476,10 @@ public:
             // After last segment - find which segment to jump to or end
             bool foundNext = false;
             for (size_t i = 0; i < segments.size(); ++i) {
-              if (pos < segments[i].start) {
+              const double os = segments[i].hasOriginal() ? segments[i].originalStart : segments[i].start;
+              if (pos < os) {
                 // Found a segment that starts after our position
-                double newPos = segments[i].start;
+                double newPos = os;
                 transportSource.setPosition(newPos);
                 pos = newPos;
                 foundNext = true;
@@ -498,11 +502,14 @@ public:
         
         // Position is within a segment
         const auto& s = segments[segIdx];
-        if (pos >= s.end - 1e-6) {
+        {
+          const double se = s.hasOriginal() ? s.originalEnd : s.end;
+          if (pos >= se - 1e-6) {
           // At or past end of current segment
           if (segIdx + 1 < (int)segments.size()) {
             // Jump to next segment
-            double newPos = segments[segIdx + 1].start;
+            const auto& sn = segments[segIdx + 1];
+            double newPos = sn.hasOriginal() ? sn.originalStart : sn.start;
             transportSource.setPosition(newPos);
             pos = newPos;
             if (const char* debug = getenv("VITE_AUDIO_DEBUG")) {
