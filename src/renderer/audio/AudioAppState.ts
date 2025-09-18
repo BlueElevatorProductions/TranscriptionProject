@@ -23,6 +23,7 @@ export interface PlaybackState {
   isReady: boolean;          // Audio loaded and ready
   currentWordId: string | null; // Currently highlighted word ID
   currentClipId: string | null; // Currently playing clip
+  edlApplying?: boolean;        // JUCE EDL is updating; defer seeks/sync
 }
 
 export interface TimelineState {
@@ -78,6 +79,7 @@ export const createInitialState = (): AudioAppState => ({
     isReady: false,
     currentWordId: null,
     currentClipId: null,
+    edlApplying: false,
   },
   timeline: {
     clips: [],
