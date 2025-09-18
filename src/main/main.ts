@@ -49,6 +49,7 @@ class App {
   private peaksServer: http.Server | null = null;
   private peaksPort: number | null = null;
   private juceClient: JuceClient | null = null;
+  private currentClips: any[] = [];
 
   constructor() {
     // Initialize encryption key (derived from machine-specific info)
@@ -958,6 +959,23 @@ class App {
         return projectData;
       } catch (error) {
         console.error('Failed to load project:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Cross-window clip sync
+    ipcMain.handle('clips:get', async () => {
+      return this.currentClips || [];
+    });
+    ipcMain.handle('clips:set', async (_e, clips: any[]) => {
+      try {
+        this.currentClips = Array.isArray(clips) ? clips : [];
+        // Broadcast to all windows
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('clips:changed', this.currentClips);
+        }
+        return { success: true };
+      } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     });

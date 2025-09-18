@@ -34,17 +34,13 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
 
   return (
     <div>
-      <p className="text-sm text-gray-700 mb-6">
-        Enter your API keys for cloud transcription services. Keys are stored locally and encrypted.
-      </p>
-        
       <div className="space-y-6">
         <div className="space-y-3">
           <div>
-            <label htmlFor="openai-key" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="openai-key" className="block text-sm font-medium mb-1" style={{ color: 'hsl(var(--text))' }}>
               OpenAI API Key
             </label>
-            <p className="text-xs text-gray-500 mb-2">For Whisper API access (~$0.006/minute)</p>
+            <p className="text-xs opacity-70 mb-2" style={{ color: 'hsl(var(--text))' }}>For Whisper API access (~$0.006/minute)</p>
             <div className="relative">
               <input
                 id="openai-key"
@@ -56,7 +52,8 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 opacity-60 hover:opacity-80"
+                style={{ color: 'hsl(var(--text))' }}
                 onClick={() => toggleShowKey('openai')}
                 title={showKeys.openai ? "Hide key" : "Show key"}
               >
@@ -67,17 +64,17 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
               href="https://platform.openai.com/api-keys" 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="inline-block mt-2 text-xs text-blue-600 hover:text-blue-800"
+              className="inline-block mt-2 text-xs text-blue-400 hover:text-blue-300"
             >
               Get OpenAI API Key →
             </a>
           </div>
           
           <div>
-            <label htmlFor="assemblyai-key" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="assemblyai-key" className="block text-sm font-medium mb-1" style={{ color: 'hsl(var(--text))' }}>
               AssemblyAI API Key
             </label>
-            <p className="text-xs text-gray-500 mb-2">For fast transcription with speaker detection (~$0.37/hour)</p>
+            <p className="text-xs opacity-70 mb-2" style={{ color: 'hsl(var(--text))' }}>For fast transcription with speaker detection (~$0.37/hour)</p>
             <div className="relative">
               <input
                 id="assemblyai-key"
@@ -89,7 +86,8 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 opacity-60 hover:opacity-80"
+                style={{ color: 'hsl(var(--text))' }}
                 onClick={() => toggleShowKey('assemblyai')}
                 title={showKeys.assemblyai ? "Hide key" : "Show key"}
               >
@@ -100,17 +98,17 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
               href="https://www.assemblyai.com/dashboard/signup" 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="inline-block mt-2 text-xs text-blue-600 hover:text-blue-800"
+              className="inline-block mt-2 text-xs text-blue-400 hover:text-blue-300"
             >
               Get AssemblyAI API Key →
             </a>
           </div>
           
           <div>
-            <label htmlFor="revai-key" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="revai-key" className="block text-sm font-medium mb-1" style={{ color: 'hsl(var(--text))' }}>
               Rev.ai API Key
             </label>
-            <p className="text-xs text-gray-500 mb-2">For fastest professional transcription (~$1.25/hour)</p>
+            <p className="text-xs opacity-70 mb-2" style={{ color: 'hsl(var(--text))' }}>For fastest professional transcription (~$1.25/hour)</p>
             <div className="relative">
               <input
                 id="revai-key"
@@ -122,7 +120,8 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 opacity-60 hover:opacity-80"
+                style={{ color: 'hsl(var(--text))' }}
                 onClick={() => toggleShowKey('revai')}
                 title={showKeys.revai ? "Hide key" : "Show key"}
               >
@@ -133,17 +132,17 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
               href="https://www.rev.ai/getting_started" 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="inline-block mt-2 text-xs text-blue-600 hover:text-blue-800"
+              className="inline-block mt-2 text-xs text-blue-400 hover:text-blue-300"
             >
               Get Rev.ai API Key →
             </a>
           </div>
         </div>
         
-        <div className="flex items-start gap-2 p-3 bg-gray-50 rounded-md">
-          <Lock className="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" />
+        <div className="flex items-start gap-2 p-3 bg-white bg-opacity-10 border border-white border-opacity-20 rounded-md">
+          <Lock className="w-4 h-4 opacity-80 mt-0.5 flex-shrink-0" style={{ color: 'hsl(var(--text))' }} />
           <div>
-            <p className="text-sm text-gray-700">
+            <p className="text-sm opacity-90" style={{ color: 'hsl(var(--text))' }}>
               <strong>Security:</strong> API keys are encrypted and stored locally on your device. They are never transmitted except to the respective transcription services.
             </p>
           </div>
@@ -151,13 +150,15 @@ const ApiSettings: React.FC<ApiSettingsProps> = ({ onSave, onCancel, currentKeys
         
         <div className="flex items-center gap-3 pt-4">
           <button 
-            className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" 
+            className="px-4 py-2 text-sm bg-white bg-opacity-10 hover:bg-white hover:bg-opacity-15 border border-white border-opacity-20 rounded-md transition-colors" 
+            style={{ color: 'hsl(var(--text))' }}
             onClick={onCancel}
           >
             Cancel
           </button>
           <button 
-            className="px-4 py-2 text-sm text-white bg-accent hover:bg-blue-600 rounded-md transition-colors" 
+            className="px-4 py-2 text-sm bg-accent hover:bg-blue-600 rounded-md transition-colors" 
+            style={{ color: 'white' }}
             onClick={handleSave}
           >
             Save API Keys

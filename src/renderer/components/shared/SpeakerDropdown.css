@@ -120,6 +120,15 @@
   color: #fca5a5;
 }
 
+.speaker-dropdown-item.positive {
+  color: #34d399;
+}
+
+.speaker-dropdown-item.positive:hover {
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
+}
+
 .speaker-dropdown-item.disabled {
   opacity: 0.5;
   cursor: not-allowed;

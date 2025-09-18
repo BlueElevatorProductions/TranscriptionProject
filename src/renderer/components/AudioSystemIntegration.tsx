@@ -13,12 +13,15 @@ import { AudioErrorBoundary } from './AudioErrorBoundary';
 import { Clip } from '../types';
 import { TimelinePosition } from '../audio/AudioAppState';
 import type { ProjectData } from '../types';
+import { GlassAudioPlayer } from './ui/GlassAudioPlayer';
 
 interface AudioSystemIntegrationProps {
   mode: 'listen' | 'edit';
   fontSettings?: { family?: string; fontFamily?: string; size?: number; fontSize?: number };
   audioUrl?: string;
   disableAudio?: boolean;
+  isGlassPlayerVisible?: boolean;
+  onCloseGlassPlayer?: () => void;
 }
 
 export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
@@ -26,6 +29,8 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   fontSettings,
   audioUrl,
   disableAudio = false, // ✅ consistent
+  isGlassPlayerVisible = false,
+  onCloseGlassPlayer,
 }) => {
   const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
   const AUDIO_TRACE = (import.meta as any).env?.VITE_AUDIO_TRACE === 'true';
@@ -401,5 +406,56 @@ useEffect(() => {
     );
   }
 
-  return content;
+  // Implement clip navigation functions
+  const handleSkipToClipStart = useCallback(() => {
+    const visibleClips = audioActions.getVisibleClips();
+    const currentClip = audioActions.getClipAtTime(audioState.currentTime);
+    
+    if (currentClip) {
+      // Skip to the start of the current clip
+      audioActions.seekToTime(currentClip.startTime);
+      if (audioState.isPlaying) {
+        audioActions.play().catch(() => {});
+      }
+    }
+  }, [audioActions, audioState.currentTime, audioState.isPlaying]);
+
+  const handleSkipToNextClip = useCallback(() => {
+    const visibleClips = audioActions.getVisibleClips();
+    const currentClipIndex = visibleClips.findIndex(clip => 
+      audioState.currentTime >= clip.startTime && audioState.currentTime <= clip.endTime
+    );
+    
+    if (currentClipIndex >= 0 && currentClipIndex < visibleClips.length - 1) {
+      const nextClip = visibleClips[currentClipIndex + 1];
+      audioActions.seekToTime(nextClip.startTime);
+      if (audioState.isPlaying) {
+        audioActions.play().catch(() => {});
+      }
+    }
+  }, [audioActions, audioState.currentTime, audioState.isPlaying]);
+
+  return (
+    <>
+      {content}
+      
+      {/* Glass Audio Player */}
+      <GlassAudioPlayer
+        isVisible={isGlassPlayerVisible}
+        isPlaying={audioState.isPlaying}
+        currentTime={audioState.currentTime}
+        duration={audioState.totalDuration}
+        volume={audioState.volume}
+        speed={audioState.playbackRate}
+        fileName={audioPath ? audioPath.split('/').pop() || 'Audio' : 'Audio'}
+        onPlayPause={() => audioActions.togglePlayPause()}
+        onSeek={(time) => audioActions.seekToTime(time)}
+        onSkipToClipStart={handleSkipToClipStart}
+        onSkipToClipEnd={handleSkipToNextClip}
+        onVolume={(volume) => audioActions.setVolume(volume)}
+        onSpeedChange={(speed) => audioActions.setPlaybackRate(speed)}
+        onClose={onCloseGlassPlayer}
+      />
+    </>
+  );
 };

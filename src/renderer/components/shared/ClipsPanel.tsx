@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Scissors, Plus, Play, Trash2, Copy, GripVertical } from 'lucide-react';
 import { Clip } from '../TranscriptEdit/useClips';
 
@@ -30,6 +30,21 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
   // Drag-and-drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Panel ref for click-outside detection
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Handle click outside to deselect clips
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        setSelectedClipIds(new Set());
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Show only actual content clips, filtering out audio-only gaps
   const allClips = clips.filter(clip => clip.type !== 'audio-only' && clip.status !== 'deleted');
@@ -148,10 +163,10 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
   if (allClips.length === 0) {
     return (
       <div>
-        <p className="text-sm text-white opacity-80 mb-3">
+        <p className="text-sm opacity-80 mb-3" style={{ color: 'hsl(var(--text))' }}>
           No transcript loaded. Load a project to see clips.
         </p>
-        <div className="text-xs text-white opacity-60 space-y-1">
+        <div className="text-xs opacity-60 space-y-1" style={{ color: 'hsl(var(--text))' }}>
           <p>• Speaker changes create automatic clips</p>
           <p>• Right-click words for options</p>
           <p>• Press Enter to split text into clips</p>
@@ -161,8 +176,8 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
   }
 
   return (
-    <div>
-      <p className="text-sm text-white opacity-80 mb-3">
+    <div ref={panelRef}>
+      <p className="text-sm opacity-80 mb-3" style={{ color: 'hsl(var(--text))' }}>
         {allClips.length} clip{allClips.length !== 1 ? 's' : ''}
       </p>
       
@@ -199,16 +214,17 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
               <div className="flex items-center gap-2">
                 <GripVertical 
                   size={12} 
-                  className="text-white opacity-40 hover:opacity-70 cursor-grab active:cursor-grabbing"
+                  className="opacity-40 hover:opacity-70 cursor-grab active:cursor-grabbing"
+                  style={{ color: 'hsl(var(--text))' }}
                   title="Drag to reorder"
                 />
-                <span className="text-xs font-medium text-blue-300">
+                <span className="text-xs font-medium opacity-70" style={{ color: 'hsl(var(--text))' }}>
                   Clip {index + 1}
                 </span>
-                <span className="text-xs text-white opacity-70">
+                <span className="text-xs opacity-70" style={{ color: 'hsl(var(--text))' }}>
                   {formatTime(clip.startTime)} - {formatTime(clip.endTime)}
                 </span>
-                <span className="text-xs text-white opacity-50">
+                <span className="text-xs opacity-50" style={{ color: 'hsl(var(--text))' }}>
                   {formatTime(clip.duration)}
                 </span>
               </div>
@@ -219,7 +235,8 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
                     e.stopPropagation();
                     onClipPlay?.(clip);
                   }}
-                  className="p-1 hover:bg-white hover:bg-opacity-20 rounded text-white opacity-70 hover:opacity-100"
+                  className="p-1 hover:bg-white hover:bg-opacity-20 rounded opacity-70 hover:opacity-100"
+                  style={{ color: 'hsl(var(--text))' }}
                   title="Play clip"
                 >
                   <Play size={12} />
@@ -230,7 +247,8 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
                     e.stopPropagation();
                     handleCopyClip(clip);
                   }}
-                  className="p-1 hover:bg-white hover:bg-opacity-20 rounded text-white opacity-70 hover:opacity-100"
+                  className="p-1 hover:bg-white hover:bg-opacity-20 rounded opacity-70 hover:opacity-100"
+                  style={{ color: 'hsl(var(--text))' }}
                   title="Copy clip text"
                 >
                   <Copy size={12} />
@@ -240,9 +258,7 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm('Delete this clip?')) {
-                      onClipDelete?.(clip.id);
-                    }
+                    onClipDelete?.(clip.id);
                   }}
                   className="p-1 hover:bg-red-900 hover:bg-opacity-30 rounded text-red-400"
                   title="Delete clip"
@@ -258,7 +274,7 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
                 {clip.speaker}
               </div>
               
-              <p className="text-white opacity-90">
+              <p className="opacity-90" style={{ color: 'hsl(var(--text))' }}>
                 {clip.text.length > 100 ? `${clip.text.substring(0, 100)}...` : clip.text}
               </p>
             </div>
@@ -291,7 +307,8 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
             {contextMenu.clipIds.length >= 2 && (
               <button
                 onClick={handleMerge}
-                className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-700 flex items-center gap-2"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 flex items-center gap-2"
+                style={{ color: 'hsl(var(--text))' }}
               >
                 <Scissors size={14} />
                 Merge {contextMenu.clipIds.length} Clips

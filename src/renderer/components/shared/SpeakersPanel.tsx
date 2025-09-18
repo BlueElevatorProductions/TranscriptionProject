@@ -90,6 +90,7 @@ const SpeakersPanel: React.FC<SpeakersPanelProps> = ({
                   <input
                     type="text"
                     value={tempSpeakerName || ''}
+                    placeholder={speakerName}
                     onChange={(e) => onTempNameChange(e.target.value)}
                     onBlur={(e) => {
                       // Use setTimeout to allow clicks on other elements to register first

@@ -106,6 +106,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Directory selection for new projects
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
+
+  // Cross-window clip sync
+  clipsGet: () => ipcRenderer.invoke('clips:get'),
+  clipsSet: (clips: any[]) => ipcRenderer.invoke('clips:set', clips),
+  onClipsChanged: (callback: (clips: any[]) => void) => {
+    ipcRenderer.on('clips:changed', (_event, clips) => callback(clips));
+  },
   
   // Audio analysis and conversion (new enhanced import system)
   analyzeAudio: (filePath: string) => ipcRenderer.invoke('analyze-audio', filePath),
@@ -176,6 +183,10 @@ export interface ElectronAPI {
   saveUserPreferences: (preferences: any) => Promise<{success: boolean}>;
   resetUserPreferences: () => Promise<any>;
   getTranscriptionService: (preferences: any) => Promise<string>;
+  // Cross-window clip sync
+  clipsGet: () => Promise<any[]>;
+  clipsSet: (clips: any[]) => Promise<any>;
+  onClipsChanged: (callback: (clips: any[]) => void) => void;
 }
 
 declare global {
@@ -189,6 +200,7 @@ declare global {
       stop: (id: string) => Promise<{ success: boolean; error?: string }>;
       seek: (id: string, timeSec: number) => Promise<{ success: boolean; error?: string }>;
       setRate: (id: string, rate: number) => Promise<{ success: boolean; error?: string }>;
+      setTimeStretch: (id: string, ratio: number) => Promise<{ success: boolean; error?: string }>;
       setVolume: (id: string, value: number) => Promise<{ success: boolean; error?: string }>;
       queryState: (id: string) => Promise<{ success: boolean; error?: string }>;
       dispose: () => Promise<{ success: boolean; error?: string }>;
@@ -215,6 +227,7 @@ contextBridge.exposeInMainWorld('juceTransport', {
   stop: (id: string) => ipcRenderer.invoke('juce:stop', id),
   seek: (id: string, timeSec: number) => ipcRenderer.invoke('juce:seek', id, timeSec),
   setRate: (id: string, rate: number) => ipcRenderer.invoke('juce:setRate', id, rate),
+  setTimeStretch: (id: string, ratio: number) => ipcRenderer.invoke('juce:setTimeStretch', id, ratio),
   setVolume: (id: string, value: number) => ipcRenderer.invoke('juce:setVolume', id, value),
   queryState: (id: string) => ipcRenderer.invoke('juce:queryState', id),
   dispose: () => ipcRenderer.invoke('juce:dispose'),

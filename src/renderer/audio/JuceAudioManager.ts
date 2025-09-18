@@ -27,6 +27,7 @@ export class JuceAudioManager {
     stop: (id: string) => Promise<{ success: boolean; error?: string }>;
     seek: (id: string, timeSec: number) => Promise<{ success: boolean; error?: string }>;
     setRate: (id: string, rate: number) => Promise<{ success: boolean; error?: string }>;
+    setTimeStretch: (id: string, ratio: number) => Promise<{ success: boolean; error?: string }>;
     setVolume: (id: string, value: number) => Promise<{ success: boolean; error?: string }>;
     queryState: (id: string) => Promise<{ success: boolean; error?: string }>;
     onEvent: (cb: (evt: JuceEvent) => void) => void;
@@ -263,6 +264,20 @@ export class JuceAudioManager {
 
   setPlaybackRate(rate: number): void {
     const r = Math.max(0.25, Math.min(4.0, rate));
+    // Use time-stretching for pitch-preserving speed changes
+    this.transport!.setTimeStretch(this.sessionId, r).then(() => {
+      this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { playbackRate: r } });
+    }).catch(() => {
+      // Fallback to legacy setRate if time-stretching is not available
+      this.transport!.setRate(this.sessionId, r).then(() => {
+        this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { playbackRate: r } });
+      });
+    });
+  }
+
+  // Legacy method for backward compatibility (changes both speed and pitch)
+  setPlaybackRateLegacy(rate: number): void {
+    const r = Math.max(0.25, Math.min(4.0, rate));
     this.transport!.setRate(this.sessionId, r).then(() => {
       this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { playbackRate: r } });
     });
@@ -273,6 +288,8 @@ export class JuceAudioManager {
     this.edlApplying = true;
     this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { edlApplying: true } as any });
     if (this.edlApplyFallbackTid) { clearTimeout(this.edlApplyFallbackTid); this.edlApplyFallbackTid = null; }
+    // Cross-window sync: publish full clips to main so other windows (Audio Editor) can mirror
+    try { (window as any).electronAPI?.clipsSet?.(clips); } catch {}
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
     // Fallback timer in case 'edlApplied' is not emitted
     this.edlApplyFallbackTid = window.setTimeout(() => {
@@ -302,6 +319,11 @@ export class JuceAudioManager {
     this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { edlApplying: true } as any });
     if (this.edlApplyFallbackTid) { clearTimeout(this.edlApplyFallbackTid); this.edlApplyFallbackTid = null; }
     this.pushEdl().catch((e) => this.callbacks.onError(String(e)));
+    // Publish new ordering to other windows
+    try {
+      const next = this.state.timeline.clips;
+      (window as any).electronAPI?.clipsSet?.(next);
+    } catch {}
     this.edlApplyFallbackTid = window.setTimeout(() => {
       if (this.edlApplying) {
         if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
@@ -823,14 +845,6 @@ export class JuceAudioManager {
 
   private resolveAudioPath(audioUrl: string): string | null {
     try {
-      if (audioUrl.startsWith('http')) {
-        const u = new URL(audioUrl);
-        if (u.pathname === '/media') {
-          const src = u.searchParams.get('src');
-          if (src) return decodeURIComponent(src);
-        }
-        return null; // Unknown pattern
-      }
       if (audioUrl.startsWith('file://')) {
         const u = new URL(audioUrl);
         return decodeURIComponent(u.pathname);

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Headphones, PencilLine } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Headphones, PencilLine, AudioWaveform } from 'lucide-react';
 
 interface TopBarProps {
   mode: 'listen' | 'edit';
@@ -8,6 +8,7 @@ interface TopBarProps {
   onSidebarToggle: () => void;
   projectName?: string;
   projectStatus?: string;
+  onOpenAudioEditor?: () => void;
 }
 
 const TopBar: React.FC<TopBarProps> = ({
@@ -16,8 +17,37 @@ const TopBar: React.FC<TopBarProps> = ({
   sidebarCollapsed,
   onSidebarToggle,
   projectName,
-  projectStatus
+  projectStatus,
+  onOpenAudioEditor
 }) => {
+  // Keyboard navigation: Tab key cycles through modes
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only handle Tab key, and only when not in an input field
+      if (event.key === 'Tab' && !event.shiftKey) {
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement?.tagName === 'INPUT' || 
+                              activeElement?.tagName === 'TEXTAREA' || 
+                              activeElement?.contentEditable === 'true';
+        
+        if (!isInputFocused) {
+          event.preventDefault();
+          
+          if (mode === 'listen') {
+            onModeChange('edit');
+          } else if (mode === 'edit') {
+            // From edit mode, go to audio editor
+            onOpenAudioEditor?.();
+          }
+          // Note: Audio editor is a separate window, so no cycling back needed
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mode, onModeChange, onOpenAudioEditor]);
+
   return (
     <div className="vibrancy-topbar topbar-height flex items-center justify-between border-b border-glass-border-subtle">
       {/* Left side - Traffic lights area is handled by Electron */}
@@ -53,11 +83,11 @@ const TopBar: React.FC<TopBarProps> = ({
         {/* Button Group Separator */}
         <div className="button-group-separator" />
 
-        {/* Listen/Edit Mode Toggle */}
-        <div className="flex items-center gap-2">
+        {/* Mode Toggle Buttons */}
+        <div className="flex items-center gap-3">
           <button
             onClick={() => onModeChange('listen')}
-            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
               mode === 'listen' 
                 ? 'bg-surface text-text' 
                 : 'bg-transparent text-text-muted hover:bg-surface hover:text-text'
@@ -66,21 +96,31 @@ const TopBar: React.FC<TopBarProps> = ({
             aria-label="Listen mode"
           >
             <Headphones size={16} />
-            <span>Listen Mode</span>
+            <span>Listen</span>
           </button>
           
           <button
             onClick={() => onModeChange('edit')}
-            className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
               mode === 'edit' 
                 ? 'bg-surface text-text' 
                 : 'bg-transparent text-text-muted hover:bg-surface hover:text-text'
             }`}
             style={{ WebkitAppRegion: 'no-drag' as any }}
-            aria-label="Edit mode"
+            aria-label="Text edit mode"
           >
             <PencilLine size={16} />
-            <span>Edit Mode</span>
+            <span>Text Edit</span>
+          </button>
+
+          <button
+            onClick={onOpenAudioEditor}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors bg-transparent text-text-muted hover:bg-surface hover:text-text"
+            style={{ WebkitAppRegion: 'no-drag' as any }}
+            aria-label="Open audio editor"
+          >
+            <AudioWaveform size={16} />
+            <span>Audio Edit</span>
           </button>
         </div>
       </div>

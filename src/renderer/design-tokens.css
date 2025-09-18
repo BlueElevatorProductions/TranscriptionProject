@@ -67,8 +67,8 @@
     --glass-border-subtle: 240 4% 20% / 1;
     
     /* Panel Layout */
-    --transcript-bg: 198 100% 100%;
-    --transcript-text: 50 100% 95%;
+    --transcript-bg: 220 15% 15%;     /* Default dark transcript background */
+    --transcript-text: 0 0% 95%;      /* Default white transcript text */
     --player-bg: 10 15% 18%;
     --player-text: 50 100% 95%;
     --hover-bg: 220 15% 25%;
@@ -121,7 +121,7 @@
     --sidebar-width: 13rem;           /* Left sidebar width (w-64 = 16rem) */
     --sidebar-width-collapsed: 50px;  /* Collapsed sidebar width (icons only) */
     --secondary-panel-width: 320px;   /* Secondary panel width */
-    --topbar-height: 44px;            /* Top bar height (matches Day One) */
+    --topbar-height: 56px;            /* Top bar height (increased for better spacing around buttons) */
     
     /* Window Transparency Controls */
     --app-bg-opacity: 1;            /* ?Main app background opacity (0=fully transparent, 1=opaque) */
@@ -329,7 +329,7 @@ EXAMPLE - Blue Theme:
 .traffic-lights-space {
     width: 90px; /* Space for macOS traffic lights (12px + 68px buttons + padding) */
     height: var(--topbar-height);
-    flex-shrink: 1;
+    flex-shrink: 0;
 }
 
 .sidebar-toggle-btn {
@@ -353,7 +353,7 @@ EXAMPLE - Blue Theme:
 }
 
 .button-group-separator {
-    width: 100px; /* Gap between button groups */
+    width: 32px; /* Gap between button groups */
     flex-shrink: 0;
 }
 

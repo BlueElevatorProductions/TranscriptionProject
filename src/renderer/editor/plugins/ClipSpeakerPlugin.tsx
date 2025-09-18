@@ -122,12 +122,41 @@ function Layer({ items, availableSpeakers, audioState, audioActions, onApplyClip
               try { onApplyClips(next as any); } catch {}
               window.dispatchEvent(new CustomEvent('clips-updated'));
             }}
+            isDeleted={(() => {
+              const clips = audioState.clips || [];
+              const targetClip = clips.find(c => c.id === it.clipId);
+              return targetClip?.status === 'deleted';
+            })()}
             onDeleteClip={() => {
               const clips = audioState.clips || [];
-              let next = clips.filter(c => c.id !== it.clipId);
-              // Also prune orphaned 0-duration gaps and renumber
-              next = next.filter((c, idx) => c.type !== 'audio-only' || c.duration > 0.0005);
-              for (let i = 0; i < next.length; i++) next[i] = { ...next[i], order: i } as any;
+              const targetClip = clips.find(c => c.id === it.clipId);
+              if (!targetClip) return;
+              
+              // Unified soft deletion: mark as deleted instead of removing
+              const now = Date.now();
+              const next = clips.map(c => 
+                c.id === it.clipId 
+                  ? { ...c, status: 'deleted' as const, modifiedAt: now }
+                  : c
+              );
+              
+              try { audioActions.updateClips(next); } catch {}
+              try { onApplyClips(next as any); } catch {}
+              window.dispatchEvent(new CustomEvent('clips-updated'));
+            }}
+            onRestoreClip={() => {
+              const clips = audioState.clips || [];
+              const targetClip = clips.find(c => c.id === it.clipId);
+              if (!targetClip) return;
+              
+              // Restore clip: mark as active
+              const now = Date.now();
+              const next = clips.map(c => 
+                c.id === it.clipId 
+                  ? { ...c, status: 'active' as const, modifiedAt: now }
+                  : c
+              );
+              
               try { audioActions.updateClips(next); } catch {}
               try { onApplyClips(next as any); } catch {}
               window.dispatchEvent(new CustomEvent('clips-updated'));

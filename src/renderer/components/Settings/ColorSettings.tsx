@@ -11,6 +11,8 @@ interface ColorOption {
 interface ColorSettingsProps {
   currentColor: string;
   onColorChange: (color: string) => void;
+  currentTranscriptTheme?: 'light' | 'dark';
+  onTranscriptThemeChange?: (theme: 'light' | 'dark') => void;
   onClose: () => void;
 }
 
@@ -29,36 +31,47 @@ const colorOptions: ColorOption[] = [
   },
   {
     id: 'light',
-    name: 'Light Mode',
+    name: 'White',
     value: 'light',
     preview: '#f5f5f5'
   },
   {
     id: 'dark',
-    name: 'Dark Mode',
+    name: 'Black',
     value: 'dark', 
     preview: '#1e293b'
   }
 ];
 
-const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChange, onClose }) => {
+const ColorSettings: React.FC<ColorSettingsProps> = ({ 
+  currentColor, 
+  onColorChange, 
+  currentTranscriptTheme = 'dark',
+  onTranscriptThemeChange,
+  onClose 
+}) => {
   const [selectedColor, setSelectedColor] = useState(currentColor);
+  const [transcriptTheme, setTranscriptTheme] = useState<'light' | 'dark'>(currentTranscriptTheme);
 
   const applyTheme = (themeValue: string) => {
     const root = document.documentElement;
     
     if (themeValue === 'light') {
-      // Light mode colors
-      root.style.setProperty('--bg', '0 0% 98%');           // Very light gray background
-      root.style.setProperty('--surface', '0 0% 96%');      // Light gray surface - f5f5f5
-      root.style.setProperty('--sidebar', '0 0% 96%');      // Light sidebar - f5f5f5
-      root.style.setProperty('--text', '220 13% 15%');      // Dark text
-      root.style.setProperty('--text-muted', '220 13% 40%'); // Muted dark text
-      root.style.setProperty('--border', '220 13% 85%');    // Light border
-      root.style.setProperty('--hover-bg', '220 13% 90%');  // Light hover
-      // Playback panel colors (light)
-      root.style.setProperty('--glass-surface', '0 0% 96% / 1');  // Light playback panel
-      root.style.setProperty('--glass-text', '220 13% 15%');      // Dark text for playback
+      // White mode colors - cream backgrounds (#fff8e9) with dark gray text
+      root.style.setProperty('--bg', '43 100% 97%');        // Cream background (#fff8e9)
+      root.style.setProperty('--surface', '43 100% 97%');   // Cream surface 
+      root.style.setProperty('--sidebar', '43 100% 97%');   // Cream sidebar
+      root.style.setProperty('--text', '220 15% 15%');      // Dark gray text (matches dark transcript bg)
+      root.style.setProperty('--text-muted', '220 15% 40%'); // Muted dark gray text
+      root.style.setProperty('--border', '43 30% 85%');     // Warm light border
+      root.style.setProperty('--hover-bg', '43 60% 92%');   // Light cream hover
+      // Header/topbar colors
+      root.style.setProperty('--glass-surface', '43 100% 97% / 1');  // Cream topbar
+      root.style.setProperty('--glass-text', '220 15% 15%');         // Dark gray text for topbar
+      root.style.setProperty('--glass-border-subtle', '220 15% 15% / 1'); // Dark border for White theme
+      // Update opacity levels for more transparency
+      root.style.setProperty('--sidebar-bg-opacity', '0.8');  // 80% transparency
+      root.style.setProperty('--panel-bg-opacity', '0.8');    // 80% transparency
     } else if (themeValue === 'dark') {
       // Dark mode colors  
       root.style.setProperty('--bg', '220 15% 10%');        // Very dark background
@@ -71,6 +84,9 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChan
       // Playback panel colors (white text/buttons)
       root.style.setProperty('--glass-surface', '220 15% 15% / 1');  // Dark playback panel
       root.style.setProperty('--glass-text', '0 0% 100%');           // White text for playback
+      // Reset opacity levels to default
+      root.style.setProperty('--sidebar-bg-opacity', '0.3');  // Default transparency
+      root.style.setProperty('--panel-bg-opacity', '0.2');    // Default transparency
     } else if (themeValue === '#0086bf') {
       // Blue mode - lighter blue (0086bf)
       root.style.setProperty('--bg', '220 15% 15%');        // Dark background
@@ -83,6 +99,9 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChan
       // Playback panel colors (same as light mode)
       root.style.setProperty('--glass-surface', '0 0% 96% / 1');  // Light playback panel
       root.style.setProperty('--glass-text', '220 13% 15%');      // Dark text for playback
+      // Reset opacity levels to default
+      root.style.setProperty('--sidebar-bg-opacity', '0.3');  // Default transparency
+      root.style.setProperty('--panel-bg-opacity', '0.2');    // Default transparency
     } else if (themeValue === '#007552') {
       // Green mode - 007552
       root.style.setProperty('--bg', '220 15% 15%');        // Dark background
@@ -95,6 +114,9 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChan
       // Playback panel colors (same as light mode)
       root.style.setProperty('--glass-surface', '0 0% 96% / 1');  // Light playback panel
       root.style.setProperty('--glass-text', '220 13% 15%');      // Dark text for playback
+      // Reset opacity levels to default
+      root.style.setProperty('--sidebar-bg-opacity', '0.3');  // Default transparency
+      root.style.setProperty('--panel-bg-opacity', '0.2');    // Default transparency
     } else {
       // Fallback - original theme
       root.style.setProperty('--bg', '220 15% 15%');
@@ -107,15 +129,38 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChan
       // Default playback panel
       root.style.setProperty('--glass-surface', '240 8% 8% / 1');
       root.style.setProperty('--glass-text', '0 0% 60%');
+      // Reset opacity levels to default
+      root.style.setProperty('--sidebar-bg-opacity', '0.3');  // Default transparency
+      root.style.setProperty('--panel-bg-opacity', '0.2');    // Default transparency
     }
   };
 
-  // Apply the current theme when component mounts
+  const applyTranscriptTheme = (theme: 'light' | 'dark') => {
+    const root = document.documentElement;
+    
+    if (theme === 'light') {
+      // Light transcript theme - white background with black text
+      root.style.setProperty('--transcript-bg', '0 0% 100%');     // White background
+      root.style.setProperty('--transcript-text', '0 0% 0%');     // Black text
+    } else {
+      // Dark transcript theme - dark grey background with white text  
+      root.style.setProperty('--transcript-bg', '220 15% 15%');   // Dark grey background
+      root.style.setProperty('--transcript-text', '0 0% 95%');    // White text
+    }
+  };
+
+  // Apply the current themes when component mounts
   useEffect(() => {
     if (currentColor) {
       applyTheme(currentColor);
     }
+    applyTranscriptTheme(transcriptTheme);
   }, []);
+
+  // Apply transcript theme when it changes
+  useEffect(() => {
+    applyTranscriptTheme(transcriptTheme);
+  }, [transcriptTheme]);
 
   const handleColorSelect = (color: string) => {
     setSelectedColor(color);
@@ -125,14 +170,16 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChan
     applyTheme(color);
   };
 
+  const handleTranscriptThemeSelect = (theme: 'light' | 'dark') => {
+    setTranscriptTheme(theme);
+    onTranscriptThemeChange?.(theme);
+    applyTranscriptTheme(theme);
+  };
+
   return (
     <div>
-      <p className="text-sm text-white opacity-80 mb-4">
-        Choose your preferred app color theme. Changes apply immediately.
-      </p>
-      
       <div className="space-y-3">
-        <label className="block text-sm font-medium text-white mb-3">Theme Color</label>
+        <label className="block text-sm font-medium mb-3" style={{ color: 'hsl(var(--text))' }}>Theme Color</label>
         
         <div className="space-y-3">
           {colorOptions.map((option) => (
@@ -153,14 +200,14 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChan
                 style={{ backgroundColor: option.preview }}
               >
                 {selectedColor === option.value && (
-                  <Check size={16} className="text-white" />
+                  <Check size={16} style={{ color: 'hsl(var(--text))' }} />
                 )}
               </div>
               
               {/* Color Name */}
               <div className="flex-1">
-                <div className="text-white font-medium">{option.name}</div>
-                <div className="text-white opacity-60 text-xs">{option.value}</div>
+                <div className="font-medium" style={{ color: 'hsl(var(--text))' }}>{option.name}</div>
+                <div className="opacity-60 text-xs" style={{ color: 'hsl(var(--text))' }}>{option.value}</div>
               </div>
               
               {/* Selection Indicator */}
@@ -171,9 +218,75 @@ const ColorSettings: React.FC<ColorSettingsProps> = ({ currentColor, onColorChan
           ))}
         </div>
       </div>
+
+      {/* Transcript Theme Section */}
+      <div className="mt-6 pt-4 border-t border-white border-opacity-20">
+        <label className="block text-sm font-medium mb-3" style={{ color: 'hsl(var(--text))' }}>Transcript Theme</label>
+        <p className="text-xs opacity-70 mb-3" style={{ color: 'hsl(var(--text))' }}>
+          Choose the background and text color for the transcript area.
+        </p>
+        
+        <div className="space-y-2">
+          {/* Light Mode Option */}
+          <div
+            className={`
+              flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all
+              ${transcriptTheme === 'light' 
+                ? 'bg-white bg-opacity-20 border border-white border-opacity-40' 
+                : 'bg-white bg-opacity-10 border border-white border-opacity-20 hover:bg-opacity-15'
+              }
+            `}
+            onClick={() => handleTranscriptThemeSelect('light')}
+          >
+            <div 
+              className="w-8 h-8 rounded border-2 border-white border-opacity-30 flex items-center justify-center"
+              style={{ backgroundColor: '#ffffff' }}
+            >
+              {transcriptTheme === 'light' && (
+                <Check size={16} className="text-black" />
+              )}
+            </div>
+            <div className="flex-1">
+              <div className="text-white font-medium">Light Mode</div>
+              <div className="text-white opacity-60 text-xs">White background, black text</div>
+            </div>
+            {transcriptTheme === 'light' && (
+              <div className="w-2 h-2 bg-white rounded-full opacity-80"></div>
+            )}
+          </div>
+
+          {/* Dark Mode Option */}
+          <div
+            className={`
+              flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all
+              ${transcriptTheme === 'dark' 
+                ? 'bg-white bg-opacity-20 border border-white border-opacity-40' 
+                : 'bg-white bg-opacity-10 border border-white border-opacity-20 hover:bg-opacity-15'
+              }
+            `}
+            onClick={() => handleTranscriptThemeSelect('dark')}
+          >
+            <div 
+              className="w-8 h-8 rounded border-2 border-white border-opacity-30 flex items-center justify-center"
+              style={{ backgroundColor: '#374151' }}
+            >
+              {transcriptTheme === 'dark' && (
+                <Check size={16} className="text-white" />
+              )}
+            </div>
+            <div className="flex-1">
+              <div className="text-white font-medium">Dark Mode</div>
+              <div className="text-white opacity-60 text-xs">Dark grey background, white text</div>
+            </div>
+            {transcriptTheme === 'dark' && (
+              <div className="w-2 h-2 bg-white rounded-full opacity-80"></div>
+            )}
+          </div>
+        </div>
+      </div>
       
       <div className="mt-6 pt-4 border-t border-white border-opacity-20">
-        <p className="text-xs text-white opacity-60">
+        <p className="text-xs opacity-60" style={{ color: 'hsl(var(--text))' }}>
           Color settings are saved globally and will persist across all projects.
         </p>
       </div>

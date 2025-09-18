@@ -75,6 +75,11 @@ export class JuceClient implements Transport {
     await this.ensureStarted();
     this.send({ type: 'setRate', id, rate });
   }
+
+  async setTimeStretch(id: TransportId, ratio: number): Promise<void> {
+    await this.ensureStarted();
+    this.send({ type: 'setTimeStretch', id, ratio });
+  }
   async setVolume(id: TransportId, value: number): Promise<void> {
     await this.ensureStarted();
     this.send({ type: 'setVolume', id, value });

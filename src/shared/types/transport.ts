@@ -22,7 +22,8 @@ export type JuceCommand =
   | { type: 'pause'; id: TransportId }
   | { type: 'stop'; id: TransportId }
   | { type: 'seek'; id: TransportId; timeSec: number } // edited timeline time
-  | { type: 'setRate'; id: TransportId; rate: number }
+  | { type: 'setRate'; id: TransportId; rate: number } // Legacy: changes both speed and pitch
+  | { type: 'setTimeStretch'; id: TransportId; ratio: number } // New: changes speed while preserving pitch
   | { type: 'setVolume'; id: TransportId; value: number }
   | { type: 'queryState'; id: TransportId };
 
@@ -51,7 +52,8 @@ export interface Transport {
   pause(id: TransportId): Promise<void>;
   stop(id: TransportId): Promise<void>;
   seek(id: TransportId, timeSec: number): Promise<void>;
-  setRate(id: TransportId, rate: number): Promise<void>;
+  setRate(id: TransportId, rate: number): Promise<void>; // Legacy: changes both speed and pitch
+  setTimeStretch(id: TransportId, ratio: number): Promise<void>; // New: changes speed while preserving pitch
   setVolume(id: TransportId, value: number): Promise<void>;
   queryState(id: TransportId): Promise<void>;
   dispose(): Promise<void>;
@@ -111,6 +113,8 @@ export function isJuceCommand(obj: any): obj is JuceCommand {
       return typeof obj.id === 'string' && typeof obj.timeSec === 'number';
     case 'setRate':
       return typeof obj.id === 'string' && typeof obj.rate === 'number';
+    case 'setTimeStretch':
+      return typeof obj.id === 'string' && typeof obj.ratio === 'number';
     case 'setVolume':
       return typeof obj.id === 'string' && typeof obj.value === 'number';
     default:

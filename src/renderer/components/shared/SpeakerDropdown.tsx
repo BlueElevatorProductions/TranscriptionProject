@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronLeft, User, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
+import { ChevronLeft, User, ArrowUp, ArrowDown, Trash2, RefreshCw } from 'lucide-react';
 import './SpeakerDropdown.css';
 
 interface Speaker {
@@ -29,11 +29,15 @@ interface SpeakerDropdownProps {
   clipIndex: number;
   totalClips: number;
   
+  // Clip state
+  isDeleted?: boolean;
+  
   // Event handlers
   onSpeakerChange: (speakerId: string) => void;
   onMergeAbove?: () => void;
   onMergeBelow?: () => void;
   onDeleteClip?: () => void;
+  onRestoreClip?: () => void;
   
   // UI state
   disabled?: boolean;
@@ -45,10 +49,12 @@ export const SpeakerDropdown: React.FC<SpeakerDropdownProps> = ({
   availableSpeakers,
   clipIndex,
   totalClips,
+  isDeleted = false,
   onSpeakerChange,
   onMergeAbove,
   onMergeBelow,
   onDeleteClip,
+  onRestoreClip,
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -111,6 +117,11 @@ export const SpeakerDropdown: React.FC<SpeakerDropdownProps> = ({
     onDeleteClip?.();
     setIsOpen(false);
   }, [onDeleteClip]);
+
+  const handleRestoreClip = useCallback(() => {
+    onRestoreClip?.();
+    setIsOpen(false);
+  }, [onRestoreClip]);
 
   const canMergeAbove = clipIndex > 0;
   const canMergeBelow = clipIndex < totalClips - 1;
@@ -182,17 +193,29 @@ export const SpeakerDropdown: React.FC<SpeakerDropdownProps> = ({
             </button>
           </div>
 
-          {/* Delete Section */}
+          {/* Delete/Restore Section */}
           <div className="speaker-dropdown-section">
-            <button
-              className="speaker-dropdown-item destructive"
-              onClick={handleDeleteClip}
-              type="button"
-              title="Delete this clip"
-            >
-              <Trash2 className="speaker-dropdown-icon" size={16} />
-              <span>Delete clip</span>
-            </button>
+            {isDeleted ? (
+              <button
+                className="speaker-dropdown-item positive"
+                onClick={handleRestoreClip}
+                type="button"
+                title="Restore this clip"
+              >
+                <RefreshCw className="speaker-dropdown-icon" size={16} />
+                <span>Restore clip</span>
+              </button>
+            ) : (
+              <button
+                className="speaker-dropdown-item destructive"
+                onClick={handleDeleteClip}
+                type="button"
+                title="Delete this clip"
+              >
+                <Trash2 className="speaker-dropdown-icon" size={16} />
+                <span>Delete clip</span>
+              </button>
+            )}
           </div>
         </div>
       )}

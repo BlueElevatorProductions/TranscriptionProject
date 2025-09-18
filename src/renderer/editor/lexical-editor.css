@@ -204,8 +204,9 @@
 .speaker-context-menu,
 .speaker-selection-dialog {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e5e7eb;
-  background: white;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--transcript-bg));
+  color: hsl(var(--transcript-text));
   border-radius: 8px;
   z-index: 1000;
   max-width: 250px;

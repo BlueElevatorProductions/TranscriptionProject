@@ -299,13 +299,16 @@ function LexicalTranscriptEditorContent({
       <RichTextPlugin
         contentEditable={
           <ContentEditable 
-            className="transcript-editor-content outline-none text-[35px] leading-[1.4] text-gray-900 font-transcript p-8" 
-            style={{ minHeight: '400px' }}
+            className="transcript-editor-content outline-none text-[35px] leading-[1.4] font-transcript p-8" 
+            style={{ 
+              minHeight: '400px',
+              color: 'hsl(var(--transcript-text))'
+            }}
             autoFocus
           />
         }
         placeholder={
-          <div className="transcript-editor-placeholder absolute top-8 left-8 text-gray-500 text-[35px] pointer-events-none">
+          <div className="transcript-editor-placeholder absolute top-8 left-8 text-[35px] pointer-events-none" style={{ color: 'hsl(var(--transcript-text) / 0.6)' }}>
             {segments.length === 0 ? 'No transcript loaded. Import an audio file to begin.' : 'Loading transcript...'}
           </div>
         }
@@ -439,9 +442,9 @@ export function LexicalTranscriptEditor({
   const safeSegments = segments || [];
   if (!hasClips && safeSegments.length === 0) {
     return (
-      <main className="flex-1 p-8 bg-white font-transcript overflow-y-auto">
+      <main className="flex-1 p-8 font-transcript overflow-y-auto" style={{ backgroundColor: 'hsl(var(--transcript-bg))', color: 'hsl(var(--transcript-text))' }}>
         <div className="max-w-4xl mx-auto">
-          <p className="text-gray-500 text-center py-12 text-[35px]">
+          <p className="text-center py-12 text-[35px]" style={{ color: 'hsl(var(--transcript-text) / 0.6)' }}>
             No transcript loaded. Import an audio file to begin.
           </p>
         </div>
@@ -450,7 +453,7 @@ export function LexicalTranscriptEditor({
   }
 
   return (
-    <main className={`flex-1 bg-white font-transcript overflow-y-auto ${className}`}>
+    <main className={`flex-1 font-transcript overflow-y-auto ${className}`} style={{ backgroundColor: 'hsl(var(--transcript-bg))', color: 'hsl(var(--transcript-text))' }}>
       <div className={`max-w-4xl mx-auto relative lexical-transcript-editor-wrapper ${readOnly ? 'listen-mode' : 'edit-mode'}`}>
         {/* Persistent overlay for clip speaker dropdowns. Kept inside the editor wrapper */}
         <div

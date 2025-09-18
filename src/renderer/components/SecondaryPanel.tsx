@@ -40,16 +40,16 @@ const SecondaryPanel: React.FC<SecondaryPanelProps> = ({
       {/* Panel content */}
       <div className="relative h-full flex flex-col">
         <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-glass-border-subtle">
-          <h3 className="text-base font-medium text-white">{title}</h3>
+          <h3 className="text-base font-medium" style={{ color: 'hsl(var(--text))' }}>{title}</h3>
           <button
             onClick={onClose}
             className="rounded p-1.5 hover:bg-glass-hover transition-colors"
             aria-label="Close panel"
           >
-            <X className="w-4 h-4 text-white" />
+            <X className="w-4 h-4" style={{ color: 'hsl(var(--text))' }} />
           </button>
         </div>
-        <div className="p-4 text-white flex-1 overflow-y-auto">{children}</div>
+        <div className="p-4 flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
