@@ -60,8 +60,6 @@ Agent Responsibility
 4. Agent Roles
 	•	Log-Watcher Agent:
 Reads juce_debug.log, edl_debug_latest.json, and build logs to extract diagnostic signals.
-	•	Transcription Agent:
-Consumes audio and generates transcripts, writing outputs to project-defined locations.
 	•	Diagnostics Agent:
 Inspects build logs, Electron/Vite logs, and backend traces to identify errors.
 
@@ -72,3 +70,10 @@ Inspects build logs, Electron/Vite logs, and backend traces to identify errors.
 	•	Agents must autonomously locate, open, and analyze logs.
 	•	If logs are missing, fail clearly and point to the missing path.
 	•	Follow the project’s README and launcher script conventions strictly.
+
+Troubleshooting Rule
+	•	When troubleshooting an issue with CLI Codex:
+	•	Attempt only one fix at a time.
+	•	After applying a fix, confirm whether it resolved the issue before trying another.
+	•	Do not attempt multiple fixes in parallel, as this makes it unclear which action succeeded or caused side effects.
+	•	Adding or expanding logs does not count as a fix — logs may be added at any time to aid troubleshooting.
