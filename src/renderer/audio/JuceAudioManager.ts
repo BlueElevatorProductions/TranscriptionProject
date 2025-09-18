@@ -147,12 +147,7 @@ export class JuceAudioManager {
         const pr = await this.transport!.pause(this.sessionId);
         if (!pr.success) this.callbacks.onError(pr.error || 'pause failed before seek');
       }
-      // If timeline is reordered, prefer seeking via original domain
-      let targetSec = clamped;
-      if (this.preferOriginalSeek) {
-        const mapped = this.sequencer.editedTimeToOriginalTime(clamped);
-        if (mapped && Number.isFinite(mapped.originalTime)) targetSec = mapped.originalTime;
-      }
+      const targetSec = clamped;
       const sr = await this.transport!.seek(this.sessionId, targetSec);
       if (!sr.success) {
         this.callbacks.onError(sr.error || 'seek failed');
@@ -174,62 +169,38 @@ export class JuceAudioManager {
       this.pendingSeekOriginal = Math.max(0, originalSec);
       return;
     }
-    // Build ordered list of active clips (including audio-only) in edited order
-    const { clips, activeClipIds } = this.state.timeline;
-    const ordered = this.state.timeline.reorderIndices
-      .map((i) => clips[i])
-      .filter((c) => c && activeClipIds.has(c.id) && c.type !== 'initial');
 
-    // Detect reordered timeline (temporal discontinuity in original time)
-    let isReordered = false;
-    for (let i = 1; i < ordered.length; i++) {
-      if (ordered[i].startTime < ordered[i - 1].endTime) {
-        isReordered = true;
+    const ordered = this.sequencer.getReorderedClips();
+    if (!ordered.length) return;
+
+    const EPS = 0.02; // tolerate tiny boundary biases
+    let targetClip: Clip | null = null;
+
+    for (const clip of ordered) {
+      const within = originalSec >= clip.startTime && originalSec <= clip.endTime;
+      const nearStart = originalSec >= clip.startTime - EPS && originalSec < clip.startTime + EPS;
+      if (within || nearStart) {
+        targetClip = clip;
         break;
       }
     }
 
-    const EPS = 0.02; // tolerate tiny boundary biases
+    if (!targetClip) return;
 
-    if (isReordered) {
-      // Include audio-only segments: pick the clip whose ORIGINAL time range contains the request
-      let targetClip = ordered.find(c => originalSec >= c.startTime && originalSec <= c.endTime);
-      if (!targetClip) {
-        // If we're within EPS before a clip start, snap into that clip
-        targetClip = ordered.find(c => originalSec >= c.startTime - EPS && originalSec < c.startTime + EPS);
-      }
-      if (!targetClip) return;
+    const normalizedOriginal = Math.min(
+      targetClip.endTime,
+      Math.max(targetClip.startTime, originalSec)
+    );
+    const edited = this.sequencer.originalTimeToEditedTime(normalizedOriginal, targetClip.id);
+    if (edited == null) return;
 
-      const offsetWithinClip = Math.max(0, originalSec - targetClip.startTime);
-
-      // Map to contiguous edited timeline by summing durations up to the target clip
-      let contiguousTime = 0;
-      for (const clip of ordered) {
-        if (clip.id === targetClip.id) {
-          const seekTime = contiguousTime + offsetWithinClip;
-          if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
-            console.log(`[seekToOriginalTime] REORDERED: ${originalSec.toFixed(3)}s (clip ${targetClip.id.slice(-8)}) → edited ${seekTime.toFixed(3)}s`);
-          }
-          this.seekToEditedTime(seekTime);
-          return;
-        }
-        contiguousTime += clip.duration;
-      }
-      return;
+    if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
+      console.log(
+        `[seekToOriginalTime] ORIGINAL ${normalizedOriginal.toFixed(3)}s (clip ${targetClip.id.slice(-8)}) → edited ${edited.toFixed(3)}s`
+      );
     }
 
-    // Original order: linear map along the edited timeline (include audio-only)
-    let acc = 0;
-    for (const c of ordered) {
-      const within = originalSec >= c.startTime && originalSec <= c.endTime;
-      const nearStart = originalSec >= c.startTime - EPS && originalSec < c.startTime + EPS;
-      if (within || nearStart) {
-        const edited = acc + Math.max(0, originalSec - c.startTime);
-        this.seekToEditedTime(edited);
-        return;
-      }
-      acc += c.duration;
-    }
+    this.seekToEditedTime(edited);
   }
 
   seekToWord(clipId: string, wordIndex: number): void {
