@@ -23,6 +23,7 @@ function resolveFilePathFromSrc(src: string | undefined): string | null {
 export default function JuceEditorWindow({ src, peaksPort }: { src?: string; peaksPort?: string }) {
   const [active, setActive] = useState<boolean>(document.hasFocus());
   const [editedSec, setEditedSec] = useState(0);
+  const [displaySec, setDisplaySec] = useState(0);
   const [durationSec, setDurationSec] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [peaks, setPeaks] = useState<PeaksData | null>(null);
@@ -276,6 +277,7 @@ export default function JuceEditorWindow({ src, peaksPort }: { src?: string; pea
           break;
         case 'position':
           setEditedSec(evt.editedSec || 0);
+          setDisplaySec(evt.editedSec || 0);
           break;
         case 'ended':
           console.log('JuceEditorWindow: Playback ended');
@@ -384,23 +386,44 @@ export default function JuceEditorWindow({ src, peaksPort }: { src?: string; pea
     if (total <= 0) return;
     const viewportDuration = total / Math.max(1, zoom);
     if (viewportDuration > 0 && viewportStartSec === 0) {
-      const start = Math.max(0, editedSec - viewportDuration / 2);
+      const start = Math.max(0, displaySec - viewportDuration / 2);
       setViewportStartSec(Math.min(Math.max(0, start), Math.max(0, total - viewportDuration)));
     }
-  }, [editedTotalDuration, durationSec, zoom]);
+  }, [editedTotalDuration, durationSec, zoom, displaySec]);
 
   useEffect(() => {
     const total = editedTotalDuration || durationSec || 0;
     if (total <= 0) return;
     const viewportDuration = total / Math.max(1, zoom);
-    const marginLow = viewportStartSec + viewportDuration * 0.3;
-    const marginHigh = viewportStartSec + viewportDuration * 0.7;
-    if (editedSec < marginLow || editedSec > marginHigh) {
-      const start = Math.max(0, editedSec - viewportDuration / 2);
+    const marginLow = viewportStartSec + viewportDuration * 0.25;
+    const marginHigh = viewportStartSec + viewportDuration * 0.75;
+    if (displaySec < marginLow || displaySec > marginHigh) {
+      const start = Math.max(0, displaySec - viewportDuration / 2);
       const clamped = Math.min(Math.max(0, start), Math.max(0, total - viewportDuration));
       setViewportStartSec(clamped);
     }
-  }, [editedSec, editedTotalDuration, durationSec, zoom, viewportStartSec]);
+  }, [displaySec, editedTotalDuration, durationSec, zoom, viewportStartSec]);
+
+  // Smooth playhead interpolation between position events to mask IPC stalls
+  useEffect(() => {
+    let raf = 0;
+    let lastTs = performance.now();
+    const tick = () => {
+      const now = performance.now();
+      const dt = (now - lastTs) / 1000;
+      lastTs = now;
+      if (playing) {
+        // Assume 1.0x for now; can be extended to track rate
+        const next = displaySec + dt;
+        // Clamp to edited duration if known
+        const total = editedTotalDuration || durationSec || Number.POSITIVE_INFINITY;
+        setDisplaySec(Math.min(next, total));
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, editedTotalDuration, durationSec, displaySec]);
 
   // Draw waveform (heavy) respecting viewport; avoid on every position tick
   useEffect(() => {
@@ -493,11 +516,11 @@ export default function JuceEditorWindow({ src, peaksPort }: { src?: string; pea
       }
     }
     // Playhead
-    const rel = (editedSec - startSec) / Math.max(1e-9, (endSec - startSec));
+    const rel = (displaySec - startSec) / Math.max(1e-9, (endSec - startSec));
     const px = Math.min(w - 1, Math.max(0, Math.round(rel * w)));
     ctx.fillStyle = playheadCss;
     ctx.fillRect(px, 0, 1, h);
-  }, [editedSec, playheadCss, editedClips, selectedClipId, viewportStartSec, zoom, editedTotalDuration, durationSec]);
+  }, [displaySec, playheadCss, editedClips, selectedClipId, viewportStartSec, zoom, editedTotalDuration, durationSec]);
 
   const toggle = useCallback(async () => {
     if (!active) {
