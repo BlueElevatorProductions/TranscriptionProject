@@ -797,49 +797,66 @@ int main() {
       continue;
     }
     if (contains("\"type\":\"updateEdl\"")) {
-      // Parse clips and build segments in 'order' with optional originalStartSec/originalEndSec
-      std::vector<std::tuple<double,double,int,double,double>> items; // start,end,order,origStart,origEnd
-      size_t pscan = 0;
-      while (true) {
-        size_t ps = line.find("\"startSec\"", pscan);
-        if (ps == std::string::npos) break;
-        size_t cs = line.find(':', ps);
-        size_t pe = line.find_first_of(",}\n", cs + 1);
-        double start = 0.0; try { start = std::stod(line.substr(cs + 1, (pe == std::string::npos ? line.size() : pe) - (cs + 1))); } catch (...) {}
-        
-        size_t peKey = line.find("\"endSec\"", pe == std::string::npos ? cs : pe);
-        if (peKey == std::string::npos) break;
-        size_t ce = line.find(':', peKey);
-        size_t pe2 = line.find_first_of(",}\n", ce + 1);
-        double end = start; try { end = std::stod(line.substr(ce + 1, (pe2 == std::string::npos ? line.size() : pe2) - (ce + 1))); } catch (...) {}
-        
-        size_t poKey = line.find("\"order\"", pe2 == std::string::npos ? ce : pe2);
-        if (poKey == std::string::npos) break;
-        size_t co = line.find(':', poKey);
-        size_t pe3 = line.find_first_of(",}\n", co + 1);
-        int order = 0; try { order = std::stoi(line.substr(co + 1, (pe3 == std::string::npos ? line.size() : pe3) - (co + 1))); } catch (...) {}
-        
-        // Parse optional originalStartSec and originalEndSec within current item window
-        // Current item window is from after endSec (pe2) up to before the next item's "id" or end of line
-        double origStart = -1, origEnd = -1;
-        size_t windowStart = (pe2 == std::string::npos ? (ce + 1) : pe2);
-        size_t nextId = line.find("\"id\"", pe3 == std::string::npos ? windowStart : pe3);
-        size_t windowEnd = (nextId == std::string::npos ? line.size() : nextId);
-        size_t posKey = line.find("\"originalStartSec\"", windowStart);
-        if (posKey != std::string::npos && posKey < windowEnd) {
-          size_t cos = line.find(':', posKey);
-          size_t pe4 = line.find_first_of(",}\n", cos + 1);
-          try { origStart = std::stod(line.substr(cos + 1, (pe4 == std::string::npos ? line.size() : pe4) - (cos + 1))); } catch (...) {}
-          size_t poeKey = line.find("\"originalEndSec\"", (pe4 == std::string::npos ? (cos + 1) : pe4));
-          if (poeKey != std::string::npos && poeKey < windowEnd) {
-            size_t coe = line.find(':', poeKey);
-            size_t pe5 = line.find_first_of(",}\n", coe + 1);
-            try { origEnd = std::stod(line.substr(coe + 1, (pe5 == std::string::npos ? line.size() : pe5) - (coe + 1))); } catch (...) {}
-          }
+      // Parse clips array robustly by extracting each object substring first
+      auto findClipsArray = [&](size_t& aStart, size_t& aEnd) -> bool {
+        size_t key = line.find("\"clips\"");
+        if (key == std::string::npos) return false;
+        size_t colon = line.find(':', key);
+        if (colon == std::string::npos) return false;
+        size_t lb = line.find('[', colon);
+        if (lb == std::string::npos) return false;
+        int depth = 1; size_t i = lb + 1;
+        while (i < line.size() && depth > 0) {
+          if (line[i] == '[') depth++;
+          else if (line[i] == ']') depth--;
+          i++;
         }
-        
-        items.emplace_back(start, end, order, origStart, origEnd);
-        pscan = pe3 == std::string::npos ? line.size() : pe3;
+        if (depth != 0) return false;
+        aStart = lb + 1; aEnd = i - 1; return true;
+      };
+
+      size_t aStart = 0, aEnd = 0;
+      std::vector<std::string> itemStrings;
+      if (findClipsArray(aStart, aEnd)) {
+        // Extract top-level JSON objects inside the clips array
+        size_t i = aStart;
+        while (i < aEnd) {
+          while (i < aEnd && (line[i] == ' ' || line[i] == ',' || line[i] == '\n' || line[i] == '\r' || line[i] == '\t')) i++;
+          if (i >= aEnd) break;
+          if (line[i] != '{') { i++; continue; }
+          int depth = 1; size_t objStart = i; i++;
+          while (i < aEnd && depth > 0) {
+            if (line[i] == '{') depth++;
+            else if (line[i] == '}') depth--;
+            i++;
+          }
+          size_t objEnd = i; // position after closing brace
+          itemStrings.push_back(line.substr(objStart, objEnd - objStart));
+        }
+      }
+
+      auto extractNumber = [&](const std::string& s, const char* key) -> double {
+        size_t p = s.find(key);
+        if (p == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+        size_t c = s.find(':', p);
+        if (c == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+        size_t e = s.find_first_of(",}\n", c + 1);
+        std::string token = s.substr(c + 1, (e == std::string::npos ? s.size() : e) - (c + 1));
+        try { return std::stod(token); } catch (...) { return std::numeric_limits<double>::quiet_NaN(); }
+      };
+
+      std::vector<std::tuple<double,double,int,double,double>> items; // start,end,order,origStart,origEnd
+      for (const auto& obj : itemStrings) {
+        double start = extractNumber(obj, "\"startSec\"");
+        double end   = extractNumber(obj, "\"endSec\"");
+        double ord   = extractNumber(obj, "\"order\"");
+        double oS    = extractNumber(obj, "\"originalStartSec\"");
+        double oE    = extractNumber(obj, "\"originalEndSec\"");
+        if (!(start == start) || !(end == end) || !(ord == ord)) continue; // NaN guard
+        // Normalize ordering and bounds
+        if (end < start) std::swap(end, start);
+        int order = (int) ord;
+        items.emplace_back(start, end, order, oS, oE);
       }
       std::sort(items.begin(), items.end(), [](const auto& a, const auto& b){ return std::get<2>(a) < std::get<2>(b); });
       std::vector<Segment> segs;
