@@ -346,7 +346,8 @@ function LexicalTranscriptEditorContent({
         readOnly={readOnly}
       />
       
-      {/* Clip creation plugin */}
+      {/* Clip creation plugin (Edit mode only) */}
+      {!readOnly && (
       <ClipCreationPlugin
         onClipCreate={(clip) => {
           if (UI_DEBUG) console.log('Clip created:', clip);
@@ -361,7 +362,7 @@ function LexicalTranscriptEditorContent({
           // Handle clip deletion
         }}
         onClipPlay={onWordClick}
-      />
+      />)}
       
       {/* Text formatting plugin */}
       <FormattingPlugin 

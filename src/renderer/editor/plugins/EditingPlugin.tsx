@@ -254,16 +254,13 @@ export default function EditingPlugin({
 
   // Handle right-click context menu for words
   const handleContextMenu = useCallback((event: MouseEvent) => {
-    if (readOnly) return;
-
+    if (readOnly) return; // No menu in Listen Mode
     const target = event.target as HTMLElement;
-    
-    if (target.classList.contains('lexical-word-node')) {
-      event.preventDefault();
-      event.stopPropagation();
-      
-      showWordContextMenu(event.clientX, event.clientY, target);
-    }
+    const wordEl = target.closest('.lexical-word-node') as HTMLElement | null;
+    if (!wordEl) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showWordContextMenu(event.clientX, event.clientY, wordEl);
   }, [readOnly]);
 
   // Show word context menu
@@ -274,10 +271,17 @@ export default function EditingPlugin({
     }
 
     const menu = document.createElement('div');
-    menu.className = 'editing-context-menu fixed bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1';
+    // Styling via lexical-editor.css (.editing-context-menu) so it matches app theme
+    menu.className = 'editing-context-menu fixed z-50 py-1';
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
-    menu.style.minWidth = '160px';
+    menu.style.minWidth = '200px';
+
+    // Title
+    const title = document.createElement('div');
+    title.textContent = 'Transcript Editing';
+    title.className = 'px-3 py-2 text-xs uppercase tracking-wide opacity-70';
+    menu.appendChild(title);
 
     const menuItems = [
       {
@@ -303,14 +307,6 @@ export default function EditingPlugin({
         action: () => deleteWord(element),
         icon: '🗑️',
         className: 'text-red-600'
-      },
-      {
-        type: 'separator'
-      },
-      {
-        label: 'Split Paragraph Here',
-        action: () => splitParagraph(element),
-        icon: '✂️'
       }
     ];
 
@@ -321,7 +317,7 @@ export default function EditingPlugin({
         menu.appendChild(separator);
       } else if (item.label && item.action) {
         const menuItem = document.createElement('button');
-        menuItem.className = `w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center gap-2 ${item.className || ''}`;
+        menuItem.className = `w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[hsl(var(--hover-bg))] ${item.className || ''}`;
         menuItem.innerHTML = `<span>${item.icon}</span> ${item.label}`;
         
         menuItem.addEventListener('click', () => {
@@ -349,6 +345,37 @@ export default function EditingPlugin({
     setTimeout(() => {
       document.addEventListener('click', handleClickOutside);
     }, 100);
+  };
+
+  // Enable editing of a word (same effect as double-click)
+  const startWordEdit = (element: HTMLElement) => {
+    editor.setEditable(true);
+    editor.update(() => {
+      const root = $getRoot();
+      let target: WordNode | null = null;
+      const find = (node: LexicalNode): WordNode | null => {
+        if ($isWordNode(node)) {
+          const el = editor.getElementByKey(node.getKey());
+          if (el === element) return node;
+        }
+        const children = (node as any).getChildren?.();
+        if (children) {
+          for (const c of children) { const r = find(c); if (r) return r; }
+        }
+        return null;
+      };
+      target = find(root);
+      if (target) {
+        const len = target.getTextContent().length;
+        // Select the whole word so typing replaces it
+        const range = $createRangeSelection();
+        // @ts-ignore
+        range.anchor.set(target.getKey(), 0, 'text');
+        // @ts-ignore
+        range.focus.set(target.getKey(), len, 'text');
+        $setSelection(range);
+      }
+    });
   };
 
   // Insert word before or after the target element
@@ -382,19 +409,25 @@ export default function EditingPlugin({
       targetWordNode = findWordNode(root);
 
       if (targetWordNode) {
-        // Create new word node with timing interpolation
-        const startTime = position === 'before' ? 
-          Math.max(0, targetWordNode.getStart() - 0.5) : 
-          targetWordNode.getEnd();
-        
-        const endTime = position === 'before' ? 
-          targetWordNode.getStart() : 
-          targetWordNode.getEnd() + 0.5;
+        // New word takes half of the target word's duration
+        const wStart = targetWordNode.getStart();
+        const wEnd = targetWordNode.getEnd();
+        const mid = wStart + (wEnd - wStart) / 2;
+        let newStart = wStart, newEnd = wEnd;
+        if (position === 'before') {
+          newStart = wStart; newEnd = mid;
+          // shrink original to second half
+          targetWordNode.setTiming(mid, wEnd);
+        } else {
+          newStart = mid; newEnd = wEnd;
+          // shrink original to first half
+          targetWordNode.setTiming(wStart, mid);
+        }
 
         const newWordNode = $createWordNode(
           newWord.trim(),
-          startTime,
-          endTime,
+          newStart,
+          newEnd,
           targetWordNode.getSpeakerId(),
           1.0
         );
@@ -408,7 +441,7 @@ export default function EditingPlugin({
           targetWordNode.insertAfter(newWordNode);
         }
 
-        // Call the callback
+        // Callback hook
         const { segmentIndex, wordIndex } = findWordPosition(targetWordNode);
         const insertIndex = position === 'before' ? wordIndex : wordIndex + 1;
         onWordInsert?.(segmentIndex, insertIndex, newWord.trim());
@@ -433,11 +466,20 @@ export default function EditingPlugin({
           if (nodeElement === element) {
             // Get position before deletion
             const { segmentIndex, wordIndex } = findWordPosition(node);
-            
+            const dur = node.getEnd() - node.getStart();
+            const half = dur / 2;
+            // Extend neighbors by half each to preserve continuity
+            const container = (node.getParent()?.getParent?.()) as any; // word -> paragraph -> clip container
+            const words = (container?.getWordNodes?.() || []) as WordNode[];
+            const idx = words.findIndex(w => w.getKey() === (node as any).getKey());
+            const prev = idx > 0 ? words[idx - 1] : null;
+            const next = idx >= 0 && idx < words.length - 1 ? words[idx + 1] : null;
+            if (prev) prev.setTiming(prev.getStart(), prev.getEnd() + half);
+            if (next) next.setTiming(Math.max(next.getStart() - half, (prev?.getEnd() ?? next.getStart() - half)), next.getEnd());
             // Remove the node
             node.remove();
             
-            // Call the callback
+            // Callback
             onWordDelete?.(segmentIndex, wordIndex);
             return true;
           }
