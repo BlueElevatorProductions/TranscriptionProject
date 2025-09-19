@@ -813,7 +813,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   };
 
   return (
-    <div className="flex flex-col text-text overflow-hidden" style={{ height: '100dvh' }}>
+    <div className="flex flex-col text-text overflow-hidden" style={{ height: '100dvh', background: 'transparent' }}>
       {/* Top Bar */}
       <TopBar
         mode={mode}
