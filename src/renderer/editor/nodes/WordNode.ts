@@ -62,6 +62,8 @@ export class WordNode extends TextNode {
   createDOM(config: EditorConfig): HTMLElement {
     const element = super.createDOM(config);
     element.classList.add('lexical-word-node');
+    // Expose node key for reliable DOM→Node mapping in plugins
+    try { element.setAttribute('data-lexical-node-key', this.getKey()); } catch {}
     
     // Add timing data attributes for debugging/styling (edited timeline)
     element.setAttribute('data-start-time', this.__editedStartTime.toString());
@@ -97,6 +99,8 @@ export class WordNode extends TextNode {
     if (prevNode.__speakerId !== this.__speakerId) {
       element.setAttribute('data-speaker-id', this.__speakerId);
     }
+    // Keep node key in sync
+    try { element.setAttribute('data-lexical-node-key', this.getKey()); } catch {}
     
     // Update playback state if it changed
     if (prevNode.__isCurrentlyPlaying !== this.__isCurrentlyPlaying) {

@@ -367,33 +367,37 @@ export default function EditingPlugin({
 
   // Insert word before or after the target element
   const insertWord = (element: HTMLElement, position: 'before' | 'after') => {
-    // Insert a placeholder and select it so typing replaces it
+    // Unlock editing and insert a placeholder, then select it so typing replaces it
     const placeholder = '____';
+    editor.setEditable(true);
 
     editor.update(() => {
+      // Map DOM element to WordNode via data key if present, else fallback traversal
       const root = $getRoot();
       let targetWordNode: WordNode | null = null;
-      
-      // Find the target word node
-      const findWordNode = (node: LexicalNode): WordNode | null => {
-        if ($isWordNode(node)) {
-          const nodeElement = editor.getElementByKey(node.getKey());
-          if (nodeElement === element) {
-            return node;
+      const key = element.getAttribute('data-lexical-node-key');
+      if (key) {
+        const map: any = editor.getEditorState()._nodeMap;
+        const candidate = map.get(key);
+        if ($isWordNode(candidate)) targetWordNode = candidate as WordNode;
+      }
+      if (!targetWordNode) {
+        const findWordNode = (node: LexicalNode): WordNode | null => {
+          if ($isWordNode(node)) {
+            const nodeElement = editor.getElementByKey((node as any).getKey());
+            if (nodeElement === element) return node as WordNode;
           }
-        }
-
-        if ($isElementNode(node)) {
-          const children = (node as ElementNode).getChildren();
-          for (const child of children) {
-            const found = findWordNode(child);
-            if (found) return found;
+          if ($isElementNode(node)) {
+            const children = (node as ElementNode).getChildren();
+            for (const child of children) {
+              const found = findWordNode(child);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
-
-      targetWordNode = findWordNode(root);
+          return null;
+        };
+        targetWordNode = findWordNode(root);
+      }
 
       if (targetWordNode) {
         // New word takes half of the target word's duration
