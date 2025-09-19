@@ -12,7 +12,8 @@
 }
 
 .lexical-word-node:hover {
-  background-color: #dbeafe;
+  background-color: hsl(var(--highlight-bg));
+  color: hsl(var(--highlight-text));
 }
 
 .lexical-word-node.currently-playing {
