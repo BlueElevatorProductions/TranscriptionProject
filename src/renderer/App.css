@@ -80,8 +80,8 @@
     @apply font-sans antialiased text-foreground;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background: transparent; /* Transparent for window-level vibrancy */
-    padding-bottom: 80px; /* Space for fixed audio player */
-    overflow: hidden; /* Prevent scrollbars on transparent window */
+    /* Do not reserve global bottom space or globally disable scroll.
+       Reserve player space inside the app layout and let content areas scroll. */
   }
   
   /* Custom scrollbar */
@@ -452,7 +452,7 @@
 
 /* Professional Launch Screen Layout */
 .launch-container {
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   background: var(--bg-primary);
 }
@@ -860,7 +860,7 @@
 
 /* Main App Layout */
 .app {
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;

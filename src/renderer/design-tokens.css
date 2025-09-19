@@ -71,6 +71,7 @@
     --transcript-text: 0 0% 95%;      /* Default white transcript text */
     --player-bg: 10 15% 18%;
     --player-text: 50 100% 95%;
+    --player-height: 64px;          /* Reserved height for bottom player (if fixed) */
     --hover-bg: 220 15% 25%;
     --panel-bg-blur: hsla(220 15% 15% / var(--panel-bg-opacity));
 

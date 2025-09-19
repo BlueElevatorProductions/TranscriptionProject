@@ -35,6 +35,7 @@ import FormattingPlugin from './plugins/FormattingPlugin';
 // import ClipHeaderPlugin from './plugins/ClipHeaderPlugin';
 // import ClipSettingsPlugin from './plugins/ClipSettingsPlugin';
 import ClipSpeakerPlugin from './plugins/ClipSpeakerPlugin';
+import DoubleClickEditGuardPlugin from './plugins/DoubleClickEditGuardPlugin';
 
 import { 
   segmentsToEditorState,
@@ -424,6 +425,9 @@ export function LexicalTranscriptEditor({
     onError: (error: Error) => {
       console.error('Lexical transcript editor error:', error);
     },
+    // Base editable state is derived from readOnly, but when in edit mode
+    // we use DoubleClickEditGuardPlugin to temporarily enable editing only
+    // after a double click.
     editable: !readOnly,
     theme: {
       text: {
@@ -488,6 +492,9 @@ export function LexicalTranscriptEditor({
               audioState={audioState}
               audioActions={audioActions}
             />
+            {/* In Edit mode (readOnly=false), keep text uneditable by default
+                and only enable on double-click */}
+            {!readOnly && <DoubleClickEditGuardPlugin enabled={true} />}
           </div>
         </LexicalComposer>
       </div>

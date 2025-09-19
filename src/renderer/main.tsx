@@ -30,7 +30,7 @@ class ErrorBoundary extends React.Component<
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          height: '100vh',
+          height: '100dvh',
           backgroundColor: '#f5f5f5',
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           padding: '20px'

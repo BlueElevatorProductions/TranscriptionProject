@@ -55,6 +55,85 @@ export default function EditingPlugin({
     // no-op: let Lexical handle selection/editing
   }, [readOnly]);
 
+  // Space-to-advance editing: when editor is editable and the user presses Space,
+  // move selection to the next WordNode and select it fully so typing replaces it.
+  useEffect(() => {
+    if (readOnly) return;
+    const root = editor.getRootElement();
+    if (!root) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== ' ') return;
+      // Only intercept when editor is editable (i.e., after double-click guard enabled it)
+      if (!editor.isEditable()) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      editor.update(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection)) return;
+
+        // Ascend to WordNode from anchor
+        let node: any = selection.anchor.getNode();
+        const getType = (n: any) => (n && n.getType ? n.getType() : undefined);
+        while (node && getType(node) !== 'word') {
+          const p = node.getParent && node.getParent();
+          if (!p) break;
+          node = p;
+        }
+        if (!node || getType(node) !== 'word') return;
+
+        // Find next WordNode in document order
+        const nextWord = (() => {
+          const isWord = (n: any) => n && getType(n) === 'word';
+          // Depth-first forward traversal starting from node's nextSibling chain
+          const forward = (start: any): any | null => {
+            let cur: any = start;
+            while (cur) {
+              if (isWord(cur)) return cur;
+              const children = cur.getChildren ? cur.getChildren() : null;
+              if (children && children.length) {
+                // descend to first child
+                const found = forward(children[0]);
+                if (found) return found;
+              }
+              const sib = cur.getNextSibling ? cur.getNextSibling() : null;
+              if (sib) { cur = sib; continue; }
+              // climb up until a next sibling is found
+              let parent = cur.getParent && cur.getParent();
+              while (parent && !(parent.getNextSibling && parent.getNextSibling())) {
+                cur = parent;
+                parent = parent.getParent && parent.getParent();
+              }
+              cur = parent ? parent.getNextSibling() : null;
+            }
+            return null;
+          };
+          const start = node.getNextSibling ? node.getNextSibling() : null;
+          return forward(start);
+        })();
+
+        if (nextWord) {
+          const size = nextWord.getTextContent ? nextWord.getTextContent().length : 0;
+          if (typeof nextWord.select === 'function') {
+            nextWord.select(0, size);
+          } else {
+            // Fallback: create a new range selection
+            const range = $createRangeSelection();
+            // @ts-ignore anchor/focus helpers exist in this version
+            range.anchor.set(nextWord.getKey(), 0, 'text');
+            // @ts-ignore
+            range.focus.set(nextWord.getKey(), size, 'text');
+            $setSelection(range);
+          }
+        }
+      });
+    };
+
+    root.addEventListener('keydown', onKeyDown, true);
+    return () => root.removeEventListener('keydown', onKeyDown, true);
+  }, [editor, readOnly]);
+
   // Start editing a word
   // Remove inline replacement editor in favor of native Lexical text editing
 
