@@ -22,6 +22,7 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
   useEffect(() => {
     const root = editor.getRootElement();
     if (!root) return;
+    const DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
 
     // Initialize: if guard is enabled, lock editing until double-click
     if (enabled) {
@@ -41,6 +42,7 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
       // Require the double-click to occur on or within a word node
       const wordEl = baseEl?.closest?.('.lexical-word-node');
       if (!wordEl) return;
+      if (DEBUG) console.log('[TranscriptGuard] dblclick on word; enabling typing');
       editor.setEditable(true);
       isTemporarilyEditableRef.current = true;
       lastEnableAtRef.current = Date.now();
@@ -49,12 +51,14 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
         const key = wordEl.getAttribute('data-lexical-node-key');
         if (key) lastEditWordKeyRef.current = key;
       } catch {}
+      // Let Lexical's native double-click selection stand; guard will keep typing enabled
     };
 
     window.addEventListener('dblclick', handleDblClick, true);
     
     // Allow other plugins (e.g., context menu) to explicitly enable editing
     const handleEnable = () => {
+      if (DEBUG) console.log('[TranscriptGuard] external enable editing');
       editor.setEditable(true);
       isTemporarilyEditableRef.current = true;
       lastEnableAtRef.current = Date.now();
@@ -71,6 +75,7 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
       const printable = k.length === 1;
       const editingKeys = printable || k === 'Backspace' || k === 'Delete' || k === 'Enter' || k === ' ' || k === 'Tab';
       if (editingKeys) {
+        if (DEBUG) console.log('[TranscriptGuard] key blocked before enable:', k);
         e.preventDefault();
         e.stopPropagation();
       }
@@ -98,11 +103,20 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
       // Grace period after enabling to let selection settle on the double-clicked word
       if (Date.now() - lastEnableAtRef.current < 200) return;
       editorState.read(() => {
-        const selection: any = editor.getEditorState()._selection || null;
-        if (!selection || typeof selection.getNodes !== 'function') return;
-        const nodes = selection.getNodes();
-        const hasWord = nodes.some((n: any) => n?.getType?.() === 'word');
-        if (!hasWord) {
+        const sel: any = editor.getEditorState()._selection || null;
+        // Only act on RangeSelection; ignore node selection changes
+        if (!sel || typeof sel.getNodes !== 'function' || typeof sel.anchor?.getNode !== 'function') return;
+        // Ascend from anchor to detect if we're within a WordNode
+        let n: any = sel.anchor.getNode();
+        let inWord = false;
+        const safety = 20;
+        let hop = 0;
+        while (n && hop++ < safety) {
+          if (typeof n.getType === 'function' && n.getType() === 'word') { inWord = true; break; }
+          n = n.getParent && n.getParent();
+        }
+        if (!inWord) {
+          if (DEBUG) console.log('[TranscriptGuard] selection left word; disabling typing');
           editor.setEditable(false);
           isTemporarilyEditableRef.current = false;
           lastEditWordKeyRef.current = null;
