@@ -18,7 +18,6 @@ import {
   ParagraphNode,
 } from 'lexical';
 import { WordNode, $isWordNode, $createWordNode } from '../nodes/WordNode';
-import { ClipContainerNode } from '../nodes/ClipContainerNode';
 import { SegmentNode, $isSegmentNode } from '../nodes/SegmentNode';
 import { $isSpeakerNode } from '../nodes/SpeakerNode';
 import { ClipContainerNode } from '../nodes/ClipContainerNode';
