@@ -51,8 +51,24 @@ export function GlassAudioPlayer({
     return `${m}:${s}`;
   };
 
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const apply = () => {
+      const h = el.offsetHeight || 0;
+      document.documentElement.style.setProperty('--player-height', `${h}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(() => apply());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isVisible]);
+
   return (
     <div
+      ref={wrapperRef}
       className={[
         // Positioning - fixed at bottom of window with slide animation
         "fixed bottom-0 left-0 right-0 z-50",
