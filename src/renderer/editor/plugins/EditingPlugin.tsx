@@ -18,6 +18,7 @@ import {
   ParagraphNode,
 } from 'lexical';
 import { WordNode, $isWordNode, $createWordNode } from '../nodes/WordNode';
+import { ClipContainerNode } from '../nodes/ClipContainerNode';
 import { SegmentNode, $isSegmentNode } from '../nodes/SegmentNode';
 import { $isSpeakerNode } from '../nodes/SpeakerNode';
 import { ClipContainerNode } from '../nodes/ClipContainerNode';
@@ -217,38 +218,24 @@ export default function EditingPlugin({
   const findWordPosition = (targetWordNode: WordNode): { segmentIndex: number; wordIndex: number } => {
     let segmentIndex = 0;
     let wordIndex = 0;
-
     editor.getEditorState().read(() => {
+      // Ascend to ClipContainerNode
+      let n: any = targetWordNode as any;
+      let container: ClipContainerNode | null = null;
+      while (n) {
+        if (n instanceof ClipContainerNode) { container = n; break; }
+        n = n.getParent && n.getParent();
+      }
+      if (!container) return;
+      // Find container index among root clip containers
       const root = $getRoot();
-      
-      const traverseForPosition = (node: any, currentSegmentIndex: number): boolean => {
-        if ($isSegmentNode(node)) {
-          const words = node.getWordNodes();
-          const wordNodeIndex = words.findIndex(word => 
-            $isWordNode(word) && word.getKey() === targetWordNode.getKey()
-          );
-          
-          if (wordNodeIndex !== -1) {
-            segmentIndex = currentSegmentIndex;
-            wordIndex = wordNodeIndex;
-            return true;
-          }
-          
-          currentSegmentIndex++;
-        }
-
-        const children = node.getChildren();
-        for (const child of children) {
-          if (traverseForPosition(child, currentSegmentIndex)) {
-            return true;
-          }
-        }
-        return false;
-      };
-
-      traverseForPosition(root, 0);
+      const children = root.getChildren();
+      const clips = children.filter((c: any) => c instanceof ClipContainerNode) as ClipContainerNode[];
+      segmentIndex = clips.findIndex(c => c === container);
+      // Word index within this container
+      const words = (container as any).getWordNodes?.() as WordNode[];
+      wordIndex = words ? words.findIndex((w) => w.getKey() === targetWordNode.getKey()) : 0;
     });
-
     return { segmentIndex, wordIndex };
   };
 
@@ -380,8 +367,8 @@ export default function EditingPlugin({
 
   // Insert word before or after the target element
   const insertWord = (element: HTMLElement, position: 'before' | 'after') => {
-    const newWord = window.prompt(`Enter new word to insert ${position}:`);
-    if (!newWord || !newWord.trim()) return;
+    // Insert a placeholder and select it so typing replaces it
+    const placeholder = '____';
 
     editor.update(() => {
       const root = $getRoot();
@@ -425,7 +412,7 @@ export default function EditingPlugin({
         }
 
         const newWordNode = $createWordNode(
-          newWord.trim(),
+          placeholder,
           newStart,
           newEnd,
           targetWordNode.getSpeakerId(),
@@ -441,10 +428,14 @@ export default function EditingPlugin({
           targetWordNode.insertAfter(newWordNode);
         }
 
-        // Callback hook
-        const { segmentIndex, wordIndex } = findWordPosition(targetWordNode);
-        const insertIndex = position === 'before' ? wordIndex : wordIndex + 1;
-        onWordInsert?.(segmentIndex, insertIndex, newWord.trim());
+        // Select the inserted word so typing replaces it
+        const len = placeholder.length;
+        const range = $createRangeSelection();
+        // @ts-ignore
+        range.anchor.set(newWordNode.getKey(), 0, 'text');
+        // @ts-ignore
+        range.focus.set(newWordNode.getKey(), len, 'text');
+        $setSelection(range);
       }
     });
   };
