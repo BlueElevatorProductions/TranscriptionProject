@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { $createRangeSelection, $setSelection } from 'lexical';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 
 interface Props {
@@ -51,7 +52,25 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
         const key = wordEl.getAttribute('data-lexical-node-key');
         if (key) lastEditWordKeyRef.current = key;
       } catch {}
-      // Let Lexical's native double-click selection stand; guard will keep typing enabled
+      // Programmatically select the word to guarantee caret inside WordNode
+      try {
+        const key = wordEl.getAttribute('data-lexical-node-key');
+        if (key) {
+          editor.update(() => {
+            const map: any = editor.getEditorState()._nodeMap;
+            const node: any = map.get(key);
+            if (node && typeof node.getTextContent === 'function') {
+              const len = node.getTextContent().length;
+              const range = $createRangeSelection();
+              // @ts-ignore anchor/focus API available in this version
+              range.anchor.set(node.getKey(), 0, 'text');
+              // @ts-ignore
+              range.focus.set(node.getKey(), len, 'text');
+              $setSelection(range);
+            }
+          });
+        }
+      } catch {}
     };
 
     window.addEventListener('dblclick', handleDblClick, true);
@@ -101,7 +120,7 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
       if (!enabled) return;
       if (!isTemporarilyEditableRef.current) return;
       // Grace period after enabling to let selection settle on the double-clicked word
-      if (Date.now() - lastEnableAtRef.current < 200) return;
+      if (Date.now() - lastEnableAtRef.current < 300) return;
       editorState.read(() => {
         const sel: any = editor.getEditorState()._selection || null;
         // Only act on RangeSelection; ignore node selection changes
