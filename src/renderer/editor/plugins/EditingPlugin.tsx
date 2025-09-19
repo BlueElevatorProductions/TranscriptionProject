@@ -308,8 +308,11 @@ export default function EditingPlugin({
         
         menuItem.addEventListener('click', () => {
           item.action();
-          document.body.removeChild(menu);
+          const current = contextMenuRef.current;
+          if (current && current.parentNode) current.parentNode.removeChild(current);
           contextMenuRef.current = null;
+          // Also remove outside click listener if attached
+          document.removeEventListener('click', handleClickOutside);
         });
         
         menu.appendChild(menuItem);
@@ -321,8 +324,13 @@ export default function EditingPlugin({
 
     // Handle clicks outside menu
     const handleClickOutside = (e: MouseEvent) => {
-      if (menu && !menu.contains(e.target as Node)) {
-        document.body.removeChild(menu);
+      const current = contextMenuRef.current;
+      if (!current) {
+        document.removeEventListener('click', handleClickOutside);
+        return;
+      }
+      if (!current.contains(e.target as Node)) {
+        if (current.parentNode) current.parentNode.removeChild(current);
         contextMenuRef.current = null;
         document.removeEventListener('click', handleClickOutside);
       }
