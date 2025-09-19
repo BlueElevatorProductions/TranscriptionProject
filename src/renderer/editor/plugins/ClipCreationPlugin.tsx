@@ -88,42 +88,9 @@ export default function ClipCreationPlugin({
   }, [editor]);
 
   // Add visual indicator for clip-able selection
-  const addSelectionIndicator = (startTime: number, endTime: number) => {
-    // Add floating button or indicator near selection
-    const indicator = document.getElementById('clip-creation-indicator');
-    if (!indicator) {
-      const button = document.createElement('button');
-      button.id = 'clip-creation-indicator';
-      button.className = 'fixed z-50 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-medium shadow-lg transition-all duration-200 flex items-center gap-1';
-      button.innerHTML = `
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        Create Clip
-      `;
-      
-      button.addEventListener('click', () => {
-        createClipFromSelection();
-      });
-      
-      // Position near mouse cursor or selection
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        button.style.left = `${rect.left + rect.width / 2 - 50}px`;
-        button.style.top = `${rect.top - 40}px`;
-      }
-      
-      document.body.appendChild(button);
-      
-      // Auto-remove after delay if not used
-      setTimeout(() => {
-        if (document.getElementById('clip-creation-indicator')) {
-          removeSelectionIndicator();
-        }
-      }, 5000);
-    }
+  const addSelectionIndicator = (_startTime: number, _endTime: number) => {
+    // Disabled legacy '+ Create Clip' UI
+    removeSelectionIndicator();
   };
 
   // Remove selection indicator

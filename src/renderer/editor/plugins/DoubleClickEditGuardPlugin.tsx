@@ -17,6 +17,7 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
   const [editor] = useLexicalComposerContext();
   const isTemporarilyEditableRef = useRef(false);
   const lastEditWordKeyRef = useRef<string | null>(null);
+  const lastEnableAtRef = useRef<number>(0);
 
   useEffect(() => {
     const root = editor.getRootElement();
@@ -31,12 +32,18 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
     const handleDblClick = (e: MouseEvent) => {
       if (!enabled) return;
       // Only activate if the double-click is inside the editor root
-      if (!root.contains(e.target as Node)) return;
-      // Require the double-click to occur on a word node
-      const wordEl = (e.target as HTMLElement)?.closest?.('.lexical-word-node');
+      const targetNode = e.target as Node;
+      if (!root.contains(targetNode)) return;
+      // Resolve HTMLElement for closest() even when target is a Text node
+      const baseEl = (targetNode as any).nodeType === 1
+        ? (targetNode as HTMLElement)
+        : ((targetNode as any).parentElement as HTMLElement | null);
+      // Require the double-click to occur on or within a word node
+      const wordEl = baseEl?.closest?.('.lexical-word-node');
       if (!wordEl) return;
       editor.setEditable(true);
       isTemporarilyEditableRef.current = true;
+      lastEnableAtRef.current = Date.now();
       // Remember which word was activated (best effort)
       try {
         const key = wordEl.getAttribute('data-lexical-node-key');
@@ -50,6 +57,7 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
     const handleEnable = () => {
       editor.setEditable(true);
       isTemporarilyEditableRef.current = true;
+      lastEnableAtRef.current = Date.now();
     };
     window.addEventListener('transcript-enable-editing', handleEnable as any);
 
@@ -87,6 +95,8 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
     const unregister = editor.registerUpdateListener(({ editorState }) => {
       if (!enabled) return;
       if (!isTemporarilyEditableRef.current) return;
+      // Grace period after enabling to let selection settle on the double-clicked word
+      if (Date.now() - lastEnableAtRef.current < 200) return;
       editorState.read(() => {
         const selection: any = editor.getEditorState()._selection || null;
         if (!selection || typeof selection.getNodes !== 'function') return;
