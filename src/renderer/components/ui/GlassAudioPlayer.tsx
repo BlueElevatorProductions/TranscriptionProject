@@ -54,8 +54,8 @@ export function GlassAudioPlayer({
   return (
     <div
       className={[
-        // Positioning - absolute at bottom of container with slide animation
-        "absolute bottom-0 left-0 right-0 z-50",
+        // Positioning - fixed at bottom of window with slide animation
+        "fixed bottom-0 left-0 right-0 z-50",
         "transition-transform duration-300 ease-out",
         isVisible ? "translate-y-0" : "translate-y-full",
         // Container padding to give some space from edges

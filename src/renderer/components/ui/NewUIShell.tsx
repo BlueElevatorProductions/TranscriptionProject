@@ -1047,7 +1047,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto" style={{ paddingBottom: 'var(--player-height)' }}>
             {renderMainContent()}
           </div>
         </main>
