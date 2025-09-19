@@ -46,6 +46,29 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
 
     window.addEventListener('dblclick', handleDblClick, true);
     
+    // Allow other plugins (e.g., context menu) to explicitly enable editing
+    const handleEnable = () => {
+      editor.setEditable(true);
+      isTemporarilyEditableRef.current = true;
+    };
+    window.addEventListener('transcript-enable-editing', handleEnable as any);
+
+    // Block typing when editing is not enabled yet
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (!enabled) return;
+      if (isTemporarilyEditableRef.current) return;
+      // Allow control/meta shortcuts (copy/paste/select all, etc.)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key;
+      const printable = k.length === 1;
+      const editingKeys = printable || k === 'Backspace' || k === 'Delete' || k === 'Enter' || k === ' ' || k === 'Tab';
+      if (editingKeys) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    root.addEventListener('keydown', onKeyDownCapture, true);
+
     // If user clicks anywhere that is not a word node, lock editing again.
     const handleMouseDown = (e: MouseEvent) => {
       if (!enabled) return;
@@ -79,6 +102,8 @@ export default function DoubleClickEditGuardPlugin({ enabled }: Props) {
 
     return () => {
       window.removeEventListener('dblclick', handleDblClick, true);
+      window.removeEventListener('transcript-enable-editing', handleEnable as any);
+      root.removeEventListener('keydown', onKeyDownCapture, true);
       root.removeEventListener('mousedown', handleMouseDown, true);
       unregister();
     };

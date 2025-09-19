@@ -344,6 +344,8 @@ export default function EditingPlugin({
   // Enable editing of a word (same effect as double-click)
   const startWordEdit = (element: HTMLElement) => {
     editor.setEditable(true);
+    // Inform guard plugin that editing is now allowed
+    window.dispatchEvent(new CustomEvent('transcript-enable-editing'));
     editor.update(() => {
       const root = $getRoot();
       let target: WordNode | null = null;
@@ -377,6 +379,7 @@ export default function EditingPlugin({
     // Unlock editing and insert a placeholder, then select it so typing replaces it
     const placeholder = '____';
     editor.setEditable(true);
+    window.dispatchEvent(new CustomEvent('transcript-enable-editing'));
 
     editor.update(() => {
       // Map DOM element to WordNode via data key if present, else fallback traversal
