@@ -13,6 +13,7 @@ import {
 } from 'lexical';
 
 export interface SerializedSpacerNode extends SerializedLexicalNode {
+  clipId?: string;
   durationSec: number;
   // Original audio timeline positions
   startSec: number;
@@ -25,6 +26,7 @@ export interface SerializedSpacerNode extends SerializedLexicalNode {
 }
 
 export class SpacerNode extends DecoratorNode<React.JSX.Element> {
+  __clipId?: string;
   __durationSec: number;
   __startSec: number;
   __endSec: number;
@@ -36,7 +38,9 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
   }
 
   static clone(node: SpacerNode): SpacerNode {
+    const n: any = node as any;
     return new SpacerNode(
+      n.__clipId,
       node.__durationSec,
       node.__startSec,
       node.__endSec,
@@ -47,6 +51,7 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
   }
 
   constructor(
+    clipId: string | undefined,
     durationSec: number,
     startSec: number,
     endSec: number,
@@ -55,6 +60,7 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
     key?: NodeKey
   ) {
     super(key);
+    this.__clipId = clipId;
     this.__durationSec = durationSec;
     this.__startSec = startSec;
     this.__endSec = endSec;
@@ -64,6 +70,7 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
 
   static importJSON(json: SerializedSpacerNode): SpacerNode {
     return new SpacerNode(
+      json.clipId,
       json.durationSec,
       json.startSec,
       json.endSec,
@@ -74,6 +81,7 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
 
   exportJSON(): SerializedSpacerNode {
     return {
+      clipId: this.__clipId,
       durationSec: this.__durationSec,
       startSec: this.__startSec,
       endSec: this.__endSec,
@@ -88,6 +96,9 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
     const el = document.createElement('span');
     el.className = 'lexical-spacer-node';
     el.setAttribute('data-spacer', 'true');
+    // Tell Lexical to ignore selection/edit logic for this subtree
+    el.setAttribute('data-lexical-editor-ignore', 'true');
+    try { el.setAttribute('data-lexical-node-key', this.getKey()); } catch {}
     // Provide timing data for highlighting sync
     // Original time domain (for seeking purposes)
     el.setAttribute('data-start-sec', String(this.__startSec));
@@ -95,6 +106,9 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
     // Edited time domain (for highlighting)
     el.setAttribute('data-edited-start-sec', String(this.__editedStartSec));
     el.setAttribute('data-edited-end-sec', String(this.__editedEndSec));
+    if (this.__clipId) {
+      el.setAttribute('data-clip-id', String(this.__clipId));
+    }
     el.setAttribute('contenteditable', 'false');
     return el;
   }
@@ -114,7 +128,8 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
       // Use global audio actions if available
       const actions = (globalThis as any).__LEXICAL_AUDIO_ACTIONS__;
       const state = (globalThis as any).__LEXICAL_AUDIO_STATE__;
-      if (actions) {
+      // Only trigger playback/seek in Listen Mode. In Edit Mode, treat click as selection only.
+      if (actions && state?.mode === 'listen') {
         const bias = Math.max(0, start - 0.01);
         try {
           actions.seekToOriginalTime(bias);
@@ -124,14 +139,28 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
         } catch {}
       }
     };
+    const handleMouseDown = (e: React.MouseEvent) => {
+      // Prevent Lexical text selection when clicking spacer in Edit Mode
+      e.preventDefault();
+      e.stopPropagation();
+    };
 
     return (
       <button
         type="button"
+        onMouseDown={handleMouseDown}
         onClick={handleClick}
         className="lexical-spacer-node inline-flex items-center px-2 py-0.5 mx-1 rounded-md bg-gray-200 text-gray-700 text-xs font-medium border border-gray-300 select-none"
         title={`Silent/music gap: ${label}`}
         style={{ pointerEvents: 'auto' }}
+        tabIndex={0}
+        data-lexical-editor-ignore="true"
+        data-lexical-node-key={(this as any).getKey?.()}
+        data-start-sec={String(this.__startSec)}
+        data-end-sec={String(this.__endSec)}
+        data-edited-start-sec={String(this.__editedStartSec)}
+        data-edited-end-sec={String(this.__editedEndSec)}
+        aria-label={`Gap ${label}`}
       >
         {label}
       </button>
@@ -147,9 +176,10 @@ export function $createSpacerNode(
   startSec: number,
   endSec: number,
   editedStartSec?: number,
-  editedEndSec?: number
+  editedEndSec?: number,
+  clipId?: string
 ): SpacerNode {
-  return new SpacerNode(durationSec, startSec, endSec, editedStartSec, editedEndSec);
+  return new SpacerNode(clipId, durationSec, startSec, endSec, editedStartSec, editedEndSec);
 }
 
 export function $isSpacerNode(node: LexicalNode | null | undefined): node is SpacerNode {

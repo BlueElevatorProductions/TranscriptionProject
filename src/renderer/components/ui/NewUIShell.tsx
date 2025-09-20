@@ -444,9 +444,10 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
           // Group segments into natural paragraphs
           const segmentGroups = groupSegmentsIntoParagraphs(selectedJob.result.segments, wordSegments);
 
-          // Build clips from model-provided word timings, and add transport gap clips for continuous playback
+          // Build normalized tokenized clips and add transport gap clips for continuous playback
           const computeClips = () => {
-            // Convert grouped segments to clips
+            // Convert grouped segments to normalized tokenized clips
+            let prevLastWordEnd: number | null = null;
             const transcriptionClips = segmentGroups.map((group: any[], groupIndex: number) => {
             // Combine words provided by the model from segments in this group
             let allGroupWords = group.flatMap((seg: any) => (seg.words || []).map((w: any) => ({
@@ -462,22 +463,22 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
             // Calculate group boundaries
             const firstSegment = group[0];
             const lastSegment = group[group.length - 1];
-            let startTime = firstSegment.start || 0;
+            let startTime = firstSegment.start || 0;  // Initialize startTime early
             const endTime = lastSegment.end || 0;
 
             // Combine all text from the group
             const combinedText = group.map(seg => seg.text).filter(Boolean).join(' ');
-            
+
             // Use the most common speaker in the group
             const speakerCounts = group.reduce((acc: Record<string, number>, seg) => {
               const speaker = seg.speaker || 'SPEAKER_00';
               acc[speaker] = (acc[speaker] || 0) + 1;
               return acc;
             }, {});
-            const dominantSpeaker = Object.keys(speakerCounts).reduce((a, b) => 
+            const dominantSpeaker = Object.keys(speakerCounts).reduce((a, b) =>
               speakerCounts[a] > speakerCounts[b] ? a : b
             );
-            
+
             console.log(`Group ${groupIndex}:`, {
               segmentCount: group.length,
               text: combinedText.substring(0, 100) + (combinedText.length > 100 ? '...' : ''),
@@ -487,13 +488,58 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
               speaker: dominantSpeaker
             });
             
+            // Normalize to tokens with 1-second rule
+            const tokens: import('../../types').Token[] = [];
+            const ONE = 1.0;
+            // Leading gap versus previous group
+            if (allGroupWords.length > 0) {
+              const firstWord = allGroupWords[0];
+              const leadGap = (prevLastWordEnd == null ? 0 : prevLastWordEnd) < firstWord.start
+                ? firstWord.start - (prevLastWordEnd ?? 0)
+                : 0;
+              if ((prevLastWordEnd == null && leadGap >= ONE) || (prevLastWordEnd != null && leadGap >= ONE)) {
+                tokens.push({ kind: 'gap', id: `g-${Math.round(((prevLastWordEnd ?? 0)*1000))}-${Math.round(firstWord.start*1000)}`, start: prevLastWordEnd ?? 0, end: firstWord.start, label: `${leadGap.toFixed(2)} sec` });
+              } else if (leadGap > 0 && leadGap < ONE) {
+                // Merge short leading gap into the first word by extending its start earlier
+                allGroupWords[0] = { ...firstWord, start: prevLastWordEnd ?? 0 };
+              }
+            }
+            // Walk words and internal gaps
+            for (let i = 0; i < allGroupWords.length; i++) {
+              const w = allGroupWords[i];
+              // Push word token
+              tokens.push({ kind: 'word', id: `w-${Math.round(w.start*1000)}`, text: w.word, start: w.start, end: w.end, speaker: dominantSpeaker, score: w.confidence });
+              // Internal gap to next word
+              if (i < allGroupWords.length - 1) {
+                const n = allGroupWords[i + 1];
+                const gap = Math.max(0, n.start - w.end);
+                if (gap >= ONE) {
+                  tokens.push({ kind: 'gap', id: `g-${Math.round(w.end*1000)}-${Math.round(n.start*1000)}`, start: w.end, end: n.start, label: `${gap.toFixed(2)} sec` });
+                } else if (gap > 0) {
+                  // Merge short gap into current word’s end
+                  allGroupWords[i] = { ...w, end: n.start };
+                }
+              }
+            }
+            // After merging short gaps, recompute startTime from first word
+            startTime = allGroupWords.length > 0 ? allGroupWords[0].start : firstSegment.start || 0;
+            prevLastWordEnd = allGroupWords.length > 0 ? allGroupWords[allGroupWords.length - 1].end : endTime;
+
+            console.log(`[Normalize] Group ${groupIndex} tokens:`, {
+              tokenCount: tokens.length,
+              head: tokens.slice(0, 5).map(t => t.kind),
+              startTime,
+              endTime,
+            });
+
             return {
               id: generateClipId('clip'),
               startTime,
               endTime,
-              startWordIndex: groupIndex * 1000, // Rough estimate, will be refined
+              startWordIndex: groupIndex * 1000,
               endWordIndex: (groupIndex + 1) * 1000,
               words: allGroupWords,
+              tokens,
               text: combinedText,
               speaker: dominantSpeaker,
               confidence: group.reduce((acc, seg) => acc + (seg.confidence || 0.95), 0) / group.length,
@@ -963,15 +1009,34 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
                 if (clipsToMerge.length >= 2) {
                   const firstClip = clipsToMerge[0];
                   const lastClip = clipsToMerge[clipsToMerge.length - 1];
-                  
-                  // Create merged clip
+
+                  // Generate random ID suffix for uniqueness
+                  const generateRandomId = () => Math.random().toString(36).substring(2, 15);
+
+                  // Debug: Check token merging
+                  const allHaveTokens = clipsToMerge.every(c => (c as any).tokens);
+                  const mergedTokens = allHaveTokens ? clipsToMerge.flatMap(c => (c as any).tokens || []) : undefined;
+
+                  if (UI_DEBUG) {
+                    console.log('[Merge] Token merging debug:', {
+                      clipsToMerge: clipsToMerge.length,
+                      allHaveTokens,
+                      tokenCounts: clipsToMerge.map(c => (c as any).tokens?.length || 0),
+                      mergedTokenCount: mergedTokens?.length || 0,
+                      mergedTokenTypes: mergedTokens?.slice(0, 10).map(t => t.kind) || 'none'
+                    });
+                  }
+
+                  // Create merged clip with proper token handling
                   const mergedClip = {
                     ...firstClip,
-                    id: `merged-${Date.now()}`,
+                    id: `merged-${Date.now()}-${generateRandomId()}`,
                     endTime: lastClip.endTime,
                     duration: lastClip.endTime - firstClip.startTime,
                     text: clipsToMerge.map(c => c.text).join(' '),
                     words: clipsToMerge.flatMap(c => c.words || []),
+                    // Merge tokens if ALL clips have them, otherwise remove to avoid conflicts
+                    tokens: mergedTokens,
                     type: 'user-created' as const,
                     createdAt: new Date().toISOString()
                   };

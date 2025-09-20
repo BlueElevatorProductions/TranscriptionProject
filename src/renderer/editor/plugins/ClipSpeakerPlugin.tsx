@@ -87,11 +87,11 @@ function Layer({ items, availableSpeakers, audioState, audioActions, onApplyClip
                 modifiedAt: Date.now(),
               } as any;
               const next = clips.slice();
-              // Remove any gaps between prevIdx and currIdx
-              let start = Math.min(prevIdx, currIdx);
-              let end = Math.max(prevIdx, currIdx);
-              // Splice range inclusive [start, end]
-              next.splice(start, end - start + 1, merged);
+              // Preserve gaps: remove only the two speech clips and insert merged at prevIdx
+              // Remove the later speech clip first to avoid index shift
+              next.splice(currIdx, 1);
+              // Replace the previous speech clip with merged
+              next.splice(prevIdx, 1, merged);
               // Renumber orders
               for (let i = 0; i < next.length; i++) next[i] = { ...next[i], order: i } as any;
               try { audioActions.updateClips(next); } catch {}
@@ -112,10 +112,9 @@ function Layer({ items, availableSpeakers, audioState, audioActions, onApplyClip
               const mergedWords = [...curr.words, ...nextClip.words];
               const merged = { ...curr, id: generateClipId('merged'), words: mergedWords, endTime: nextClip.endTime, endWordIndex: nextClip.endWordIndex, duration: nextClip.endTime - curr.startTime, text: mergedWords.map(w => w.word).join(' '), modifiedAt: Date.now() } as any;
               const next = clips.slice();
-              // Splice range inclusive [currIdx, nextIdx]
-              const start2 = Math.min(currIdx, nextIdx);
-              const count2 = Math.abs(nextIdx - currIdx) + 1;
-              next.splice(start2, count2, merged);
+              // Preserve gaps: remove only the two speech clips and insert merged at currIdx
+              next.splice(nextIdx, 1);
+              next.splice(currIdx, 1, merged);
               // Renumber orders
               for (let i = 0; i < next.length; i++) next[i] = { ...next[i], order: i } as any;
               try { audioActions.updateClips(next); } catch {}

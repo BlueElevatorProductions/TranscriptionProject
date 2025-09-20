@@ -11,7 +11,7 @@ import { useKeyboardManager } from '../hooks/useKeyboardManager';
 import { LexicalTranscriptEditor } from '../editor/LexicalTranscriptEditor';
 import { AudioErrorBoundary } from './AudioErrorBoundary';
 import { Clip } from '../types';
-import { TimelinePosition } from '../audio/AudioAppState';
+import { TimelinePosition, generateClipId } from '../audio/AudioAppState';
 import type { ProjectData } from '../types';
 import { GlassAudioPlayer } from './ui/GlassAudioPlayer';
 
@@ -43,8 +43,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
   );
   const [initializationError, setInitializationError] = useState<string | null>(null);
   const [audioPath, setAudioPath] = useState<string | null>(null);
-  const [cursorPosition, setCursorPosition] = useState<TimelinePosition | null>(null);
-  const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
+  // Cursor/selection now come from audioState (via CursorTrackingPlugin)
   const [editorVersion, setEditorVersion] = useState(0);
 
   // Derive clips
@@ -53,6 +52,11 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     const projectClips = projectState.projectData.clips.clips as Clip[];
     return [...projectClips]; // force new array reference
   }, [projectState.projectData, projectState.projectData?.clips?.clips]);
+
+  // Memoize filtered clips for editor to prevent unnecessary rebuilds on mode changes
+  const editorClips = useMemo(() => {
+    return mode === 'listen' ? clips.filter(c => c.status !== 'deleted') : clips;
+  }, [clips, mode]);
 
   // Derive speakers
   const speakers = useMemo(() => {
@@ -322,13 +326,22 @@ useEffect(() => {
   }, [clips, audioUrl, audioActions]);
 
   // Keyboard manager
+  // Implement Enter-to-split via Lexical plugin (token split)
+  const handleClipSplit = useCallback((clipId: string, _localWordIndex: number) => {
+    const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+    if (AUDIO_DEBUG) console.log('[AudioSystemIntegration] token-split scheduled', { clipId });
+    setTimeout(() => {
+      try { window.dispatchEvent(new CustomEvent('token-split', { detail: { clipId } })); } catch {}
+    }, 0);
+  }, []);
+
   useKeyboardManager({
     audioActions,
     audioState,
     mode,
-    cursorPosition,
-    selectedWordIds,
-    onClipSplit: () => {},
+    cursorPosition: audioState.cursorPosition,
+    selectedWordIds: audioState.selectedWordIds,
+    onClipSplit: handleClipSplit,
     onWordDelete: () => {},
     onModeSwitch: () => {},
     onNextClip: () => {},
@@ -390,7 +403,7 @@ useEffect(() => {
       <AudioErrorBoundary onRecoveryAttempt={handleRecoveryAttempt}>
         <LexicalTranscriptEditor
           key={`editor-v${editorVersion}`}
-          clips={mode === 'listen' ? clips.filter(c => c.status !== 'deleted') : clips}
+          clips={editorClips}
           currentTime={audioState.currentTime}
           enableClickSeek={mode === 'listen'}
           isPlaying={audioState.isPlaying}
@@ -398,6 +411,38 @@ useEffect(() => {
           onSegmentsChange={() => {}}
           onClipsChange={(updatedClips) => {
             if (!projectState.projectData) return;
+
+            // Check if clips have actually changed to prevent unnecessary project updates
+            // Exclude volatile fields like timestamps that change on every editorStateToClips call
+            const currentClips = projectState.projectData.clips?.clips as Clip[] || [];
+
+            const clipsChanged = updatedClips.length !== currentClips.length ||
+              updatedClips.some((clip, i) => {
+                const current = currentClips[i];
+                if (!current) return true;
+
+                // Compare structural fields only, ignoring volatile timestamps
+                return clip.id !== current.id ||
+                  clip.order !== current.order ||
+                  clip.speaker !== current.speaker ||
+                  clip.status !== current.status ||
+                  clip.type !== current.type ||
+                  Math.abs(clip.startTime - current.startTime) > 0.001 ||
+                  Math.abs(clip.endTime - current.endTime) > 0.001 ||
+                  clip.text !== current.text ||
+                  (clip.words?.length ?? 0) !== (current.words?.length ?? 0) ||
+                  clip.startWordIndex !== current.startWordIndex ||
+                  clip.endWordIndex !== current.endWordIndex;
+              });
+
+            if (!clipsChanged) {
+              const AUDIO_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+              if (AUDIO_DEBUG) {
+                console.log('[AudioSystemIntegration] onClipsChange: skipping project update - no changes detected');
+              }
+              return;
+            }
+
             const next = {
               ...projectState.projectData,
               clips: { ...projectState.projectData.clips, clips: updatedClips },

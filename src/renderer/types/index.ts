@@ -118,6 +118,11 @@ export interface ClipStyle {
   highlightColor?: string;
 }
 
+// Token model for unified words and gaps
+export type Token =
+  | { kind: 'word'; id: string; text: string; start: number; end: number; speaker?: string; score?: number }
+  | { kind: 'gap'; id: string; start: number; end: number; label?: string };
+
 export interface Clip {
   id: string;
   speaker: string;
@@ -126,6 +131,7 @@ export interface Clip {
   startWordIndex: number;
   endWordIndex: number;
   words: Word[];
+  tokens?: Token[]; // Canonical token sequence (words + gaps) in visual order
   type: 'speaker-change' | 'paragraph-break' | 'user-created' | 'initial' | 'transcribed';
   text: string;
   duration: number;

@@ -53,6 +53,18 @@
   box-shadow: 0 0 0 2px hsl(var(--highlight-outline));
 }
 
+/* Edit-mode visual selection/focus for spacer pills */
+.lexical-spacer-node:focus,
+.lexical-spacer-node.selected {
+  /* Make focused/selected look like playing highlight for clarity */
+  background-color: hsl(var(--highlight-bg));
+  color: hsl(var(--highlight-text));
+  border-color: hsl(var(--highlight-outline));
+  outline: 2px solid #3b82f6; /* blue-600 */
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
 /* Speaker nodes */
 .lexical-speaker-node {
   margin-bottom: 0.5rem;

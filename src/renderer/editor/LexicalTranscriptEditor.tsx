@@ -15,6 +15,7 @@ import {
   EditorState,
   LexicalEditor,
   ParagraphNode,
+  $getRoot,
 } from 'lexical';
 
 import { WordNode } from './nodes/WordNode';
@@ -36,6 +37,8 @@ import FormattingPlugin from './plugins/FormattingPlugin';
 // import ClipSettingsPlugin from './plugins/ClipSettingsPlugin';
 import ClipSpeakerPlugin from './plugins/ClipSpeakerPlugin';
 import DoubleClickEditGuardPlugin from './plugins/DoubleClickEditGuardPlugin';
+import TokenSplitPlugin from './plugins/TokenSplitPlugin';
+import CursorTrackingPlugin from './plugins/CursorTrackingPlugin';
 
 import { 
   segmentsToEditorState,
@@ -114,6 +117,30 @@ function LexicalTranscriptEditorContent({
   const suppressOnChangeRef = useRef(false);
   const dragModeRef = useRef(false);
   const lastClipsHashRef = useRef<string | null>(null);
+  const lastContentHashRef = useRef<string | null>(null);
+
+  // Helper function to calculate content hash from editor state
+  const calculateContentHash = useCallback((editor: LexicalEditor): string => {
+    let contentHash = '';
+    editor.getEditorState().read(() => {
+      const root = $getRoot();
+      const children = root.getChildren();
+      const contentParts: string[] = [];
+
+      children.forEach((child) => {
+        if (child instanceof ClipContainerNode) {
+          const clipId = (child as ClipContainerNode).getClipId();
+          const speakerId = (child as ClipContainerNode).getSpeakerId();
+          const status = (child as ClipContainerNode).getStatus?.() ?? 'active';
+          const wordsNodes = (child as ClipContainerNode).getWordNodes();
+          const wordTexts = wordsNodes.map(w => (w as any).getTextContent?.() || '').join(' ');
+          contentParts.push(`${clipId}:${speakerId}:${status}:${wordTexts}`);
+        }
+      });
+      contentHash = contentParts.join('|');
+    });
+    return contentHash;
+  }, []);
 
   // Create available speakers array from both clips and speakers list
   const availableSpeakers = useMemo(() => {
@@ -161,6 +188,14 @@ function LexicalTranscriptEditorContent({
         getSpeakerDisplayName,
         getSpeakerColor,
       });
+      // Initialize content hash to prevent first click from triggering rebuild
+      setTimeout(() => {
+        lastContentHashRef.current = calculateContentHash(editor);
+        const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+        if (UI_DEBUG) {
+          console.log('[LexicalTranscriptEditor] Initialized content hash:', lastContentHashRef.current?.substring(0, 100) + '...');
+        }
+      }, 0);
       initializedRef.current = true;
       return;
     }
@@ -172,9 +207,17 @@ function LexicalTranscriptEditorContent({
         getSpeakerDisplayName,
         getSpeakerColor,
       });
+      // Initialize content hash to prevent first click from triggering rebuild
+      setTimeout(() => {
+        lastContentHashRef.current = calculateContentHash(editor);
+        const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+        if (UI_DEBUG) {
+          console.log('[LexicalTranscriptEditor] Initialized content hash:', lastContentHashRef.current?.substring(0, 100) + '...');
+        }
+      }, 0);
       initializedRef.current = true;
     }
-  }, [editor, clips, segments, getSpeakerDisplayName, getSpeakerColor]);
+  }, [editor, clips, segments, getSpeakerDisplayName, getSpeakerColor, calculateContentHash]);
 
   // Listen for drag-drop events to suppress onChange during drag operations
   useEffect(() => {
@@ -232,26 +275,61 @@ function LexicalTranscriptEditorContent({
       return;
     }
     if (!readOnly && clips && clips.length > 0 && onClipsChange) {
-      const updatedClips = editorStateToClips(editor, clips);
-      // Preserve audio-only clips that were filtered out from rendering
-      const audioOnlyClips = clips.filter(c => c.type === 'audio-only');
-      const allClips = [...updatedClips, ...audioOnlyClips].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      // Check if this is just a selection change vs actual content change
       const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+
+      // Calculate content hash excluding selection/cursor state to detect real changes
+      const contentHash = calculateContentHash(editor);
+
+      // Check if content actually changed
+      if (contentHash === lastContentHashRef.current) {
+        if (UI_DEBUG) {
+          console.log('[LexicalTranscriptEditor] Skipping onClipsChange - content unchanged (selection only)');
+        }
+        return;
+      }
+      lastContentHashRef.current = contentHash;
+
+      // Full round-trip: editorStateToClips now includes audio-only containers.
+      // Pass existing clips so it can preserve objects when content hasn't changed
+      const updatedClips = editorStateToClips(editor, clips);
+      const allClips = updatedClips.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      // Check if clips actually changed structurally
+      const oldHash = clips
+        .map((c: any) => `${c.id}:${c.order}:${c.words?.length ?? 0}:${c.speaker ?? ''}:${c.status ?? 'active'}`)
+        .join('|');
+      const newHash = allClips
+        .map((c: any) => `${c.id}:${c.order}:${c.words?.length ?? 0}:${c.speaker ?? ''}:${c.status ?? 'active'}`)
+        .join('|');
+
+      const structuralChange = oldHash !== newHash;
+
       if (UI_DEBUG) {
-        console.log('[LexicalTranscriptEditor] onClipsChange fired:', { 
-          editorClips: updatedClips.length, 
-          audioOnlyClips: audioOnlyClips.length,
+        console.log('[LexicalTranscriptEditor] onClipsChange triggered:', {
+          editorClips: updatedClips.length,
           total: allClips.length,
+          structuralChange,
           firstFewClipOrders: allClips.slice(0, 10).map(c => `${c.id.slice(-6)}:${c.order}`)
         });
+
+        if (!structuralChange) {
+          console.log('[LexicalTranscriptEditor] UNNECESSARY REBUILD: No structural changes detected, but onClipsChange still fired');
+        }
         console.trace('[LexicalTranscriptEditor] onClipsChange call stack');
       }
-      onClipsChange(allClips);
+
+      // Only call onClipsChange if there are actual structural changes
+      if (structuralChange) {
+        onClipsChange(allClips);
+      } else if (UI_DEBUG) {
+        console.log('[LexicalTranscriptEditor] Skipping onClipsChange - no structural changes');
+      }
     } else {
       const updatedSegments = editorStateToSegments(editor);
       onSegmentsChange(updatedSegments);
     }
-  }, [onSegmentsChange, onClipsChange, clips]);
+  }, [onSegmentsChange, onClipsChange, clips, calculateContentHash]);
 
   // Ensure editability matches readOnly prop
   useEffect(() => {
@@ -275,13 +353,40 @@ function LexicalTranscriptEditorContent({
       .map((c: any) => `${c.id}:${c.order}:${c.words?.length ?? 0}:${c.speaker ?? ''}:${c.status ?? 'active'}`)
       .join('|');
     const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
-    if (UI_DEBUG) console.log('[LexicalTranscriptEditor] External clips hash check:', {
-      currentHash: hash.substring(0, 100) + '...',
-      lastHash: (lastClipsHashRef.current || '').substring(0, 100) + '...',
-      hashMatch: hash === lastClipsHashRef.current,
-      dragMode: dragModeRef.current,
-      firstFewOrders: clips.slice(0, 10).map(c => `${c.id.slice(-6)}:${c.order}`)
-    });
+
+    if (UI_DEBUG) {
+      const hashMatch = hash === lastClipsHashRef.current;
+      console.log('[LexicalTranscriptEditor] External clips hash check:', {
+        currentHash: hash.substring(0, 100) + '...',
+        lastHash: (lastClipsHashRef.current || '').substring(0, 100) + '...',
+        hashMatch,
+        dragMode: dragModeRef.current,
+        firstFewOrders: clips.slice(0, 10).map(c => `${c.id.slice(-6)}:${c.order}`)
+      });
+
+      // If hash changed, show what changed
+      if (!hashMatch && lastClipsHashRef.current) {
+        const lastParts = lastClipsHashRef.current.split('|');
+        const currentParts = hash.split('|');
+        const changes = [];
+
+        for (let i = 0; i < Math.max(lastParts.length, currentParts.length); i++) {
+          if (lastParts[i] !== currentParts[i]) {
+            changes.push({
+              index: i,
+              before: lastParts[i] || 'MISSING',
+              after: currentParts[i] || 'MISSING'
+            });
+          }
+        }
+
+        console.log('[LexicalTranscriptEditor] Hash changes detected:', {
+          changeCount: changes.length,
+          changes: changes.slice(0, 5) // Show first 5 changes
+        });
+      }
+    }
+
     if (hash === lastClipsHashRef.current) return;
     lastClipsHashRef.current = hash;
     suppressOnChangeRef.current = true;
@@ -382,6 +487,11 @@ function LexicalTranscriptEditorContent({
       {/* Highlight and scope editing to active clip */}
       {!readOnly && <ActiveClipPlugin />}
       {!readOnly && <ClipDndPlugin />}
+      {/* Track cursor to enable Enter-to-split at current word */}
+      {!readOnly && audioActions && clips && clips.length > 0 && (
+        <CursorTrackingPlugin clips={clips as any} audioActions={audioActions} enabled={!readOnly} />
+      )}
+      {!readOnly && <TokenSplitPlugin />}
     </>
   );
 }

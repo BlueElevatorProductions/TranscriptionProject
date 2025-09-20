@@ -66,14 +66,23 @@ Inspects build logs, Electron/Vite logs, and backend traces to identify errors.
 ⸻
 
 5. Expectations
-	•	No manual log pasting by the user.
+	1.	No manual log pasting
+	•	The user will not paste logs.
 	•	Agents must autonomously locate, open, and analyze logs.
-	•	If logs are missing, fail clearly and point to the missing path.
-	•	Follow the project’s README and launcher script conventions strictly.
-
-Troubleshooting Rule
-	•	When troubleshooting an issue with CLI Codex:
+	2.	Log Access Rule
+	•	If the agent does not have access to the expected log files, it must immediately request access from the user.
+	•	The request should specify which log path(s) are missing or inaccessible.
+	•	The agent must not proceed with speculative fixes until log access is restored.
+	3.	Troubleshooting Rule
+	•	When troubleshooting CLI Codex issues:
 	•	Attempt only one fix at a time.
-	•	After applying a fix, confirm whether it resolved the issue before trying another.
+	•	Confirm whether the fix resolved the issue before attempting another.
 	•	Do not attempt multiple fixes in parallel, as this makes it unclear which action succeeded or caused side effects.
-	•	Adding or expanding logs does not count as a fix — logs may be added at any time to aid troubleshooting.
+	•	Adding or expanding logs does not count as a fix and may be done at any time.
+	4.	No Fallback Plans Without Permission
+	•	Agents must not implement fallback plans (alternate methods, workarounds, or secondary strategies) unless explicitly approved by the user.
+	•	Primary functionality should always be achieved with the primary method first.
+	•	Only after confirming the primary method works may fallback strategies be proposed — and only if the user approves.
+	5.	Adherence to Project Conventions
+	•	Agents must follow the project’s README and launcher script conventions strictly.
+	•	If logs are missing or behavior deviates, fail clearly and point to the missing path or inconsistency.
