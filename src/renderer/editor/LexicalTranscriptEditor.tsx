@@ -303,6 +303,20 @@ function LexicalTranscriptEditorContent({
         }
         return;
       }
+
+      // Log hash changes for debugging
+      if (UI_DEBUG) {
+        console.log('[LexicalTranscriptEditor] Content hash changed - detecting spacer/word modifications');
+        console.log('Previous hash:', lastContentHashRef.current?.substring(0, 100) + '...');
+        console.log('New hash:', contentHash.substring(0, 100) + '...');
+
+        // Check if spacer data is in the hash
+        if (contentHash.includes('spacers[')) {
+          const spacerMatches = contentHash.match(/spacers\[([^\]]*)\]/g);
+          console.log('[LexicalTranscriptEditor] Spacer data found in hash:', spacerMatches?.length || 0, 'clips with spacers');
+        }
+      }
+
       lastContentHashRef.current = contentHash;
 
       // Full round-trip: editorStateToClips now includes audio-only containers.

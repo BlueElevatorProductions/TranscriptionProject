@@ -122,14 +122,17 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
     const start = this.__startSec;
     const label = `${secs.toFixed(Math.abs(secs - Math.round(secs)) < 0.005 ? 0 : 2)} sec`;
 
+    // Get node key safely
+    const nodeKey = this.getKey();
+
     const handleClick = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
       // Use global audio actions if available
       const actions = (globalThis as any).__LEXICAL_AUDIO_ACTIONS__;
       const state = (globalThis as any).__LEXICAL_AUDIO_STATE__;
-      // Only trigger playback/seek in Listen Mode. In Edit Mode, treat click as selection only.
+      // Only trigger playback/seek in Listen Mode. In Edit Mode, let SpacerClickPlugin handle it.
       if (actions && state?.mode === 'listen') {
+        e.preventDefault();
+        e.stopPropagation();
         const bias = Math.max(0, start - 0.01);
         try {
           actions.seekToOriginalTime(bias);
@@ -138,24 +141,19 @@ export class SpacerNode extends DecoratorNode<React.JSX.Element> {
           }
         } catch {}
       }
-    };
-    const handleMouseDown = (e: React.MouseEvent) => {
-      // Prevent Lexical text selection when clicking spacer in Edit Mode
-      e.preventDefault();
-      e.stopPropagation();
+      // In Edit Mode, don't prevent default - let SpacerClickPlugin handle it
     };
 
     return (
       <button
         type="button"
-        onMouseDown={handleMouseDown}
         onClick={handleClick}
         className="lexical-spacer-node inline-flex items-center px-2 py-0.5 mx-1 rounded-md bg-gray-200 text-gray-700 text-xs font-medium border border-gray-300 select-none"
         title={`Silent/music gap: ${label}`}
         style={{ pointerEvents: 'auto' }}
         tabIndex={0}
         data-lexical-editor-ignore="true"
-        data-lexical-node-key={(this as any).getKey?.()}
+        data-lexical-node-key={nodeKey}
         data-start-sec={String(this.__startSec)}
         data-end-sec={String(this.__endSec)}
         data-edited-start-sec={String(this.__editedStartSec)}

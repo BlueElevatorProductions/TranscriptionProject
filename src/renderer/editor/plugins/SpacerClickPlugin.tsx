@@ -43,17 +43,30 @@ export default function SpacerClickPlugin({ readOnly = false }: SpacerClickPlugi
         const nodeKey = spacerEl.getAttribute('data-lexical-node-key');
 
         if (nodeKey) {
+          // First, verify the spacer exists before making any changes
+          const spacerExists = editor.getEditorState().read(() => {
+            const node = $getNodeByKey(nodeKey);
+            return node && $isSpacerNode(node);
+          });
+
+          if (!spacerExists) {
+            console.log('[SpacerClickPlugin] Warning: Spacer node not found with key:', nodeKey);
+            return;
+          }
+
+          console.log('[SpacerClickPlugin] Spacer node confirmed, proceeding with cursor positioning');
+
           editor.update(() => {
             try {
-              // Find the spacer node by key
+              // Re-verify spacer node exists in update context
               const spacerNode = $getNodeByKey(nodeKey);
 
               if (!spacerNode || !$isSpacerNode(spacerNode)) {
-                console.log('[SpacerClickPlugin] Warning: Could not find spacer node with key:', nodeKey);
+                console.log('[SpacerClickPlugin] Warning: Spacer node disappeared during update, key:', nodeKey);
                 return;
               }
 
-              console.log('[SpacerClickPlugin] Found spacer node, positioning cursor');
+              console.log('[SpacerClickPlugin] Found spacer node in update, positioning cursor');
 
               // Find the paragraph container (should be spacer's parent or grandparent)
               let paragraphNode = spacerNode.getParent();
@@ -215,6 +228,14 @@ export default function SpacerClickPlugin({ readOnly = false }: SpacerClickPlugi
                 // Apply the selection
                 $setSelection(selection);
                 console.log('[SpacerClickPlugin] Selection positioned successfully in paragraph context');
+
+                // Final verification that spacer still exists after selection
+                const spacerStillExists = $getNodeByKey(nodeKey);
+                if (!spacerStillExists || !$isSpacerNode(spacerStillExists)) {
+                  console.error('[SpacerClickPlugin] CRITICAL: Spacer disappeared after selection change!');
+                } else {
+                  console.log('[SpacerClickPlugin] Spacer verified to still exist after selection');
+                }
 
               } catch (selectionError) {
                 console.error('[SpacerClickPlugin] Error creating/setting selection:', selectionError);
