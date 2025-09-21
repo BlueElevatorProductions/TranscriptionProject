@@ -27,9 +27,12 @@ const initialTranscriptionState: TranscriptionState = {
 function transcriptionReducer(state: TranscriptionState, action: TranscriptionAction): TranscriptionState {
   switch (action.type) {
     case 'ADD_JOB': {
-      const newJob = action.payload;
+      const newJob = {
+        ...action.payload,
+        normalizedAt: action.payload.normalizedAt ?? null,
+      };
       console.log('TranscriptionContext - Adding job:', newJob.fileName);
-      
+
       return {
         ...state,
         jobs: [...state.jobs, newJob],
@@ -165,6 +168,27 @@ function transcriptionReducer(state: TranscriptionState, action: TranscriptionAc
       };
     }
 
+    case 'MARK_JOB_NORMALIZED': {
+      const { id, normalizedAt } = action.payload;
+      const timestamp = normalizedAt ?? new Date().toISOString();
+      console.log('TranscriptionContext - Marking job normalized:', id, timestamp);
+
+      const updatedJobs = state.jobs.map(job =>
+        job.id === id ? { ...job, normalizedAt: timestamp } : job
+      );
+
+      const updatedSelectedJob =
+        state.selectedJob?.id === id
+          ? { ...state.selectedJob, normalizedAt: timestamp }
+          : state.selectedJob;
+
+      return {
+        ...state,
+        jobs: updatedJobs,
+        selectedJob: updatedSelectedJob,
+      };
+    }
+
     default:
       return state;
   }
@@ -245,16 +269,21 @@ export const useTranscription = (): UseTranscriptionReturn => {
       dispatch({ type: 'SET_PROCESSING', payload: isProcessing });
     }, [dispatch]),
 
+    markJobNormalized: useCallback((id: string, normalizedAt?: string | null) => {
+      dispatch({ type: 'MARK_JOB_NORMALIZED', payload: { id, normalizedAt } });
+    }, [dispatch]),
+
     // Complex operations
     startTranscription: useCallback(async (filePath: string, modelSize: string): Promise<TranscriptionJob> => {
       const fileName = filePath.split('/').pop() || 'Unknown';
-      
+
       const job: TranscriptionJob = {
         id: Date.now().toString(),
         filePath: filePath,
         fileName: fileName,
         status: 'pending',
         progress: 0,
+        normalizedAt: null,
       };
 
       console.log('TranscriptionContext - Starting transcription:', job);

@@ -39,6 +39,7 @@ export interface TranscriptionJob {
   error?: string;
   speakerNames?: { [key: string]: string };
   speakerMerges?: { [key: string]: string };
+  normalizedAt?: string | null;
 }
 
 export interface ProgressData {
@@ -264,7 +265,8 @@ export type TranscriptionAction =
   | { type: 'SELECT_JOB'; payload: TranscriptionJob | null }
   | { type: 'REMOVE_JOB'; payload: string }
   | { type: 'SET_PROGRESS_DATA'; payload: ProgressData }
-  | { type: 'SET_PROCESSING'; payload: boolean };
+  | { type: 'SET_PROCESSING'; payload: boolean }
+  | { type: 'MARK_JOB_NORMALIZED'; payload: { id: string; normalizedAt?: string | null } };
 
 export type UIAction =
   | { type: 'SET_VIEW'; payload: ViewType }
@@ -393,7 +395,12 @@ export interface UseTranscriptionReturn {
     addJob: (job: TranscriptionJob) => void;
     updateJobProgress: (id: string, progress: number, status?: string) => void;
     completeJob: (id: string, result: TranscriptionResult) => void;
+    errorJob: (id: string, error: string) => void;
     selectJob: (job: TranscriptionJob | null) => void;
     removeJob: (id: string) => void;
+    setProgressData: (progressData: ProgressData) => void;
+    setProcessing: (isProcessing: boolean) => void;
+    markJobNormalized: (id: string, normalizedAt?: string | null) => void;
+    startTranscription: (filePath: string, modelSize: string) => Promise<TranscriptionJob>;
   };
 }

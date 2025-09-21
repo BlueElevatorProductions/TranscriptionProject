@@ -35,6 +35,7 @@ interface TranscriptionJob {
   error?: string;
   speakerNames?: { [key: string]: string };
   speakerMerges?: { [key: string]: string };
+  normalizedAt?: string | null;
 }
 
 class App {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette, Download, File, ChevronDown } from 'lucide-react';
-import { useProject, useSelectedJob } from '../../contexts';
+import { useProject, useSelectedJob, useTranscription } from '../../contexts';
 import { useTheme } from '../theme-provider';
 import { Segment, ClipSettings } from '../../types';
 import { generateClipId, createContinuousClips } from '../../audio/AudioAppState';
@@ -27,7 +27,7 @@ import ImportSettings from '../Settings/ImportSettings';
 import TopBar from './TopBar';
 
 interface NewUIShellProps {
-  // Any props from parent component
+  onManualSave?: () => void;
 }
 
 // Enhanced Sidebar
@@ -221,7 +221,7 @@ const SimpleSegmentDisplay: React.FC<{ segments: Segment[] }> = ({ segments }) =
 };
 
 // Main Shell Component
-const NewUIShell: React.FC<NewUIShellProps> = () => {
+const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
   const [mode, setMode] = useState<'listen' | 'edit'>('listen');
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [openPanel, setOpenPanel] = useState<string | null>(null);
@@ -262,6 +262,8 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
   // Get contexts
   const { state: projectState, actions: projectActions } = useProject();
   const { selectedJob } = useSelectedJob();
+  const { actions: transcriptionActions } = useTranscription();
+  const { markJobNormalized } = transcriptionActions;
   const isConverting = useMemo(() => {
     const status = (selectedJob as any)?.status || (selectedJob as any)?.state || (selectedJob as any)?.progress?.status;
     return status === 'processing' || status === 'pending';
@@ -581,17 +583,23 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
             });
             
             projectActions.updateProjectData(updatedProject);
+
+            if (!selectedJob.normalizedAt) {
+              markJobNormalized(selectedJob.id);
+            }
           };
 
           // Build clips strictly from provided word timings
           computeClips();
+        } else if (!selectedJob.normalizedAt && alreadyHasTranscribedClips) {
+          markJobNormalized(selectedJob.id);
         }
       }
     };
 
     // kick async conversion
     convertIfNeeded();
-  }, [selectedJob?.id, selectedJob?.status, projectState.projectData?.clips?.clips?.length, projectActions]);
+  }, [selectedJob?.id, selectedJob?.status, selectedJob?.normalizedAt, projectState.projectData?.clips?.clips?.length, projectActions, markJobNormalized]);
 
   // Load API keys and color preference on component mount
   useEffect(() => {
@@ -792,6 +800,7 @@ const NewUIShell: React.FC<NewUIShellProps> = () => {
 
   const handleSaveProject = async () => {
     try {
+      onManualSave?.();
       await projectActions.saveProject();
     } catch (error) {
       console.error('Save failed:', error);

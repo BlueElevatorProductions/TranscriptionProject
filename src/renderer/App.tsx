@@ -3,7 +3,7 @@
  * Root component that provides context and renders the new UI
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 
 // New UI components
@@ -87,6 +87,9 @@ const AppMain: React.FC = () => {
   const [showImportDialog, setShowImportDialog] = useState<boolean>(false);
   const [showProjectImportDialog, setShowProjectImportDialog] = useState<boolean>(false);
   const [showNewProjectDialog, setShowNewProjectDialog] = useState<boolean>(false);
+  const [pendingAutoSaveJobId, setPendingAutoSaveJobId] = useState<string | null>(null);
+  const autoSavedJobIdsRef = useRef<Set<string>>(new Set());
+  const autoSaveInProgressRef = useRef<Set<string>>(new Set());
 
   // Context hooks
   const { state: transcriptionState, actions: transcriptionActions } = useTranscription();
@@ -230,21 +233,16 @@ const AppMain: React.FC = () => {
             status: 'completed',
             progress: 100,
             result: completedJob.result,
-            speakerNames: completedJob.result?.speakers || {}
+            speakerNames: completedJob.result?.speakers || {},
+            normalizedAt: null,
           };
-          
+
           transcriptionActions.selectJob(jobData);
           console.log('Renderer: Called selectJob action');
-          
-          // Auto-save the project after transcription completes
-          try {
-            await projectActions.saveProject();
-            console.log('Renderer: Project auto-saved after transcription completion');
-          } catch (saveError) {
-            console.error('Renderer: Failed to auto-save project after transcription:', saveError);
-            // Don't throw - transcription completed successfully, save is just a bonus
-          }
-          
+
+          setPendingAutoSaveJobId(completedJob.id);
+          console.log('Renderer: Scheduled auto-save for job:', completedJob.id);
+
           console.log('=== RENDERER: TRANSCRIPTION COMPLETION HANDLING DONE ===');
         } else {
           console.error('Renderer: Invalid completion data - missing ID or result:', {
@@ -300,6 +298,70 @@ const AppMain: React.FC = () => {
     };
   }, [transcriptionActions, handleTranscriptionError]);
 
+  useEffect(() => {
+    if (!pendingAutoSaveJobId) {
+      return;
+    }
+
+    const job = transcriptionState.jobs.find(j => j.id === pendingAutoSaveJobId);
+    if (!job) {
+      return;
+    }
+
+    if (job.status !== 'completed') {
+      return;
+    }
+
+    if (!job.normalizedAt) {
+      return;
+    }
+
+    if (!projectState.hasUnsavedChanges) {
+      return;
+    }
+
+    if (!projectState.currentProjectPath) {
+      console.log('Auto-save pending until project path is set for job:', job.id);
+      return;
+    }
+
+    if (autoSavedJobIdsRef.current.has(job.id) || autoSaveInProgressRef.current.has(job.id)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const performAutoSave = async () => {
+      console.log('Renderer: Auto-saving project for normalized job:', job.id);
+      try {
+        autoSaveInProgressRef.current.add(job.id);
+        await projectActions.saveProject();
+        if (!cancelled) {
+          autoSavedJobIdsRef.current.add(job.id);
+          setPendingAutoSaveJobId(null);
+          console.log('Renderer: Auto-save completed for job:', job.id);
+        }
+      } catch (error) {
+        console.error('Renderer: Auto-save failed for job:', job.id, error);
+      }
+      autoSaveInProgressRef.current.delete(job.id);
+    };
+
+    performAutoSave();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingAutoSaveJobId, transcriptionState.jobs, projectState.hasUnsavedChanges, projectState.currentProjectPath, projectActions]);
+
+  const handleManualSaveTriggered = useCallback(() => {
+    if (pendingAutoSaveJobId) {
+      console.log('Renderer: Manual save triggered, clearing auto-save for job:', pendingAutoSaveJobId);
+      autoSaveInProgressRef.current.delete(pendingAutoSaveJobId);
+    }
+    setPendingAutoSaveJobId(null);
+  }, [pendingAutoSaveJobId]);
+
   // Get current processing job for progress overlay
   const currentJob = transcriptionState.jobs.find(job => 
     job.status === 'processing' || job.status === 'pending'
@@ -319,7 +381,7 @@ const AppMain: React.FC = () => {
 
   return (
     <TranscriptionErrorBoundary>
-      <NewUIShell />
+      <NewUIShell onManualSave={handleManualSaveTriggered} />
       
       {/* Progress Overlay */}
       <GlassProgressOverlay
@@ -498,7 +560,8 @@ const AppMain: React.FC = () => {
                   filePath: conversionResult.outputPath, // Use converted audio path
                   fileName: fileName,
                   status: 'pending',
-                  progress: 0
+                  progress: 0,
+                  normalizedAt: null
                 };
                 
                 transcriptionActions.addJob(transcriptionJob);
