@@ -11,6 +11,8 @@ A professional desktop transcription application built with Electron, React, and
 - **🏗️ Main Process Authority**: Canonical state moved to main process with validation
 - **🚫 No Backward Compatibility**: v2.0 projects incompatible with v1.x format
 - **⚡ Clean Slate Approach**: All legacy systems removed, focusing on stability and simplicity
+- **🎨 Glass Morphism UI**: Complete redesign with semi-transparent interface and blur effects
+- **🔧 EventEmitter Fix**: Resolved transcription import errors for stable operation
 - **📚 New Documentation**: Comprehensive architecture documentation for developers
 
 ### New Architecture Benefits
@@ -19,6 +21,13 @@ A professional desktop transcription application built with Electron, React, and
 - **Scalability**: Atomic edit operations with undo support
 - **Maintainability**: Clear separation between main process and renderer
 - **Extensibility**: Ready for collaborative editing and advanced features
+- **Stability**: Direct v2.0 implementation without wrappers or legacy compatibility layers
+
+### Recent v2.0 Improvements (September 2025)
+- **Fixed Import Process**: Resolved "eventEmitter.emit is not a function" error
+- **Enhanced Debugging**: Comprehensive debugging throughout transcription chain
+- **Event-Driven Progress**: Real-time transcription progress with event listeners
+- **API Key Integration**: Proper cloud service integration with encrypted key storage
 
 For detailed technical information, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 
@@ -39,6 +48,13 @@ TranscriptionProject is a desktop application designed for content creators, jou
 - **Responsive Layout**: Tailwind CSS with clean, modern styling and transparency utilities
 - **Professional Window Management**: Native macOS window controls with proper dragging behavior
 - **Panel System**: Expandable glass sidebar panels for speakers, clips, fonts, and project management
+
+### v2.0 Glass Morphism System
+- **Glass Dialog Components**: ImportDialogV2 and NewProjectDialogV2 with semi-transparent backgrounds
+- **Backdrop Blur Effects**: `backdrop-filter: var(--backdrop-blur)` for professional frosted glass appearance
+- **Consistent Opacity**: Unified opacity system across all glass components
+- **CSS Variable Control**: Complete design system controllable via `src/renderer/styles/glass-dialogs.css`
+- **Dynamic Transparency**: HSL-based color composition with separate opacity controls
 - **Glass Progress Overlay**: Beautiful glass morphism progress indicator during transcription
 
 ### Cloud Transcription Services
@@ -271,14 +287,24 @@ The import dialog has been simplified for stability during the beta phase:
 
 **Main Process**:
 - **ProjectDataStore**: Canonical state with validation and atomic operations
-- **IPC Handlers**: Bridge for structured edit operations
+- **TranscriptionServiceV2**: Direct segment output without legacy conversion layers
+- **EventEmitter Adapter**: Bridges TranscriptionServiceV2 events to IPC communication
+- **IPC Handlers**: Structured edit operations and transcription management
 
 **Renderer Process**:
-- **ProjectContextV2**: Thin cache that dispatches to main process
+- **ProjectContextV2**: Thin cache that dispatches to main process with real-time event listeners
+- **NewUIShellV2**: Glass morphism interface with semi-transparent design
+- **ImportDialogV2 & NewProjectDialogV2**: Glass-styled dialogs with smart import flow
 - **TranscriptionImportService**: Clean import preserving original timestamps
 - **EDLBuilderService**: Pure function EDL generation with binary search
 - **JuceAudioManagerV2**: Simplified audio backend without fallback systems
 - **Lexical Nodes v2**: WordNodeV2, SpacerNodeV2, ClipNodeV2 with segment awareness
+
+**Recent Additions (September 2025)**:
+- **EventEmitter Adapter**: Fixes "eventEmitter.emit is not a function" error
+- **Glass Dialog System**: Semi-transparent UI components with backdrop blur
+- **Comprehensive Debugging**: Full transcription chain visibility and error tracking
+- **Event-Driven Progress**: Real-time transcription updates without polling
 
 For complete architectural details, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 
@@ -638,6 +664,52 @@ ZIP archives containing:
 - **Dark Theme**: Professional dark green color scheme
 
 ## Recent Updates (September 2025 - Latest)
+
+### ✅ v2.0 EventEmitter Fix & Import Process Enhancement (September 2025 - Latest)
+
+**Complete Import System Overhaul**: Fixed critical "eventEmitter.emit is not a function" error and implemented comprehensive debugging throughout the transcription chain.
+
+#### **🎯 Critical Bug Fixed**
+- **Issue**: TranscriptionServiceV2 expected EventEmitter with `emit()` method but received App instance using `webContents.send()`
+- **Solution**: Created EventEmitterAdapter that bridges TranscriptionServiceV2 events to IPC communication
+- **Impact**: Transcription import process now works end-to-end without errors
+
+#### **🔧 Technical Implementation**
+**EventEmitter Adapter** (`src/main/main.ts:1467-1488`):
+```typescript
+class EventEmitterAdapter {
+  emit(event: string, data: any): void {
+    switch (event) {
+      case 'transcription:progress':
+        this.app.mainWindow?.webContents.send('transcription-progress', data);
+        break;
+      case 'transcription:completed':
+        this.app.mainWindow?.webContents.send('transcription-complete', data);
+        break;
+      case 'transcription:error':
+        this.app.mainWindow?.webContents.send('transcription-error', data);
+        break;
+    }
+  }
+}
+```
+
+**Enhanced API Key Management**:
+- Fixed API key loading in TranscriptionServiceV2 to use proper decryption methods
+- Added setApiKeys() method for cloud service integration
+- Proper error handling for missing or invalid keys
+
+**Comprehensive Debugging Chain**:
+- **App.tsx**: Detailed logging for handleAudioImported function
+- **ProjectContextV2**: Debug output for startTranscription with availability checks
+- **TranscriptionServiceV2**: Full job lifecycle logging with progress tracking
+- **Main.ts IPC handlers**: Complete IPC communication debugging
+
+#### **🚀 Benefits**
+- **Working Import Process**: Audio import and transcription now functions correctly
+- **Real-time Progress**: Event-driven progress updates without polling
+- **Enhanced Debugging**: Full visibility into transcription chain for troubleshooting
+- **Stable Architecture**: Direct v2.0 implementation without wrapper layers
 
 ### ✅ Enhanced Speaker Tracking & Auto-Save Improvements (September 2025 - Latest)
 
