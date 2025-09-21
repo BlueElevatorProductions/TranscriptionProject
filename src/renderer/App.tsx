@@ -230,7 +230,8 @@ const AppMain: React.FC = () => {
             status: 'completed',
             progress: 100,
             result: completedJob.result,
-            speakerNames: completedJob.result?.speakers || {}
+            speakerNames: completedJob.result?.speakers || {},
+            speakerSegments: completedJob.result?.speakerSegments
           };
           
           transcriptionActions.selectJob(jobData);

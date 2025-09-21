@@ -12,6 +12,68 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+
+def default_speaker_label(index: int) -> str:
+    """Generate a deterministic speaker label."""
+    return f"Speaker {index + 1}"
+
+
+def build_speaker_metadata(segments):
+    """Create speaker map and aggregated speaker segments from raw segments."""
+    speakers = {}
+    speaker_segments = []
+
+    if not isinstance(segments, list) or not segments:
+        return speakers, speaker_segments
+
+    # Ensure deterministic ordering when segments arrive unsorted
+    sorted_segments = sorted(
+        enumerate(segments),
+        key=lambda pair: float(pair[1].get('start') or 0.0)
+    )
+
+    current_segment = None
+
+    for fallback_idx, segment in sorted_segments:
+        speaker_id = segment.get('speaker') or 'SPEAKER_00'
+
+        if speaker_id not in speakers:
+            speakers[speaker_id] = default_speaker_label(len(speakers))
+
+        start = float(segment.get('start', 0.0) or 0.0)
+        end = float(segment.get('end', start) or start)
+        text = (segment.get('text') or '').strip()
+        raw_words = segment.get('words')
+        words = raw_words if isinstance(raw_words, list) else []
+        word_count = len(words) if words else (len(text.split()) if text else 0)
+        segment_id = segment.get('id', fallback_idx)
+
+        if current_segment and current_segment['speaker'] == speaker_id:
+            current_segment['end'] = max(current_segment['end'], end)
+            if text:
+                current_segment['text'] = f"{current_segment['text']} {text}".strip()
+            current_segment['segmentIds'].append(segment_id)
+            current_segment['wordCount'] += word_count
+        else:
+            if current_segment:
+                speaker_segments.append(current_segment)
+            current_segment = {
+                'speaker': speaker_id,
+                'start': start,
+                'end': end,
+                'text': text,
+                'segmentIds': [segment_id],
+                'wordCount': word_count,
+            }
+
+    if current_segment:
+        speaker_segments.append(current_segment)
+
+    if not speakers:
+        speakers['SPEAKER_00'] = default_speaker_label(0)
+
+    return speakers, speaker_segments
+
 def print_progress(percentage):
     """Print progress to stderr for the main process to parse"""
     print(f"PROGRESS:{percentage}", file=sys.stderr, flush=True)
@@ -68,7 +130,8 @@ def transcribe_with_whisper_lib(audio_path, model_size='base', language=None):
     
     # Convert to expected format
     segments = []
-    for i, segment in enumerate(result.get('segments', [])):
+    raw_segments = result.get('segments', [])
+    for i, segment in enumerate(raw_segments):
         segment_data = {
             'id': i,
             'start': segment.get('start', 0.0),
@@ -77,7 +140,7 @@ def transcribe_with_whisper_lib(audio_path, model_size='base', language=None):
             'speaker': 'SPEAKER_00',
             'words': []
         }
-        
+
         # Add word-level timing if available
         if 'words' in segment:
             for word in segment['words']:
@@ -85,15 +148,20 @@ def transcribe_with_whisper_lib(audio_path, model_size='base', language=None):
                     'start': word.get('start', 0.0),
                     'end': word.get('end', 0.0),
                     'word': word.get('word', '').strip(),
-                    'score': word.get('probability', 0.9)
+                    'score': word.get('probability', 0.9),
+                    'speaker': segment_data['speaker']
                 })
-        
+
         segments.append(segment_data)
-    
+
+    speakers, speaker_segments = build_speaker_metadata(segments)
+
     return {
         'status': 'success',
         'segments': segments,
-        'language': result.get('language', 'unknown')
+        'language': result.get('language', 'unknown'),
+        'speakers': speakers,
+        'speakerSegments': speaker_segments
     }
 
 def transcribe_with_whisperx(audio_path, model_size='base', language=None):
@@ -142,7 +210,8 @@ def transcribe_with_whisperx(audio_path, model_size='base', language=None):
     
     # Convert to expected format
     segments = []
-    for i, segment in enumerate(result.get('segments', [])):
+    raw_segments = result.get('segments', [])
+    for i, segment in enumerate(raw_segments):
         segment_data = {
             'id': i,
             'start': segment.get('start', 0.0),
@@ -151,23 +220,29 @@ def transcribe_with_whisperx(audio_path, model_size='base', language=None):
             'speaker': segment.get('speaker', 'SPEAKER_00'),
             'words': []
         }
-        
+
         # Add word-level timing if available
         if 'words' in segment:
             for word in segment['words']:
+                word_speaker = word.get('speaker', segment_data['speaker'])
                 segment_data['words'].append({
                     'start': word.get('start', 0.0),
                     'end': word.get('end', 0.0),
                     'word': word.get('word', '').strip(),
-                    'score': word.get('score', 0.9)
+                    'score': word.get('score', 0.9),
+                    'speaker': word_speaker
                 })
-        
+
         segments.append(segment_data)
-    
+
+    speakers, speaker_segments = build_speaker_metadata(segments)
+
     return {
         'status': 'success',
         'segments': segments,
-        'language': result.get('language', 'unknown')
+        'language': result.get('language', 'unknown'),
+        'speakers': speakers,
+        'speakerSegments': speaker_segments
     }
 
 def transcribe_with_cli(audio_path, model_size='base', language=None):
@@ -224,11 +299,15 @@ def transcribe_with_cli(audio_path, model_size='base', language=None):
                     'words': []
                 }
                 segments.append(segment_data)
-            
+
+            speakers, speaker_segments = build_speaker_metadata(segments)
+
             return {
                 'status': 'success',
                 'segments': segments,
-                'language': whisper_result.get('language', 'unknown')
+                'language': whisper_result.get('language', 'unknown'),
+                'speakers': speakers,
+                'speakerSegments': speaker_segments
             }
             
         except subprocess.TimeoutExpired:

@@ -35,7 +35,89 @@ interface TranscriptionJob {
   error?: string;
   speakerNames?: { [key: string]: string };
   speakerMerges?: { [key: string]: string };
+  speakerSegments?: SpeakerSegmentSummary[];
 }
+
+interface SpeakerSegmentSummary {
+  speaker: string;
+  start: number;
+  end: number;
+  text: string;
+  segmentIds: (number | string)[];
+  wordCount: number;
+}
+
+const defaultSpeakerLabel = (index: number): string => `Speaker ${index + 1}`;
+
+const buildSpeakerMetadata = (segments: any[] = []): { speakers: { [key: string]: string }; speakerSegments: SpeakerSegmentSummary[] } => {
+  const speakers: { [key: string]: string } = {};
+  const speakerSegments: SpeakerSegmentSummary[] = [];
+
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return { speakers, speakerSegments };
+  }
+
+  const sortedSegments = [...segments].sort((a, b) => (a?.start ?? 0) - (b?.start ?? 0));
+  let current: SpeakerSegmentSummary | null = null;
+
+  sortedSegments.forEach((segment, index) => {
+    const speakerId = segment?.speaker || 'SPEAKER_00';
+    if (!speakers[speakerId]) {
+      speakers[speakerId] = defaultSpeakerLabel(Object.keys(speakers).length);
+    }
+
+    const start = typeof segment?.start === 'number' ? segment.start : 0;
+    const end = typeof segment?.end === 'number' ? segment.end : start;
+    const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
+    const words = Array.isArray(segment?.words) ? segment.words : [];
+    const wordCount = words.length || (text ? text.split(/\s+/).filter(Boolean).length : 0);
+    const segmentId = segment?.id ?? index;
+
+    if (current && current.speaker === speakerId) {
+      current.end = Math.max(current.end, end);
+      current.text = [current.text, text].filter(Boolean).join(' ').trim();
+      current.segmentIds.push(segmentId);
+      current.wordCount += wordCount;
+    } else {
+      if (current) {
+        speakerSegments.push(current);
+      }
+      current = {
+        speaker: speakerId,
+        start,
+        end,
+        text,
+        segmentIds: [segmentId],
+        wordCount,
+      };
+    }
+  });
+
+  if (current) {
+    speakerSegments.push(current);
+  }
+
+  if (Object.keys(speakers).length === 0) {
+    speakers['SPEAKER_00'] = defaultSpeakerLabel(0);
+  }
+
+  return { speakers, speakerSegments };
+};
+
+const mergeSpeakerMaps = (
+  preferred?: { [key: string]: string },
+  fallback?: { [key: string]: string }
+): { [key: string]: string } => {
+  const result: { [key: string]: string } = { ...(fallback || {}) };
+  if (preferred && typeof preferred === 'object') {
+    Object.entries(preferred).forEach(([key, value]) => {
+      if (typeof value === 'string' && value.trim().length > 0) {
+        result[key] = value;
+      }
+    });
+  }
+  return result;
+};
 
 class App {
   private mainWindow: BrowserWindow | null = null;
@@ -1286,7 +1368,8 @@ class App {
       result: job.result,
       error: job.error,
       speakerNames: job.speakerNames,
-      speakerMerges: job.speakerMerges
+      speakerMerges: job.speakerMerges,
+      speakerSegments: job.speakerSegments || job.result?.speakerSegments
     };
     
     console.log('DEBUG: Serializing job:', job);
@@ -1488,9 +1571,25 @@ class App {
         throw new Error('Transcription service returned empty result');
       }
 
+      const metadata = buildSpeakerMetadata(result.segments || []);
+      const mergedSpeakers = Object.keys(result?.speakers || {}).length > 0
+        ? mergeSpeakerMaps(result.speakers, metadata.speakers)
+        : metadata.speakers;
+      const speakerSegments = Array.isArray(result?.speakerSegments) && result.speakerSegments.length > 0
+        ? result.speakerSegments
+        : metadata.speakerSegments;
+
+      result = {
+        ...result,
+        speakers: mergedSpeakers,
+        speakerSegments,
+      };
+
       job.status = 'completed';
       job.progress = 100;
       job.result = result;
+      job.speakerNames = { ...mergedSpeakers };
+      job.speakerSegments = speakerSegments;
       console.log('=== SENDING COMPLETION EVENT ===');
       console.log('DEBUG: Sending completion event (cloud). Job status:', job.status, 'Progress:', job.progress);
       this.mainWindow?.webContents.send('debug-log', `Main: Sending completion event to renderer`);
@@ -1532,26 +1631,31 @@ class App {
     // In a real implementation, this would call the actual cloud APIs
     return new Promise((resolve) => {
       setTimeout(() => {
+        const simulatedSegments = [
+          {
+            id: 0,
+            start: 0.0,
+            end: 5.0,
+            text: `This is a simulated transcription from ${provider} using cloud API.`,
+            words: [
+              { start: 0.0, end: 0.5, word: "This", score: 0.99, speaker: 'SPEAKER_00' },
+              { start: 0.5, end: 0.7, word: "is", score: 0.98, speaker: 'SPEAKER_00' },
+              { start: 0.7, end: 0.9, word: "a", score: 0.97, speaker: 'SPEAKER_00' },
+              { start: 0.9, end: 1.5, word: "simulated", score: 0.96, speaker: 'SPEAKER_00' },
+              { start: 1.5, end: 2.2, word: "transcription", score: 0.95, speaker: 'SPEAKER_00' }
+            ],
+            speaker: 'SPEAKER_00'
+          }
+        ];
+        const metadata = buildSpeakerMetadata(simulatedSegments);
+
         resolve({
           status: 'success',
-          segments: [
-            {
-              id: 0,
-              start: 0.0,
-              end: 5.0,
-              text: `This is a simulated transcription from ${provider} using cloud API.`,
-              words: [
-                { start: 0.0, end: 0.5, word: "This", score: 0.99 },
-                { start: 0.5, end: 0.7, word: "is", score: 0.98 },
-                { start: 0.7, end: 0.9, word: "a", score: 0.97 },
-                { start: 0.9, end: 1.5, word: "simulated", score: 0.96 },
-                { start: 1.5, end: 2.2, word: "transcription", score: 0.95 }
-              ],
-              speaker: 'SPEAKER_00'
-            }
-          ],
+          segments: simulatedSegments,
           language: 'en',
-          word_segments: []
+          word_segments: simulatedSegments[0]?.words || [],
+          speakers: metadata.speakers,
+          speakerSegments: metadata.speakerSegments
         });
       }, 3000); // Simulate 3 second cloud processing time
     });
@@ -1634,12 +1738,28 @@ class App {
               jsonResult = jsonResult.substring(jsonStart, jsonEnd + 1);
             }
             
-            const result = JSON.parse(jsonResult);
-            
+            let result = JSON.parse(jsonResult);
+
             if (result.status === 'success') {
+              const metadata = buildSpeakerMetadata(result.segments || []);
+              const mergedSpeakers = Object.keys(result?.speakers || {}).length > 0
+                ? mergeSpeakerMaps(result.speakers, metadata.speakers)
+                : metadata.speakers;
+              const speakerSegments = Array.isArray(result?.speakerSegments) && result.speakerSegments.length > 0
+                ? result.speakerSegments
+                : metadata.speakerSegments;
+
+              result = {
+                ...result,
+                speakers: mergedSpeakers,
+                speakerSegments,
+              };
+
               job.status = 'completed';
               job.progress = 100;
               job.result = result;
+              job.speakerNames = { ...mergedSpeakers };
+              job.speakerSegments = speakerSegments;
               this.mainWindow?.webContents.send('transcription-complete', this.serializeJob(job));
             } else {
               job.status = 'error';

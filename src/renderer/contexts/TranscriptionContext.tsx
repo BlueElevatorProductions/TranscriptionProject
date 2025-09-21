@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useReducer, ReactNode, useCallback } from 'react';
-import { TranscriptionState, TranscriptionAction, TranscriptionJob, TranscriptionResult, ProgressData, UseTranscriptionReturn } from '../types';
+import { TranscriptionState, TranscriptionAction, TranscriptionJob, TranscriptionResult, ProgressData, UseTranscriptionReturn, SpeakerSegmentSummary } from '../types';
 import { useNotifications } from './NotificationContext';
 import { ErrorHandler } from '../services/errorHandling';
 
@@ -20,6 +20,8 @@ const initialTranscriptionState: TranscriptionState = {
     status: 'Starting...',
   },
   isProcessing: false,
+  speakerDirectory: {},
+  speakerSegments: [],
 };
 
 // ==================== Reducer ====================
@@ -75,30 +77,64 @@ function transcriptionReducer(state: TranscriptionState, action: TranscriptionAc
     case 'COMPLETE_JOB': {
       const { id, result } = action.payload;
       console.log('TranscriptionContext - Job completed:', id);
-      
-      const updatedJobs = state.jobs.map(job =>
-        job.id === id
-          ? {
-              ...job,
-              status: 'completed' as const,
-              progress: 100,
-              result,
-              speakerNames: result.speakers || {},
-            }
-          : job
-      );
+
+      let completedSpeakerMap: { [key: string]: string } | null = null;
+      let completedSpeakerSegments: SpeakerSegmentSummary[] | undefined;
+
+      const updatedJobs = state.jobs.map(job => {
+        if (job.id !== id) {
+          return job;
+        }
+
+        const incomingSpeakers = result?.speakers || {};
+        const existingSpeakers = job.speakerNames || job.result?.speakers || {};
+        const mergedSpeakers = { ...incomingSpeakers, ...existingSpeakers };
+        const normalizedResult: TranscriptionResult = {
+          ...job.result,
+          ...result,
+          speakers: mergedSpeakers,
+          speakerSegments: result?.speakerSegments || job.result?.speakerSegments,
+        };
+
+        completedSpeakerMap = mergedSpeakers;
+        completedSpeakerSegments = normalizedResult.speakerSegments;
+
+        return {
+          ...job,
+          status: 'completed' as const,
+          progress: 100,
+          result: normalizedResult,
+          speakerNames: mergedSpeakers,
+          speakerSegments: normalizedResult.speakerSegments,
+        };
+      });
 
       const completedJob = updatedJobs.find(job => job.id === id);
-      
+
       // IMPORTANT: Only update selectedJob if it's the currently selected job
       // or if no job is currently selected
       const shouldUpdateSelectedJob = !state.selectedJob || state.selectedJob.id === id;
+
+      const updatedSpeakerDirectory = { ...state.speakerDirectory };
+      if (completedSpeakerMap) {
+        Object.entries(completedSpeakerMap).forEach(([speakerId, speakerName]) => {
+          if (speakerName && speakerName.trim().length > 0) {
+            updatedSpeakerDirectory[speakerId] = speakerName;
+          } else if (!(speakerId in updatedSpeakerDirectory)) {
+            updatedSpeakerDirectory[speakerId] = speakerName;
+          }
+        });
+      }
+
+      const nextSpeakerSegments = completedSpeakerSegments ?? state.speakerSegments;
 
       return {
         ...state,
         jobs: updatedJobs,
         selectedJob: shouldUpdateSelectedJob ? completedJob : state.selectedJob,
         isProcessing: state.currentTranscriptionId === id ? false : state.isProcessing,
+        speakerDirectory: updatedSpeakerDirectory,
+        speakerSegments: nextSpeakerSegments,
       };
     }
 

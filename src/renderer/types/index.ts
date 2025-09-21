@@ -10,6 +10,7 @@ export interface Word {
   end: number;
   word: string;
   score: number;
+  speaker?: string;
 }
 
 export interface Segment {
@@ -22,11 +23,21 @@ export interface Segment {
   paragraphBreak?: boolean;
 }
 
+export interface SpeakerSegmentSummary {
+  speaker: string;
+  start: number;
+  end: number;
+  text: string;
+  segmentIds: (number | string)[];
+  wordCount: number;
+}
+
 export interface TranscriptionResult {
   segments: Segment[];
   language: string;
   word_segments?: Word[];
   speakers?: { [key: string]: string };
+  speakerSegments?: SpeakerSegmentSummary[];
 }
 
 export interface TranscriptionJob {
@@ -39,6 +50,7 @@ export interface TranscriptionJob {
   error?: string;
   speakerNames?: { [key: string]: string };
   speakerMerges?: { [key: string]: string };
+  speakerSegments?: SpeakerSegmentSummary[];
 }
 
 export interface ProgressData {
@@ -163,6 +175,7 @@ export interface ProjectData {
     version: string;
     segments: Segment[];
     speakers: { [key: string]: string };
+    speakerSegments?: SpeakerSegmentSummary[];
     globalMetadata: {
       totalSegments: number;
       totalWords: number;
@@ -175,6 +188,7 @@ export interface ProjectData {
     version: string;
     segments: Segment[];
     speakers: { [key: string]: string };
+    speakerSegments?: SpeakerSegmentSummary[];
   };
   speakers: SpeakerData;
   clips: ClipData;
@@ -208,6 +222,8 @@ export interface TranscriptionState {
   currentTranscriptionId: string | null;
   progressData: ProgressData;
   isProcessing: boolean;
+  speakerDirectory: { [key: string]: string };
+  speakerSegments?: SpeakerSegmentSummary[];
 }
 
 export interface UIState {

@@ -2,6 +2,77 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
+interface SpeakerSegmentSummary {
+  speaker: string;
+  start: number;
+  end: number;
+  text: string;
+  segmentIds: (number | string)[];
+  wordCount: number;
+}
+
+interface SpeakerMetadata {
+  speakers: { [key: string]: string };
+  speakerSegments: SpeakerSegmentSummary[];
+}
+
+const defaultSpeakerLabel = (index: number): string => `Speaker ${index + 1}`;
+
+const buildSpeakerMetadata = (segments: any[] = []): SpeakerMetadata => {
+  const speakers: { [key: string]: string } = {};
+  const speakerSegments: SpeakerSegmentSummary[] = [];
+
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return { speakers, speakerSegments };
+  }
+
+  const sortedSegments = [...segments].sort((a, b) => (a?.start ?? 0) - (b?.start ?? 0));
+  let current: SpeakerSegmentSummary | null = null;
+
+  sortedSegments.forEach((segment, index) => {
+    const speakerId = segment?.speaker || 'SPEAKER_00';
+    if (!speakers[speakerId]) {
+      speakers[speakerId] = defaultSpeakerLabel(Object.keys(speakers).length);
+    }
+
+    const start = typeof segment?.start === 'number' ? segment.start : 0;
+    const end = typeof segment?.end === 'number' ? segment.end : start;
+    const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
+    const words = Array.isArray(segment?.words) ? segment.words : [];
+    const wordCount = words.length || (text ? text.split(/\s+/).filter(Boolean).length : 0);
+    const segmentId = segment?.id ?? index;
+
+    if (current && current.speaker === speakerId) {
+      current.end = Math.max(current.end, end);
+      current.text = [current.text, text].filter(Boolean).join(' ').trim();
+      current.segmentIds.push(segmentId);
+      current.wordCount += wordCount;
+    } else {
+      if (current) {
+        speakerSegments.push(current);
+      }
+      current = {
+        speaker: speakerId,
+        start,
+        end,
+        text,
+        segmentIds: [segmentId],
+        wordCount,
+      };
+    }
+  });
+
+  if (current) {
+    speakerSegments.push(current);
+  }
+
+  if (Object.keys(speakers).length === 0) {
+    speakers['SPEAKER_00'] = defaultSpeakerLabel(0);
+  }
+
+  return { speakers, speakerSegments };
+};
+
 interface ProgressCallback {
   (progress: { progress: number; status: string }): void;
 }
@@ -410,10 +481,11 @@ export class SimpleCloudTranscriptionService {
         wordCount: segment.words?.length || 0,
         firstWords: segment.words?.slice(0, 3)
       });
-      
+
       // Redistribute punctuation from segment text to individual words
       const wordsWithPunctuation = this.redistributePunctuation(segment.text || '', segment.words || []);
-      
+      const segmentSpeaker = segment.speaker || 'SPEAKER_00';
+
       return {
         id: index,
         start: segment.start || 0,
@@ -424,9 +496,10 @@ export class SimpleCloudTranscriptionService {
             start: word.start || 0,
             end: word.end || 0,
             word: word.word || word.text || '',
-            score: word.confidence || 1.0
+            score: word.confidence || 1.0,
+            speaker: word.speaker || segmentSpeaker
           };
-          
+
           // Log the first few words to debug punctuation
           if (index === 0 && wordIndex < 5) {
             console.log(`Word ${wordIndex} after punctuation redistribution:`, {
@@ -434,17 +507,25 @@ export class SimpleCloudTranscriptionService {
               converted: convertedWord
             });
           }
-          
+
           return convertedWord;
         }),
-        speaker: segment.speaker || 'SPEAKER_00' // OpenAI doesn't do speaker detection
+        speaker: segmentSpeaker // OpenAI doesn't do speaker detection
       };
     });
-    
+
+    const metadata = buildSpeakerMetadata(convertedSegments);
+    const providedSpeakers = (openaiResult.speakers && typeof openaiResult.speakers === 'object') ? openaiResult.speakers : {};
+    const mergedSpeakers = Object.keys(providedSpeakers).length > 0
+      ? { ...metadata.speakers, ...providedSpeakers }
+      : metadata.speakers;
+
     const result = {
       segments: convertedSegments,
       language: openaiResult.language || 'en',
-      word_segments: openaiResult.words || []
+      word_segments: openaiResult.words || [],
+      speakers: mergedSpeakers,
+      speakerSegments: metadata.speakerSegments
     };
     
     console.log('Conversion complete:', {
@@ -478,38 +559,43 @@ export class SimpleCloudTranscriptionService {
           }
           
           setTimeout(() => {
+            const simulatedSegments = [
+              {
+                id: 0,
+                start: 0.0,
+                end: 8.0,
+                text: `This is a simulated OpenAI Whisper transcription with audio format conversion support. The file was processed successfully.`,
+                words: [
+                  { start: 0.0, end: 0.5, word: "This", score: 0.99, speaker: 'SPEAKER_00' },
+                  { start: 0.5, end: 0.7, word: "is", score: 0.98, speaker: 'SPEAKER_00' },
+                  { start: 0.7, end: 0.9, word: "a", score: 0.97, speaker: 'SPEAKER_00' },
+                  { start: 0.9, end: 1.5, word: "simulated", score: 0.96, speaker: 'SPEAKER_00' },
+                  { start: 1.5, end: 2.2, word: "OpenAI", score: 0.95, speaker: 'SPEAKER_00' },
+                  { start: 2.2, end: 2.8, word: "Whisper", score: 0.94, speaker: 'SPEAKER_00' },
+                  { start: 2.8, end: 3.5, word: "transcription", score: 0.93, speaker: 'SPEAKER_00' },
+                  { start: 3.5, end: 4.0, word: "with", score: 0.92, speaker: 'SPEAKER_00' },
+                  { start: 4.0, end: 4.5, word: "audio", score: 0.91, speaker: 'SPEAKER_00' },
+                  { start: 4.5, end: 5.0, word: "format", score: 0.90, speaker: 'SPEAKER_00' },
+                  { start: 5.0, end: 5.5, word: "conversion", score: 0.89, speaker: 'SPEAKER_00' },
+                  { start: 5.5, end: 6.0, word: "support.", score: 0.88, speaker: 'SPEAKER_00' },
+                  { start: 6.0, end: 6.3, word: "The", score: 0.87, speaker: 'SPEAKER_00' },
+                  { start: 6.3, end: 6.6, word: "file", score: 0.86, speaker: 'SPEAKER_00' },
+                  { start: 6.6, end: 6.9, word: "was", score: 0.85, speaker: 'SPEAKER_00' },
+                  { start: 6.9, end: 7.4, word: "processed", score: 0.84, speaker: 'SPEAKER_00' },
+                  { start: 7.4, end: 8.0, word: "successfully.", score: 0.83, speaker: 'SPEAKER_00' }
+                ],
+                speaker: 'SPEAKER_00'
+              }
+            ];
+            const metadata = buildSpeakerMetadata(simulatedSegments);
+
             resolve({
               status: 'success',
-              segments: [
-                {
-                  id: 0,
-                  start: 0.0,
-                  end: 8.0,
-                  text: `This is a simulated OpenAI Whisper transcription with audio format conversion support. The file was processed successfully.`,
-                  words: [
-                    { start: 0.0, end: 0.5, word: "This", score: 0.99 },
-                    { start: 0.5, end: 0.7, word: "is", score: 0.98 },
-                    { start: 0.7, end: 0.9, word: "a", score: 0.97 },
-                    { start: 0.9, end: 1.5, word: "simulated", score: 0.96 },
-                    { start: 1.5, end: 2.2, word: "OpenAI", score: 0.95 },
-                    { start: 2.2, end: 2.8, word: "Whisper", score: 0.94 },
-                    { start: 2.8, end: 3.5, word: "transcription", score: 0.93 },
-                    { start: 3.5, end: 4.0, word: "with", score: 0.92 },
-                    { start: 4.0, end: 4.5, word: "audio", score: 0.91 },
-                    { start: 4.5, end: 5.0, word: "format", score: 0.90 },
-                    { start: 5.0, end: 5.5, word: "conversion", score: 0.89 },
-                    { start: 5.5, end: 6.0, word: "support.", score: 0.88 },
-                    { start: 6.0, end: 6.3, word: "The", score: 0.87 },
-                    { start: 6.3, end: 6.6, word: "file", score: 0.86 },
-                    { start: 6.6, end: 6.9, word: "was", score: 0.85 },
-                    { start: 6.9, end: 7.4, word: "processed", score: 0.84 },
-                    { start: 7.4, end: 8.0, word: "successfully.", score: 0.83 }
-                  ],
-                  speaker: 'SPEAKER_00'
-                }
-              ],
+              segments: simulatedSegments,
               language: 'en',
-              word_segments: []
+              word_segments: simulatedSegments[0]?.words || [],
+              speakers: metadata.speakers,
+              speakerSegments: metadata.speakerSegments
             });
           }, 500);
         }
@@ -708,9 +794,10 @@ export class SimpleCloudTranscriptionService {
     if (utterances.length > 0) {
       // Use utterances as segments (preferred for speaker detection)
       segments = utterances.map((utterance: any, index: number) => {
-        const segmentWords = words.filter((word: any) => 
+        const segmentWords = words.filter((word: any) =>
           word.start >= utterance.start && word.end <= utterance.end
         );
+        const segmentSpeaker = `SPEAKER_${utterance.speaker.padStart(2, '0')}`;
 
         return {
           id: index,
@@ -721,9 +808,10 @@ export class SimpleCloudTranscriptionService {
             start: word.start / 1000,
             end: word.end / 1000,
             word: word.text,
-            score: word.confidence || 1.0
+            score: word.confidence || 1.0,
+            speaker: word.speaker || segmentSpeaker
           })),
-          speaker: `SPEAKER_${utterance.speaker.padStart(2, '0')}`
+          speaker: segmentSpeaker
         };
       });
     } else {
@@ -737,11 +825,18 @@ export class SimpleCloudTranscriptionService {
           start: word.start / 1000,
           end: word.end / 1000,
           word: word.text,
-          score: word.confidence || 1.0
+          score: word.confidence || 1.0,
+          speaker: word.speaker || 'SPEAKER_00'
         })),
         speaker: 'SPEAKER_00'
       }];
     }
+
+    const metadata = buildSpeakerMetadata(segments);
+    const providedSpeakers = (assemblyResult.speakers && typeof assemblyResult.speakers === 'object') ? assemblyResult.speakers : {};
+    const mergedSpeakers = Object.keys(providedSpeakers).length > 0
+      ? { ...metadata.speakers, ...providedSpeakers }
+      : metadata.speakers;
 
     const result = {
       segments,
@@ -750,8 +845,11 @@ export class SimpleCloudTranscriptionService {
         start: word.start / 1000,
         end: word.end / 1000,
         word: word.text,
-        score: word.confidence || 1.0
-      }))
+        score: word.confidence || 1.0,
+        speaker: word.speaker || 'SPEAKER_00'
+      })),
+      speakers: mergedSpeakers,
+      speakerSegments: metadata.speakerSegments
     };
 
     console.log('AssemblyAI conversion complete:', {
@@ -776,50 +874,55 @@ export class SimpleCloudTranscriptionService {
           progressCallback({ progress: 90, status: 'Processing results...' });
           
           setTimeout(() => {
+            const simulatedSegments = [
+              {
+                id: 0,
+                start: 0.0,
+                end: 6.0,
+                text: `This is a simulated AssemblyAI transcription with excellent speaker detection capabilities.`,
+                words: [
+                  { start: 0.0, end: 0.5, word: "This", score: 0.99, speaker: 'SPEAKER_00' },
+                  { start: 0.5, end: 0.7, word: "is", score: 0.98, speaker: 'SPEAKER_00' },
+                  { start: 0.7, end: 0.9, word: "a", score: 0.97, speaker: 'SPEAKER_00' },
+                  { start: 0.9, end: 1.5, word: "simulated", score: 0.96, speaker: 'SPEAKER_00' },
+                  { start: 1.5, end: 2.5, word: "AssemblyAI", score: 0.95, speaker: 'SPEAKER_00' },
+                  { start: 2.5, end: 3.2, word: "transcription", score: 0.94, speaker: 'SPEAKER_00' },
+                  { start: 3.2, end: 3.6, word: "with", score: 0.93, speaker: 'SPEAKER_00' },
+                  { start: 3.6, end: 4.2, word: "excellent", score: 0.92, speaker: 'SPEAKER_00' },
+                  { start: 4.2, end: 4.7, word: "speaker", score: 0.91, speaker: 'SPEAKER_00' },
+                  { start: 4.7, end: 5.3, word: "detection", score: 0.90, speaker: 'SPEAKER_00' },
+                  { start: 5.3, end: 6.0, word: "capabilities.", score: 0.89, speaker: 'SPEAKER_00' }
+                ],
+                speaker: 'SPEAKER_00'
+              },
+              {
+                id: 1,
+                start: 6.0,
+                end: 10.0,
+                text: `This service provides fast cloud processing with speaker identification.`,
+                words: [
+                  { start: 6.0, end: 6.5, word: "This", score: 0.99, speaker: 'SPEAKER_01' },
+                  { start: 6.5, end: 7.0, word: "service", score: 0.98, speaker: 'SPEAKER_01' },
+                  { start: 7.0, end: 7.5, word: "provides", score: 0.97, speaker: 'SPEAKER_01' },
+                  { start: 7.5, end: 8.0, word: "fast", score: 0.96, speaker: 'SPEAKER_01' },
+                  { start: 8.0, end: 8.5, word: "cloud", score: 0.95, speaker: 'SPEAKER_01' },
+                  { start: 8.5, end: 9.0, word: "processing", score: 0.94, speaker: 'SPEAKER_01' },
+                  { start: 9.0, end: 9.3, word: "with", score: 0.93, speaker: 'SPEAKER_01' },
+                  { start: 9.3, end: 9.7, word: "speaker", score: 0.92, speaker: 'SPEAKER_01' },
+                  { start: 9.7, end: 10.0, word: "identification.", score: 0.91, speaker: 'SPEAKER_01' }
+                ],
+                speaker: 'SPEAKER_01'
+              }
+            ];
+            const metadata = buildSpeakerMetadata(simulatedSegments);
+
             resolve({
               status: 'success',
-              segments: [
-                {
-                  id: 0,
-                  start: 0.0,
-                  end: 6.0,
-                  text: `This is a simulated AssemblyAI transcription with excellent speaker detection capabilities.`,
-                  words: [
-                    { start: 0.0, end: 0.5, word: "This", score: 0.99 },
-                    { start: 0.5, end: 0.7, word: "is", score: 0.98 },
-                    { start: 0.7, end: 0.9, word: "a", score: 0.97 },
-                    { start: 0.9, end: 1.5, word: "simulated", score: 0.96 },
-                    { start: 1.5, end: 2.5, word: "AssemblyAI", score: 0.95 },
-                    { start: 2.5, end: 3.2, word: "transcription", score: 0.94 },
-                    { start: 3.2, end: 3.6, word: "with", score: 0.93 },
-                    { start: 3.6, end: 4.2, word: "excellent", score: 0.92 },
-                    { start: 4.2, end: 4.7, word: "speaker", score: 0.91 },
-                    { start: 4.7, end: 5.3, word: "detection", score: 0.90 },
-                    { start: 5.3, end: 6.0, word: "capabilities.", score: 0.89 }
-                  ],
-                  speaker: 'SPEAKER_00'
-                },
-                {
-                  id: 1,
-                  start: 6.0,
-                  end: 10.0,
-                  text: `This service provides fast cloud processing with speaker identification.`,
-                  words: [
-                    { start: 6.0, end: 6.5, word: "This", score: 0.99 },
-                    { start: 6.5, end: 7.0, word: "service", score: 0.98 },
-                    { start: 7.0, end: 7.5, word: "provides", score: 0.97 },
-                    { start: 7.5, end: 8.0, word: "fast", score: 0.96 },
-                    { start: 8.0, end: 8.5, word: "cloud", score: 0.95 },
-                    { start: 8.5, end: 9.0, word: "processing", score: 0.94 },
-                    { start: 9.0, end: 9.3, word: "with", score: 0.93 },
-                    { start: 9.3, end: 9.7, word: "speaker", score: 0.92 },
-                    { start: 9.7, end: 10.0, word: "identification.", score: 0.91 }
-                  ],
-                  speaker: 'SPEAKER_01'
-                }
-              ],
+              segments: simulatedSegments,
               language: 'en',
-              word_segments: []
+              word_segments: simulatedSegments.flatMap(segment => segment.words),
+              speakers: metadata.speakers,
+              speakerSegments: metadata.speakerSegments
             });
           }, 500);
         }
