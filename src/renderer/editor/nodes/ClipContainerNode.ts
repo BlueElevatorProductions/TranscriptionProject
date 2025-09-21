@@ -126,6 +126,21 @@ export class ClipContainerNode extends ElementNode {
     return result;
   }
 
+  // Collect SpacerNodes contained directly/indirectly
+  getSpacerNodes(): Array<LexicalNode> {
+    const result: LexicalNode[] = [];
+    const stack = this.getChildren();
+    while (stack.length) {
+      const n = stack.shift()!;
+      if ((n as any).getType && (n as any).getType() === 'spacer') {
+        result.push(n);
+      } else if ($isElementNode(n)) {
+        stack.push(...(n as any).getChildren());
+      }
+    }
+    return result;
+  }
+
   exportJSON(): SerializedClipContainerNode {
     return {
       ...super.exportJSON(),

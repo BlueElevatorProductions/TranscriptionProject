@@ -133,9 +133,23 @@ function LexicalTranscriptEditorContent({
           const clipId = (child as ClipContainerNode).getClipId();
           const speakerId = (child as ClipContainerNode).getSpeakerId();
           const status = (child as ClipContainerNode).getStatus?.() ?? 'active';
+
+          // Include word data
           const wordsNodes = (child as ClipContainerNode).getWordNodes();
           const wordTexts = wordsNodes.map(w => (w as any).getTextContent?.() || '').join(' ');
-          contentParts.push(`${clipId}:${speakerId}:${status}:${wordTexts}`);
+
+          // Include spacer data to detect spacer changes/deletions
+          const spacerNodes = (child as ClipContainerNode).getSpacerNodes();
+          const spacerData = spacerNodes.map(s => {
+            const spacer = s as any;
+            const clipId = spacer.__clipId || '';
+            const duration = spacer.__durationSec || 0;
+            const start = spacer.__startSec || 0;
+            const end = spacer.__endSec || 0;
+            return `s:${clipId}:${duration}:${start}:${end}`;
+          }).join(',');
+
+          contentParts.push(`${clipId}:${speakerId}:${status}:${wordTexts}:spacers[${spacerData}]`);
         }
       });
       contentHash = contentParts.join('|');
