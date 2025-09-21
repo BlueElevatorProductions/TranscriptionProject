@@ -235,6 +235,7 @@ const AppMain: React.FC = () => {
             result: completedJob.result,
             speakerNames: completedJob.result?.speakers || {},
             normalizedAt: null,
+            speakerSegments: completedJob.result?.speakerSegments
           };
 
           transcriptionActions.selectJob(jobData);

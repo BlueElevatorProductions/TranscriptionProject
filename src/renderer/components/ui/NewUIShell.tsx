@@ -4,7 +4,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Play, Pause, SkipBack, SkipForward, Volume2, FileText, FolderOpen, Users, Scissors, Save, Type, Music, Settings, Palette, Download, File, ChevronDown } from 'lucide-react';
 import { useProject, useSelectedJob, useTranscription } from '../../contexts';
 import { useTheme } from '../theme-provider';
-import { Segment, ClipSettings } from '../../types';
+import { Segment, ClipSettings, SpeakerSegmentSummary } from '../../types';
 import { generateClipId, createContinuousClips } from '../../audio/AudioAppState';
 import SecondaryPanel from '../SecondaryPanel';
 import SpeakersPanel from '../shared/SpeakersPanel';
@@ -22,6 +22,82 @@ interface Speaker {
   totalTime?: number;
   color?: string;
 }
+
+const defaultSpeakerLabel = (index: number) => `Speaker ${index + 1}`;
+
+const buildSpeakerMapFromSegments = (segments: Segment[] = []): { [key: string]: string } => {
+  const speakerMap: { [key: string]: string } = {};
+  let order = 0;
+
+  segments.forEach(segment => {
+    const speakerId = segment.speaker || 'SPEAKER_00';
+    if (!speakerMap[speakerId]) {
+      speakerMap[speakerId] = defaultSpeakerLabel(order);
+      order += 1;
+    }
+  });
+
+  if (order === 0) {
+    speakerMap['SPEAKER_00'] = defaultSpeakerLabel(0);
+  }
+
+  return speakerMap;
+};
+
+const aggregateSpeakerSegments = (segments: Segment[] = []): SpeakerSegmentSummary[] => {
+  if (!segments || segments.length === 0) {
+    return [];
+  }
+
+  const sorted = [...segments].sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+  const aggregated: SpeakerSegmentSummary[] = [];
+  let current: SpeakerSegmentSummary | null = null;
+
+  sorted.forEach(segment => {
+    const speakerId = segment.speaker || 'SPEAKER_00';
+    const start = segment.start ?? 0;
+    const end = segment.end ?? start;
+    const text = segment.text || '';
+    const wordCount = segment.words?.length || (text ? text.split(/\s+/).filter(Boolean).length : 0);
+
+    if (current && current.speaker === speakerId) {
+      current.end = Math.max(current.end, end);
+      current.text = [current.text, text].filter(Boolean).join(' ').trim();
+      current.segmentIds.push(segment.id);
+      current.wordCount += wordCount;
+    } else {
+      if (current) {
+        aggregated.push(current);
+      }
+      current = {
+        speaker: speakerId,
+        start,
+        end,
+        text,
+        segmentIds: [segment.id],
+        wordCount,
+      };
+    }
+  });
+
+  if (current) {
+    aggregated.push(current);
+  }
+
+  return aggregated;
+};
+
+const speakerMapsEqual = (
+  a: { [key: string]: string } = {},
+  b: { [key: string]: string } = {}
+): boolean => {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+  return aKeys.every(key => a[key] === b[key]);
+};
 import ColorSettings from '../Settings/ColorSettings';
 import ImportSettings from '../Settings/ImportSettings';
 import TopBar from './TopBar';
@@ -439,12 +515,25 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
         
         if (hasInitialClipOnly && !alreadyHasTranscribedClips) {
           if (UI_DEBUG) console.log('Converting transcription segments to clips...');
-          
+
+          const baseSegments = selectedJob.result.segments;
+          const jobSpeakers = selectedJob.result.speakers;
+          const normalizedSpeakers = jobSpeakers && Object.keys(jobSpeakers).length > 0
+            ? { ...jobSpeakers }
+            : buildSpeakerMapFromSegments(baseSegments);
+          const normalizedSpeakerSegments = (selectedJob.result.speakerSegments && selectedJob.result.speakerSegments.length > 0)
+            ? selectedJob.result.speakerSegments
+            : aggregateSpeakerSegments(baseSegments);
+
+          if (!speakerMapsEqual(normalizedSpeakers, projectState.globalSpeakers || {})) {
+            projectActions.updateSpeakers(normalizedSpeakers);
+          }
+
           // Map word_segments to individual segments
           const wordSegments = selectedJob.result.word_segments || [];
-          
+
           // Group segments into natural paragraphs
-          const segmentGroups = groupSegmentsIntoParagraphs(selectedJob.result.segments, wordSegments);
+          const segmentGroups = groupSegmentsIntoParagraphs(baseSegments, wordSegments);
 
           // Build normalized tokenized clips and add transport gap clips for continuous playback
           const computeClips = () => {
@@ -452,16 +541,20 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
             let prevLastWordEnd: number | null = null;
             const transcriptionClips = segmentGroups.map((group: any[], groupIndex: number) => {
             // Combine words provided by the model from segments in this group
-            let allGroupWords = group.flatMap((seg: any) => (seg.words || []).map((w: any) => ({
-              word: w.word || w.text || '',
-              start: w.start,
-              end: w.end,
-              confidence: w.score || w.confidence || 1.0,
-            })));
+            let allGroupWords = group.flatMap((seg: any) => {
+              const segmentSpeaker = seg.speaker || 'SPEAKER_00';
+              return (seg.words || []).map((w: any) => ({
+                word: w.word || w.text || '',
+                start: w.start,
+                end: w.end,
+                confidence: w.score || w.confidence || 1.0,
+                speaker: w.speaker || segmentSpeaker,
+              }));
+            });
             // Do not synthesize fallback words; use only model-provided timings
             // Sort words by start time to ensure proper order
             allGroupWords.sort((a, b) => a.start - b.start);
-            
+
             // Calculate group boundaries
             const firstSegment = group[0];
             const lastSegment = group[group.length - 1];
@@ -471,15 +564,9 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
             // Combine all text from the group
             const combinedText = group.map(seg => seg.text).filter(Boolean).join(' ');
 
-            // Use the most common speaker in the group
-            const speakerCounts = group.reduce((acc: Record<string, number>, seg) => {
-              const speaker = seg.speaker || 'SPEAKER_00';
-              acc[speaker] = (acc[speaker] || 0) + 1;
-              return acc;
-            }, {});
-            const dominantSpeaker = Object.keys(speakerCounts).reduce((a, b) =>
-              speakerCounts[a] > speakerCounts[b] ? a : b
-            );
+            const firstWordSpeaker = allGroupWords.find(word => word.speaker)?.speaker;
+            const fallbackSegmentSpeaker = group.find((seg: any) => seg.speaker)?.speaker || firstSegment.speaker || 'SPEAKER_00';
+            const clipSpeaker = firstWordSpeaker || fallbackSegmentSpeaker || 'SPEAKER_00';
 
             console.log(`Group ${groupIndex}:`, {
               segmentCount: group.length,
@@ -487,9 +574,9 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
               wordCount: allGroupWords.length,
               timeRange: `${startTime}-${endTime}`,
               duration: endTime - startTime,
-              speaker: dominantSpeaker
+              speaker: clipSpeaker
             });
-            
+
             // Normalize to tokens with 1-second rule
             const tokens: import('../../types').Token[] = [];
             const ONE = 1.0;
@@ -510,7 +597,8 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
             for (let i = 0; i < allGroupWords.length; i++) {
               const w = allGroupWords[i];
               // Push word token
-              tokens.push({ kind: 'word', id: `w-${Math.round(w.start*1000)}`, text: w.word, start: w.start, end: w.end, speaker: dominantSpeaker, score: w.confidence });
+              const wordSpeaker = w.speaker || clipSpeaker;
+              tokens.push({ kind: 'word', id: `w-${Math.round(w.start*1000)}`, text: w.word, start: w.start, end: w.end, speaker: wordSpeaker, score: w.confidence });
               // Internal gap to next word
               if (i < allGroupWords.length - 1) {
                 const n = allGroupWords[i + 1];
@@ -543,7 +631,7 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
               words: allGroupWords,
               tokens,
               text: combinedText,
-              speaker: dominantSpeaker,
+              speaker: clipSpeaker,
               confidence: group.reduce((acc, seg) => acc + (seg.confidence || 0.95), 0) / group.length,
               type: 'user-created' as const,
               duration: endTime - startTime,
@@ -567,7 +655,9 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
               ...projectState.projectData,
               transcription: {
                 ...projectState.projectData.transcription,
-                segments: selectedJob.result.segments,
+                segments: baseSegments,
+                speakers: normalizedSpeakers,
+                speakerSegments: normalizedSpeakerSegments,
               },
               clips: {
                 ...projectState.projectData.clips,
@@ -599,7 +689,7 @@ const NewUIShell: React.FC<NewUIShellProps> = ({ onManualSave }) => {
 
     // kick async conversion
     convertIfNeeded();
-  }, [selectedJob?.id, selectedJob?.status, selectedJob?.normalizedAt, projectState.projectData?.clips?.clips?.length, projectActions, markJobNormalized]);
+  }, [selectedJob?.id, selectedJob?.status, selectedJob?.normalizedAt, projectState.projectData?.clips?.clips?.length, projectState.globalSpeakers, projectActions, markJobNormalized]);
 
   // Load API keys and color preference on component mount
   useEffect(() => {
