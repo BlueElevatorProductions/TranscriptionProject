@@ -38,6 +38,7 @@ import FormattingPlugin from './plugins/FormattingPlugin';
 import ClipSpeakerPlugin from './plugins/ClipSpeakerPlugin';
 import DoubleClickEditGuardPlugin from './plugins/DoubleClickEditGuardPlugin';
 import TokenSplitPlugin from './plugins/TokenSplitPlugin';
+import SpacerClickPlugin from './plugins/SpacerClickPlugin';
 import CursorTrackingPlugin from './plugins/CursorTrackingPlugin';
 
 import { 
@@ -450,7 +451,10 @@ function LexicalTranscriptEditorContent({
         onParagraphBreak={onParagraphBreak}
         readOnly={readOnly}
       />
-      
+
+      {/* Spacer click handling (Edit mode only) */}
+      <SpacerClickPlugin readOnly={readOnly} />
+
       {/* Clip creation plugin (Edit mode only) */}
       {!readOnly && (
       <ClipCreationPlugin

@@ -615,6 +615,129 @@ ZIP archives containing:
 
 ## Recent Updates (September 2025 - Latest)
 
+### ✅ Enhanced Speaker Tracking & Auto-Save Improvements (September 2025 - Latest)
+
+**Advanced Speaker Intelligence**: Complete implementation of diarized speaker metadata propagation with deferred auto-save after clip normalization.
+
+#### **🎯 Key Features**
+
+**Enhanced Speaker Tracking**:
+- **Diarized Speaker Metadata**: Automatic propagation of speaker segments from transcription services
+- **Speaker Segment Summaries**: Intelligent aggregation of speaker segments with duration tracking
+- **Cross-Job Speaker Persistence**: Speaker names and mappings persist across transcription jobs
+- **Robust Speaker Directory**: Global speaker directory with automatic merging and conflict resolution
+
+**Intelligent Auto-Save System**:
+- **Deferred Auto-Save**: Auto-save triggers after clip normalization completes, preventing race conditions
+- **Normalization Tracking**: `normalizedAt` timestamp tracks when jobs have been processed into clips
+- **Conditional Save Logic**: Auto-save only occurs for newly completed jobs that haven't been normalized yet
+- **Memory-Efficient Processing**: Prevents redundant clip generation and duplicate auto-saves
+
+#### **🔧 Technical Implementation**
+
+**Speaker Metadata Propagation**:
+```typescript
+// Enhanced speaker metadata building in main.ts
+const buildSpeakerMetadata = (segments: any[] = []): {
+  speakers: { [key: string]: string };
+  speakerSegments: SpeakerSegmentSummary[]
+} => {
+  // Intelligent speaker labeling and segment aggregation
+  // Automatic fallback speaker generation when metadata missing
+  // Continuous speaker segment creation with word count tracking
+};
+```
+
+**Auto-Save Integration**:
+```typescript
+// Deferred auto-save in App.tsx
+useEffect(() => {
+  if (pendingAutoSaveJobId && selectedJob?.id === pendingAutoSaveJobId) {
+    if (selectedJob.normalizedAt) {
+      // Job has been normalized, trigger auto-save
+      handleSave();
+      setPendingAutoSaveJobId(null);
+    }
+  }
+}, [selectedJob?.normalizedAt, pendingAutoSaveJobId]);
+```
+
+**Speaker Directory Management**:
+```typescript
+// Enhanced TranscriptionContext with speaker persistence
+case 'COMPLETE_JOB': {
+  const updatedSpeakerDirectory = { ...state.speakerDirectory };
+  if (completedSpeakerMap) {
+    Object.entries(completedSpeakerMap).forEach(([speakerId, speakerName]) => {
+      if (speakerName && speakerName.trim().length > 0) {
+        updatedSpeakerDirectory[speakerId] = speakerName;
+      }
+    });
+  }
+  // Merge speaker segments and update global directory
+};
+```
+
+#### **🎵 User Experience Benefits**
+
+**Seamless Speaker Management**:
+- **Automatic Speaker Detection**: Transcription services provide speaker diarization automatically
+- **Persistent Speaker Names**: Once named, speakers persist across all project transcriptions
+- **Smart Speaker Merging**: Intelligent merging of speaker metadata from different sources
+- **Visual Speaker Segments**: Clear visualization of speaker segments with duration and word counts
+
+**Reliable Auto-Save**:
+- **No Lost Work**: Auto-save ensures transcription results are always preserved
+- **Performance Optimized**: Deferred save prevents UI blocking during clip normalization
+- **Race Condition Free**: Proper sequencing prevents save conflicts and data corruption
+- **Status Tracking**: Clear indication when projects have been auto-saved
+
+#### **🏗️ Technical Architecture**
+
+**Enhanced Data Types**:
+```typescript
+interface SpeakerSegmentSummary {
+  speaker: string;
+  start: number;
+  end: number;
+  text: string;
+  segmentIds: (number | string)[];
+  wordCount: number;
+}
+
+interface TranscriptionJob {
+  // ... existing fields
+  normalizedAt?: string | null;        // New: tracks normalization completion
+  speakerSegments?: SpeakerSegmentSummary[];  // New: speaker segment summaries
+}
+```
+
+**Improved Cloud Transcription**:
+- **Enhanced Whisper Service**: Better speaker diarization and metadata extraction
+- **Robust Error Handling**: Comprehensive error recovery for cloud transcription failures
+- **Progress Tracking**: Detailed progress updates including speaker detection phases
+- **Service Compatibility**: Works with OpenAI, AssemblyAI, and Rev.ai transcription services
+
+#### **🚀 Performance Improvements**
+
+**Memory Efficiency**:
+- **Smart Clip Generation**: Only generates clips once per transcription job
+- **Efficient Speaker Storage**: Compact speaker directory with automatic cleanup
+- **Reduced Redundancy**: Eliminates duplicate clip normalization and saves
+
+**Processing Pipeline**:
+```
+Transcription Complete → Speaker Metadata Extraction →
+Job Completion Event → Clip Normalization →
+Auto-Save Trigger → Project Persistence
+```
+
+**Developer Benefits**:
+- **Comprehensive Logging**: Detailed debug output for speaker tracking and auto-save flow
+- **Type Safety**: Full TypeScript coverage for new speaker and auto-save interfaces
+- **Error Recovery**: Graceful handling of speaker metadata and save failures
+- **Testing Support**: Robust state management enables comprehensive testing
+
 ### ✅ Drag-and-Drop Clip Reordering with Contiguous Timeline (September 2025 - Latest)
 
 **Revolutionary Audio Editing**: Complete implementation of drag-and-drop clip reordering with seamless audio playback following the reordered sequence.

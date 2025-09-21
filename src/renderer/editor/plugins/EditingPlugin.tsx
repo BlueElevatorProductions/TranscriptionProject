@@ -20,6 +20,7 @@ import {
 import { WordNode, $isWordNode, $createWordNode } from '../nodes/WordNode';
 import { SegmentNode, $isSegmentNode } from '../nodes/SegmentNode';
 import { $isSpeakerNode } from '../nodes/SpeakerNode';
+import { $isSpacerNode } from '../nodes/SpacerNode';
 import { ClipContainerNode } from '../nodes/ClipContainerNode';
 
 interface EditingPluginProps {
@@ -521,6 +522,8 @@ export default function EditingPlugin({
     if (editorElement) {
       editorElement.addEventListener('dblclick', handleDoubleClick);
       editorElement.addEventListener('contextmenu', handleContextMenu);
+
+
       // Enter key to split at cursor into a new segment (Edit mode only)
       const handleKeyDown = (event: KeyboardEvent) => {
         if (readOnly) return;
@@ -531,13 +534,83 @@ export default function EditingPlugin({
             const selection = $getSelection();
             if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
 
-            // Try to resolve ClipContainerNode via Lexical parent chain
+            // Get the selected node for regular Enter handling
             let node: LexicalNode | null = selection.anchor.getNode();
+
+            // Try to resolve ClipContainerNode via Lexical parent chain
             let container: any = node;
             const chain: string[] = [];
             while (container && !(container instanceof ClipContainerNode)) {
               chain.push((container as any)?.getType?.() || (container as any)?.constructor?.name || 'unknown');
               container = container.getParent && container.getParent();
+            }
+
+            // Special handling for spacer-positioned selection
+            // If we can't find the container via parent chain, check if we're near a spacer
+            if (!(container instanceof ClipContainerNode)) {
+              const paragraph = selection.anchor.getNode();
+              let paragraphNode = paragraph;
+
+              // Find the paragraph containing the selection
+              while (paragraphNode && paragraphNode.getType() !== 'paragraph') {
+                paragraphNode = paragraphNode.getParent && paragraphNode.getParent();
+              }
+
+              if (paragraphNode) {
+                const paragraphChildren = paragraphNode.getChildren();
+                // Look for spacers in the paragraph to get clipId
+                for (const child of paragraphChildren) {
+                  if (child.getType && child.getType() === 'spacer') {
+                    const spacerNode = child as any;
+                    const clipId = spacerNode.__clipId;
+                    if (clipId) {
+                      console.log('[EditingPlugin] Enter: Found spacer with clipId:', clipId, 'attempting to resolve container');
+                      // Find ClipContainerNode by clipId
+                      const root = $getRoot();
+                      const topChildren = root.getChildren();
+                      for (const topChild of topChildren) {
+                        if (topChild instanceof ClipContainerNode) {
+                          const containerClipId = (topChild as ClipContainerNode).getClipId?.();
+                          if (containerClipId === clipId) {
+                            container = topChild;
+                            console.log('[EditingPlugin] Enter: Resolved container via spacer clipId:', clipId);
+                            break;
+                          }
+                        }
+                      }
+                      break;
+                    }
+                  }
+                  // Also check nested children for spacers
+                  if (typeof child.getChildren === 'function') {
+                    const nestedChildren = child.getChildren();
+                    for (const nestedChild of nestedChildren) {
+                      if (nestedChild.getType && nestedChild.getType() === 'spacer') {
+                        const spacerNode = nestedChild as any;
+                        const clipId = spacerNode.__clipId;
+                        if (clipId) {
+                          console.log('[EditingPlugin] Enter: Found nested spacer with clipId:', clipId);
+                          // Find ClipContainerNode by clipId
+                          const root = $getRoot();
+                          const topChildren = root.getChildren();
+                          for (const topChild of topChildren) {
+                            if (topChild instanceof ClipContainerNode) {
+                              const containerClipId = (topChild as ClipContainerNode).getClipId?.();
+                              if (containerClipId === clipId) {
+                                container = topChild;
+                                console.log('[EditingPlugin] Enter: Resolved container via nested spacer clipId:', clipId);
+                                break;
+                              }
+                            }
+                          }
+                          break;
+                        }
+                      }
+                    }
+                    if (container instanceof ClipContainerNode) break;
+                  }
+                }
+              }
             }
 
             // Fallback: resolve via DOM selection
