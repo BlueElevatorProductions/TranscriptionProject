@@ -1,18 +1,37 @@
 /**
- * Main App Component
- * Root component that provides context and renders the new UI
+ * Main App Component v2.0
+ *
+ * Simplified app using v2.0 architecture:
+ * - ProjectContextV2 as thin cache that dispatches to main process
+ * - Clean error boundaries
+ * - Segment-based data model
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
+import './styles/glass-dialogs.css';
 
-// New UI components
-import NewUIShell from './components/ui/NewUIShell';
+// v2.0 Context
+import { ProjectProvider as ProjectProviderV2, useProjectV2 } from './contexts/ProjectContextV2';
+
+// UI Components
+import NewUIShellV2 from './components/ui/NewUIShellV2';
 import ToastContainer from './components/Notifications/ToastContainer';
 import { useNotifications } from './contexts';
 
-// Error boundary for transcription crashes
-class TranscriptionErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
+// v2.0 Dialogs
+import NewProjectDialogV2 from './dialogs/NewProjectDialogV2';
+import ImportDialogV2 from './dialogs/ImportDialogV2';
+
+// Other providers that are still compatible
+import { NotificationProvider } from './contexts/NotificationContext';
+import { ThemeProvider } from './components/theme-provider';
+
+// Error boundary for v2.0
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: any }
+> {
   constructor(props: any) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -23,12 +42,7 @@ class TranscriptionErrorBoundary extends React.Component<{children: React.ReactN
   }
 
   componentDidCatch(error: any, errorInfo: any) {
-    console.error('Transcription crashed:', error, errorInfo);
-    
-    // Try to reset app state
-    if ((window as any).electronAPI?.resetTranscriptionState) {
-      (window as any).electronAPI.resetTranscriptionState();
-    }
+    console.error('🔥 App v2.0 Error:', error, errorInfo);
   }
 
   render() {
@@ -36,16 +50,18 @@ class TranscriptionErrorBoundary extends React.Component<{children: React.ReactN
       return (
         <div className="flex items-center justify-center h-screen bg-red-50">
           <div className="max-w-md p-6 bg-white rounded-lg shadow-lg">
-            <h2 className="text-2xl font-bold text-red-600 mb-4">Transcription Error</h2>
-            <p className="text-gray-700 mb-4">The transcription process encountered an error.</p>
+            <h2 className="text-2xl font-bold text-red-600 mb-4">Application Error</h2>
+            <p className="text-gray-700 mb-4">
+              TranscriptionProject v2.0 encountered an error.
+            </p>
             <details className="mb-4">
               <summary className="cursor-pointer text-sm text-gray-500">Error details</summary>
               <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
                 {this.state.error?.toString()}
               </pre>
             </details>
-            <button 
-              onClick={() => window.location.reload()} 
+            <button
+              onClick={() => window.location.reload()}
               className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
             >
               Restart Application
@@ -59,548 +75,140 @@ class TranscriptionErrorBoundary extends React.Component<{children: React.ReactN
   }
 }
 
-// ==================== Import all necessary components ====================
-
-// Contexts
-import { 
-  AppProviders,
-  useProject,
-  useTranscription,
-  useTranscriptionErrorHandler
-} from './contexts';
-
-// Components
-import EnhancedImportDialog from './components/ImportDialog/EnhancedImportDialog';
-import ProjectImportDialog from './components/ImportDialog/ProjectImportDialog';
-import NewProjectDialog from './components/NewProject/NewProjectDialog';
-import { GlassProgressOverlay } from './components/ui/GlassProgressOverlay';
-
-// Types
-import { TranscriptionJob, ProjectData } from './types';
-
-// ==================== Main App Component ====================
-
-const AppMain: React.FC = () => {
-  // Notifications
+// Main app content
+const AppContent: React.FC = () => {
   const { state: notificationState, dismissToast } = useNotifications() as any;
+  const { actions: projectActions } = useProjectV2();
+
   // Dialog state
-  const [showImportDialog, setShowImportDialog] = useState<boolean>(false);
-  const [showProjectImportDialog, setShowProjectImportDialog] = useState<boolean>(false);
-  const [showNewProjectDialog, setShowNewProjectDialog] = useState<boolean>(false);
-  const [pendingAutoSaveJobId, setPendingAutoSaveJobId] = useState<string | null>(null);
-  const autoSavedJobIdsRef = useRef<Set<string>>(new Set());
-  const autoSaveInProgressRef = useRef<Set<string>>(new Set());
+  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
 
-  // Context hooks
-  const { state: transcriptionState, actions: transcriptionActions } = useTranscription();
-  const { state: projectState, actions: projectActions } = useProject();
-  
-  // Error handling
-  const { handleTranscriptionError } = useTranscriptionErrorHandler();
-
-  // Project creation handler
-  const handleCreateProject = useCallback(async (projectName: string, projectPath: string) => {
-    try {
-      // Clear any existing transcription state to prevent data contamination
-      transcriptionActions.selectJob(null);
-      
-      // Create a new project structure
-      const newProject: any = {
-        project: {
-          name: projectName,
-          created: new Date().toISOString(),
-          lastModified: new Date().toISOString(),
-          version: '1.0.0',
-          type: 'transcription',
-        },
-        transcription: {
-          segments: [],
-          globalMetadata: {
-            totalSegments: 0,
-            totalWords: 0,
-            averageConfidence: 0,
-            processingTime: 0,
-            editCount: 0,
-          },
-        },
-        speakers: {
-          version: '1.0.0',
-          speakers: {},
-          defaultSpeaker: 'SPEAKER_00'
-        },
-        clips: {
-          version: '1.0.0',
-          clips: [],
-          clipSettings: {
-            autoClipOnSpeakerChange: true,
-            maxClipDuration: 300
-          }
-        },
-      };
-      
-      // Load the project into the app with the path
-      projectActions.loadProject(newProject);
-      projectActions.setProjectPath(projectPath);
-      
-      // Close dialog and show import dialog
-      setShowNewProjectDialog(false);
-      setShowImportDialog(true);
-
-      console.log('New project created:', projectName, 'at', projectPath);
-    } catch (error) {
-      console.error('Failed to create project:', error);
-      handleTranscriptionError(error);
-    }
-  }, [projectActions, transcriptionActions, handleTranscriptionError]);
-
-  // Initialize app and set up event listeners
+  // Initialize app and set up menu listeners
   useEffect(() => {
     const initializeApp = async () => {
       try {
         const appVersion = await (window as any).electronAPI?.getVersion();
-        const appPlatform = await (window as any).electronAPI?.getPlatform();
-        console.log('App initialized:', { version: appVersion, platform: appPlatform });
+        console.log('🚀 TranscriptionProject v2.0 initialized:', appVersion);
       } catch (error) {
         console.error('Failed to initialize app:', error);
       }
     };
     initializeApp();
-  }, []);
 
-  // Test helper: allow Playwright to inject a loaded project directly
-  useEffect(() => {
-    const handler = (e: any) => {
-      try {
-        const data = e.detail;
-        console.log('[TEST] Loading project via test-load-project event. Segments:', data?.transcription?.segments?.length);
-        projectActions.loadProject(data);
-      } catch (err) {
-        console.error('[TEST] Failed to load project via event:', err);
-      }
-    };
-    window.addEventListener('test-load-project', handler as EventListener);
-    return () => window.removeEventListener('test-load-project', handler as EventListener);
-  }, [projectActions]);
-
-  // Event listeners for project actions
-  useEffect(() => {
+    // Menu event listeners
     const handleNewProject = () => {
+      console.log('📄 New project requested');
       setShowNewProjectDialog(true);
     };
-    
-    const handleOpenProject = () => {
-      setShowProjectImportDialog(true);
+
+    const handleImportAudio = () => {
+      console.log('🎵 Import audio requested');
+      setShowImportDialog(true);
     };
-    
+
+    // Set up event listeners
     window.addEventListener('open-new-project', handleNewProject);
-    window.addEventListener('open-project-import', handleOpenProject);
-    
+    window.addEventListener('open-import-audio', handleImportAudio);
+
+    // Menu listeners from Electron
+    (window as any).electronAPI?.onMenuNewProject?.(handleNewProject);
+    (window as any).electronAPI?.onMenuImportAudio?.(handleImportAudio);
+
     return () => {
       window.removeEventListener('open-new-project', handleNewProject);
-      window.removeEventListener('open-project-import', handleOpenProject);
+      window.removeEventListener('open-import-audio', handleImportAudio);
     };
   }, []);
 
-  // IPC event handlers for transcription
-  useEffect(() => {
-    const handleTranscriptionComplete = async (completedJob: any) => {
-      console.log('=== RENDERER: TRANSCRIPTION COMPLETE EVENT RECEIVED ===');
-      console.log('Renderer: Received transcription-complete event with data:', {
-        hasJob: !!completedJob,
-        jobId: completedJob?.id,
-        hasResult: !!completedJob?.result,
-        resultType: typeof completedJob?.result,
-        segmentCount: completedJob?.result?.segments?.length || 0,
-        jobKeys: completedJob ? Object.keys(completedJob) : []
-      });
-      
-      try {
-        if (completedJob?.id && completedJob?.result) {
-          console.log('Renderer: Processing completed job:', completedJob.id);
-          console.log('Renderer: Job result structure:', {
-            segments: completedJob.result.segments?.length || 0,
-            language: completedJob.result.language,
-            hasWordSegments: !!completedJob.result.word_segments
-          });
-          
-          transcriptionActions.completeJob(completedJob.id, completedJob.result);
-          console.log('Renderer: Called completeJob action');
-          
-          const jobData: TranscriptionJob = {
-            id: completedJob.id,
-            filePath: completedJob.filePath,
-            fileName: completedJob.fileName,
-            status: 'completed',
-            progress: 100,
-            result: completedJob.result,
-            speakerNames: completedJob.result?.speakers || {},
-            normalizedAt: null,
-            speakerSegments: completedJob.result?.speakerSegments
-          };
+  // Handle project creation
+  const handleProjectCreated = (projectName: string, projectPath: string) => {
+    console.log('✅ Project created:', { projectName, projectPath });
+    setShowNewProjectDialog(false);
+    // After project creation, show import dialog
+    setShowImportDialog(true);
+  };
 
-          transcriptionActions.selectJob(jobData);
-          console.log('Renderer: Called selectJob action');
+  // Handle audio import
+  const handleAudioImported = async (filePath: string, settings: any) => {
+    console.log('🎬 App.tsx.handleAudioImported called with:', { filePath, settings });
+    setShowImportDialog(false);
 
-          setPendingAutoSaveJobId(completedJob.id);
-          console.log('Renderer: Scheduled auto-save for job:', completedJob.id);
+    try {
+      const transcriptionOptions = {
+        method: settings.transcriptionMethod,
+        language: 'en',
+        model: 'whisper-1',
+        quality: settings.quality
+      };
 
-          console.log('=== RENDERER: TRANSCRIPTION COMPLETION HANDLING DONE ===');
-        } else {
-          console.error('Renderer: Invalid completion data - missing ID or result:', {
-            hasId: !!completedJob?.id,
-            hasResult: !!completedJob?.result
-          });
-        }
-      } catch (error) {
-        console.error('Error in handleTranscriptionComplete:', error);
-        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+      console.log('🔧 App.tsx: About to call projectActions.startTranscription with:', transcriptionOptions);
+
+      const success = await projectActions.startTranscription(filePath, transcriptionOptions);
+
+      console.log('📊 App.tsx: projectActions.startTranscription returned:', success);
+
+      if (success) {
+        console.log('✅ App.tsx: Transcription started successfully');
+      } else {
+        console.error('❌ App.tsx: Failed to start transcription (returned false)');
       }
-    };
-
-    const handleTranscriptionProgress = (progressData: any) => {
-      console.log('Renderer: Received transcription progress:', {
-        id: progressData?.id,
-        progress: progressData?.progress,
-        status: progressData?.status
-      });
-      if (progressData?.id && progressData?.progress !== undefined) {
-        transcriptionActions.updateJobProgress(progressData.id, progressData.progress, progressData.status);
-      }
-    };
-
-    const handleTranscriptionErrorEvent = (errorData: any) => {
-      console.log('Renderer: Received transcription error:', errorData);
-      
-      // Update the transcription job status to error
-      if (errorData?.id) {
-        transcriptionActions.errorJob(errorData.id, errorData.error || 'Transcription failed');
-        console.log('Renderer: Called errorJob action for job ID:', errorData.id);
-      }
-      
-      // Show error notification to user
-      handleTranscriptionError(errorData?.error || errorData, 'transcription');
-    };
-
-    const handleDebugLog = (message: string) => {
-      console.log('🔍 DEBUG (from main):', message);
-    };
-
-    // Set up IPC listeners
-    (window as any).electronAPI?.onTranscriptionComplete?.(handleTranscriptionComplete);
-    (window as any).electronAPI?.onTranscriptionProgress?.(handleTranscriptionProgress);
-    (window as any).electronAPI?.onTranscriptionError?.(handleTranscriptionErrorEvent);
-    (window as any).electronAPI?.onDebugLog?.(handleDebugLog);
-
-    return () => {
-      (window as any).electronAPI?.removeAllListeners?.('transcription-complete');
-      (window as any).electronAPI?.removeAllListeners?.('transcription-progress');
-      (window as any).electronAPI?.removeAllListeners?.('transcription-error');
-      (window as any).electronAPI?.removeAllListeners?.('debug-log');
-    };
-  }, [transcriptionActions, handleTranscriptionError]);
-
-  useEffect(() => {
-    if (!pendingAutoSaveJobId) {
-      return;
+    } catch (error) {
+      console.error('❌ App.tsx: Exception during transcription start:', error);
     }
-
-    const job = transcriptionState.jobs.find(j => j.id === pendingAutoSaveJobId);
-    if (!job) {
-      return;
-    }
-
-    if (job.status !== 'completed') {
-      return;
-    }
-
-    if (!job.normalizedAt) {
-      return;
-    }
-
-    if (!projectState.hasUnsavedChanges) {
-      return;
-    }
-
-    if (!projectState.currentProjectPath) {
-      console.log('Auto-save pending until project path is set for job:', job.id);
-      return;
-    }
-
-    if (autoSavedJobIdsRef.current.has(job.id) || autoSaveInProgressRef.current.has(job.id)) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const performAutoSave = async () => {
-      console.log('Renderer: Auto-saving project for normalized job:', job.id);
-      try {
-        autoSaveInProgressRef.current.add(job.id);
-        await projectActions.saveProject();
-        if (!cancelled) {
-          autoSavedJobIdsRef.current.add(job.id);
-          setPendingAutoSaveJobId(null);
-          console.log('Renderer: Auto-save completed for job:', job.id);
-        }
-      } catch (error) {
-        console.error('Renderer: Auto-save failed for job:', job.id, error);
-      }
-      autoSaveInProgressRef.current.delete(job.id);
-    };
-
-    performAutoSave();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingAutoSaveJobId, transcriptionState.jobs, projectState.hasUnsavedChanges, projectState.currentProjectPath, projectActions]);
-
-  const handleManualSaveTriggered = useCallback(() => {
-    if (pendingAutoSaveJobId) {
-      console.log('Renderer: Manual save triggered, clearing auto-save for job:', pendingAutoSaveJobId);
-      autoSaveInProgressRef.current.delete(pendingAutoSaveJobId);
-    }
-    setPendingAutoSaveJobId(null);
-  }, [pendingAutoSaveJobId]);
-
-  // Get current processing job for progress overlay
-  const currentJob = transcriptionState.jobs.find(job => 
-    job.status === 'processing' || job.status === 'pending'
-  ) || transcriptionState.selectedJob;
-
-  const getProviderFromJob = (job: TranscriptionJob | null) => {
-    if (!job) return undefined;
-    // Extract provider from model size if it's a cloud transcription
-    if (job.result && typeof job.result === 'object' && 'modelSize' in job.result) {
-      const modelSize = (job.result as any).modelSize;
-      if (typeof modelSize === 'string' && modelSize.startsWith('cloud-')) {
-        return modelSize.split('-')[1];
-      }
-    }
-    return undefined;
   };
 
   return (
-    <TranscriptionErrorBoundary>
-      <NewUIShell onManualSave={handleManualSaveTriggered} />
-      
-      {/* Progress Overlay */}
-      <GlassProgressOverlay
-        isVisible={transcriptionState.isProcessing && !!currentJob}
-        progress={currentJob?.progress || 0}
-        status={currentJob?.status || 'pending'}
-        message={
-          currentJob?.status === 'processing' ? 'Transcribing your audio file...' :
-          currentJob?.status === 'pending' ? 'Preparing transcription...' :
-          currentJob?.status === 'completed' ? 'Transcription complete!' :
-          currentJob?.status === 'error' ? 'Transcription failed' :
-          'Processing...'
-        }
-        fileName={currentJob?.fileName}
-        provider={getProviderFromJob(currentJob)}
-        onCancel={async () => {
-          if (currentJob?.id) {
-            console.log('Cancelling transcription:', currentJob.id);
-            try {
-              const result = await (window as any).electronAPI?.cancelTranscription?.(currentJob.id);
-              console.log('Cancel result:', result);
-              if (result?.success) {
-                // The error event will be sent from main process to update the UI
-                console.log('Transcription cancelled successfully');
-              } else {
-                console.error('Failed to cancel transcription:', result?.error);
-                handleTranscriptionError(result?.error || 'Failed to cancel transcription');
-              }
-            } catch (error) {
-              console.error('Error cancelling transcription:', error);
-              handleTranscriptionError(error);
-            }
-          }
-        }}
-        onClose={() => {
-          if (currentJob?.status === 'completed' || currentJob?.status === 'error') {
-            transcriptionActions.selectJob(null);
-          }
-        }}
-        error={currentJob?.error}
-      />
-      
-      {/* Dialogs */}
-      {showNewProjectDialog && (
-        <NewProjectDialog
-          isOpen={showNewProjectDialog}
-          onClose={() => setShowNewProjectDialog(false)}
-          onCreateProject={handleCreateProject}
-        />
-      )}
+    <AppErrorBoundary>
+      <div className="app-container">
+        {/* Main UI Shell v2.0 */}
+        <NewUIShellV2 />
 
-      {showProjectImportDialog && (
-        <ProjectImportDialog
-          isOpen={showProjectImportDialog}
-          onClose={() => setShowProjectImportDialog(false)}
-          onProjectLoaded={async (projectData: any, filePath?: string) => {
-            try {
-              console.log('Loading project:', { projectData, filePath });
-              projectActions.loadProject(projectData);
-              if (filePath) {
-                projectActions.setProjectPath(filePath);
-              }
-              setShowProjectImportDialog(false);
-            } catch (error) {
-              console.error('Failed to load project:', error);
-              handleTranscriptionError(error);
-            }
-          }}
-        />
-      )}
+        {/* v2.0 Dialogs */}
+        {showNewProjectDialog && (
+          <NewProjectDialogV2
+            onClose={() => setShowNewProjectDialog(false)}
+            onCreateProject={handleProjectCreated}
+          />
+        )}
 
-      {showImportDialog && (
-        <EnhancedImportDialog
-          onClose={() => setShowImportDialog(false)}
-          onImport={async (filePath, audioSettings, transcriptionSettings) => {
-            try {
-              console.log('Starting enhanced import:', { filePath, audioSettings });
-              setShowImportDialog(false);
-              
-              if (!filePath) {
-                throw new Error('No file selected for import');
-              }
-              
-              // Extract filename from path
-              const fileName = filePath.split('/').pop() || 'unknown_file';
-              console.log('Processing audio file:', fileName, 'with settings:', audioSettings);
-              
-              // Convert to WAV (48k/16-bit) during import for stability
-              const conversionOptions = {
-                action: 'convert-to-wav',
-                targetSampleRate: 48000,
-                targetBitDepth: 16,
-              } as any;
-              console.log('Converting audio with options (forced WAV):', conversionOptions);
-              const conversionResult = await (window as any).electronAPI.convertAudio(filePath, conversionOptions);
-              console.log('Audio conversion result:', conversionResult);
-              
-              // Update the project's audio information
-              const currentProject = projectState.projectData;
-              if (currentProject) {
-                const audioMetadata = {
-                  originalPath: filePath,
-                  originalName: fileName,
-                  originalFormat: filePath.split('.').pop()?.toLowerCase() || 'unknown',
-                  originalSampleRate: audioSettings.masterSampleRate,
-                  originalSize: conversionResult.originalSize,
-                  embeddedFormat: conversionResult.outputPath.split('.').pop()?.toLowerCase() || 'wav',
-                  embeddedSize: conversionResult.convertedSize,
-                  duration: conversionResult.duration,
-                  channels: 2, // Default, will be updated by analysis
-                  compressionRatio: conversionResult.compressionRatio,
-                  wasConverted: conversionResult.wasConverted,
-                  conversionMethod: conversionOptions.action
-                };
-                
-                // Create initial clip representing the entire audio file
-                const initialClip = {
-                  id: 'initial-clip',
-                  startTime: 0,
-                  endTime: conversionResult.duration,
-                  startWordIndex: 0,
-                  endWordIndex: 0,
-                  words: [], // Empty until transcription
-                  text: `Untranscribed audio (${Math.floor(conversionResult.duration / 60)}:${Math.floor(conversionResult.duration % 60).toString().padStart(2, '0')})`,
-                  speaker: 'SPEAKER_00',
-                  confidence: 1.0,
-                  type: 'initial' as const,
-                  duration: conversionResult.duration,
-                  order: 0,
-                  createdAt: Date.now(),
-                  modifiedAt: Date.now(),
-                };
+        {showImportDialog && (
+          <ImportDialogV2
+            onClose={() => setShowImportDialog(false)}
+            onImport={handleAudioImported}
+          />
+        )}
 
-                // Update project with audio information and initial clip
-                const updatedProject = {
-                  ...currentProject,
-                  project: {
-                    ...currentProject.project,
-                    audio: {
-                      embeddedPath: conversionResult.outputPath,
-                      originalFile: filePath,
-                      originalName: fileName,
-                      format: audioMetadata.embeddedFormat,
-                      duration: conversionResult.duration,
-                      channels: 2,
-                      embedded: true
-                    }
-                  },
-                  audioMetadata,
-                  clips: {
-                    ...currentProject.clips,
-                    clips: [initialClip]
-                  }
-                };
-                
-                projectActions.loadProject(updatedProject);
-                console.log('Project updated with audio metadata');
-              }
-              
-              // Get transcription service based on user selection
-              const transcriptionService = await (window as any).electronAPI.getTranscriptionService(transcriptionSettings);
-              console.log('Using transcription service:', transcriptionService, 'for method:', transcriptionSettings.method);
-              
-              // Now start transcription with converted audio
-              const transcriptionResult = await (window as any).electronAPI.startTranscription(
-                conversionResult.outputPath, 
-                transcriptionService
-              );
-              
-              if (transcriptionResult.success) {
-                console.log('Transcription started successfully with job ID:', transcriptionResult.jobId);
-                
-                // Create and add the transcription job to the context
-                const transcriptionJob: TranscriptionJob = {
-                  id: transcriptionResult.jobId,
-                  filePath: conversionResult.outputPath, // Use converted audio path
-                  fileName: fileName,
-                  status: 'pending',
-                  progress: 0,
-                  normalizedAt: null
-                };
-                
-                transcriptionActions.addJob(transcriptionJob);
-                transcriptionActions.selectJob(transcriptionJob);
-                console.log('Job added to context:', transcriptionJob);
-              } else {
-                throw new Error(transcriptionResult.error || 'Failed to start transcription');
-              }
-              
-            } catch (error) {
-              console.error('Enhanced import failed:', error);
-              handleTranscriptionError(error);
-            }
-          }}
-          onOpenApiSettings={() => {
-            console.log('Opening API settings');
-            // TODO: Implement API settings dialog
-          }}
-          isDragDrop={false}
+        {/* Global Toasts */}
+        <ToastContainer
+          toasts={(notificationState?.toasts) || []}
+          position="top-right"
+          maxToasts={5}
+          onDismiss={(id: string) => dismissToast?.(id)}
         />
-      )}
-      {/* Global Toasts */}
-      <ToastContainer
-        toasts={(notificationState?.toasts) || []}
-        position="top-right"
-        maxToasts={5}
-        onDismiss={(id: string) => dismissToast?.(id)}
-      />
-    </TranscriptionErrorBoundary>
+      </div>
+    </AppErrorBoundary>
   );
 };
 
-// ==================== App with Providers ====================
+// v2.0 Providers
+const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  return (
+    <ThemeProvider defaultTheme="system" storageKey="transcript-ui-theme">
+      <NotificationProvider>
+        <ProjectProviderV2>
+          {children}
+        </ProjectProviderV2>
+      </NotificationProvider>
+    </ThemeProvider>
+  );
+};
 
+// Main App component
 const App: React.FC = () => {
   return (
     <AppProviders>
-      <AppMain />
+      <AppContent />
     </AppProviders>
   );
 };

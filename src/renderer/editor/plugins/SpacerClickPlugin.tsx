@@ -68,6 +68,14 @@ export default function SpacerClickPlugin({ readOnly = false }: SpacerClickPlugi
 
               console.log('[SpacerClickPlugin] Found spacer node in update, positioning cursor');
 
+              // Store spacer's clipId for EditingPlugin to use in Enter handler
+              const spacerClipId = (spacerNode as any).__clipId;
+              if (spacerClipId) {
+                // Store in editor's metadata for EditingPlugin access
+                editor.getEditorState().data.lastClickedSpacerClipId = spacerClipId;
+                console.log('[SpacerClickPlugin] Stored spacer clipId for Enter handler:', spacerClipId);
+              }
+
               // Find the paragraph container (should be spacer's parent or grandparent)
               let paragraphNode = spacerNode.getParent();
               while (paragraphNode && paragraphNode.getType() !== 'paragraph') {

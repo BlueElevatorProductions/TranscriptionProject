@@ -16,7 +16,10 @@ import AudioAnalyzer from './services/AudioAnalyzer';
 import AudioConverter from './services/AudioConverter';
 import UserPreferencesService from './services/UserPreferences';
 import JuceClient from './services/JuceClient';
+import { ProjectDataStore } from './services/ProjectDataStore';
+import { TranscriptionServiceV2 } from './services/TranscriptionServiceV2';
 import type { JuceEvent, EdlClip } from '../shared/types/transport';
+import type { EditOperation, ProjectData } from '../shared/types';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -129,6 +132,7 @@ class App {
   private readonly audioAnalyzer: AudioAnalyzer;
   private readonly audioConverter: AudioConverter;
   private readonly userPreferences: UserPreferencesService;
+  private readonly projectDataStore: ProjectDataStore;
   private peaksServer: http.Server | null = null;
   private peaksPort: number | null = null;
   private juceClient: JuceClient | null = null;
@@ -148,7 +152,11 @@ class App {
     this.audioAnalyzer = new AudioAnalyzer();
     this.audioConverter = new AudioConverter();
     this.userPreferences = new UserPreferencesService(this.encryptionKey);
-    
+
+    // Initialize project data store
+    this.projectDataStore = new ProjectDataStore();
+    this.setupProjectDataStoreEvents();
+
     this.initialize();
   }
 
@@ -261,6 +269,36 @@ class App {
     } catch (e) {
       console.error('Failed to start peaks server:', e);
     }
+  }
+
+  private setupProjectDataStoreEvents(): void {
+    // Forward project updates to all renderer processes
+    this.projectDataStore.on('project:updated', (projectData: ProjectData) => {
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('project:updated', projectData);
+      }
+    });
+
+    this.projectDataStore.on('project:error', (error: Error) => {
+      console.error('ProjectDataStore error:', error);
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('project:error', error.message);
+      }
+    });
+
+    this.projectDataStore.on('operation:applied', (operation: EditOperation) => {
+      console.log('Edit operation applied:', operation.type, operation.id);
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('operation:applied', operation);
+      }
+    });
+
+    this.projectDataStore.on('operation:failed', (operation: EditOperation, error: Error) => {
+      console.error('Edit operation failed:', operation.type, error.message);
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('operation:failed', operation, error.message);
+      }
+    });
   }
 
   private initialize(): void {
@@ -1352,6 +1390,251 @@ class App {
       } catch (error) {
         console.error('❌ Failed to get transcription service:', error);
         throw new Error(`Failed to get transcription service: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    // ==================== V2.0 Project Data Store IPC Handlers ====================
+
+    // Apply edit operation
+    ipcMain.handle('project:applyEdit', async (_event, operation: EditOperation) => {
+      try {
+        await this.projectDataStore.applyEditOperation(operation);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to apply edit operation:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Get current project state
+    ipcMain.handle('project:getState', async (_event) => {
+      try {
+        const projectData = this.projectDataStore.getProjectData();
+        return { success: true, data: projectData };
+      } catch (error) {
+        console.error('Failed to get project state:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Load project into data store
+    ipcMain.handle('project:loadIntoStore', async (_event, projectData: ProjectData) => {
+      try {
+        this.projectDataStore.loadProject(projectData);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to load project into store:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Get current clips
+    ipcMain.handle('project:getClips', async (_event) => {
+      try {
+        const clips = this.projectDataStore.getClips();
+        return { success: true, data: clips };
+      } catch (error) {
+        console.error('Failed to get clips:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Validate project
+    ipcMain.handle('project:validate', async (_event) => {
+      try {
+        const validation = this.projectDataStore.validateProject();
+        return { success: true, data: validation };
+      } catch (error) {
+        console.error('Failed to validate project:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Get operation history
+    ipcMain.handle('project:getHistory', async (_event) => {
+      try {
+        const history = this.projectDataStore.getOperationHistory();
+        return { success: true, data: history };
+      } catch (error) {
+        console.error('Failed to get operation history:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // ==================== v2.0 Transcription IPC Handlers ====================
+
+    // EventEmitter adapter to bridge TranscriptionServiceV2 and App's webContents.send()
+    class EventEmitterAdapter {
+      constructor(private app: App) {}
+
+      emit(event: string, data: any): void {
+        console.log('🔄 EventEmitterAdapter: Emitting', event, data);
+
+        // Map TranscriptionServiceV2 events to webContents events
+        switch (event) {
+          case 'transcription:progress':
+            this.app.mainWindow?.webContents.send('transcription-progress', data);
+            break;
+          case 'transcription:completed':
+            this.app.mainWindow?.webContents.send('transcription-complete', data);
+            break;
+          case 'transcription:error':
+            this.app.mainWindow?.webContents.send('transcription-error', data);
+            break;
+          default:
+            console.warn('🚨 EventEmitterAdapter: Unknown event:', event);
+        }
+      }
+    }
+
+    // Initialize TranscriptionServiceV2 with event emitter adapter
+    const eventAdapter = new EventEmitterAdapter(this);
+    TranscriptionServiceV2.setEventEmitter(eventAdapter);
+
+    // Load and set API keys for TranscriptionServiceV2
+    const loadApiKeysForV2 = async () => {
+      try {
+        console.log('🔑 Loading API keys for TranscriptionServiceV2...');
+        if (fs.existsSync(this.apiKeysPath)) {
+          const encryptedData = await fs.promises.readFile(this.apiKeysPath, 'utf8');
+          const apiKeys = this.decryptApiKeys(encryptedData);
+          TranscriptionServiceV2.setApiKeys(apiKeys);
+          console.log('✅ API keys loaded for TranscriptionServiceV2');
+        } else {
+          console.log('⚠️  No API keys file found, using empty keys');
+          TranscriptionServiceV2.setApiKeys({});
+        }
+      } catch (error) {
+        console.error('❌ Failed to load API keys for TranscriptionServiceV2:', error);
+        TranscriptionServiceV2.setApiKeys({});
+      }
+    };
+    loadApiKeysForV2();
+
+    // Start v2.0 transcription
+    ipcMain.handle('transcription:startV2', async (_event, filePath: string, options: any) => {
+      try {
+        console.log('🎬 IPC Handler: transcription:startV2 called with:', { filePath, options });
+        console.log('🔧 IPC Handler: About to call TranscriptionServiceV2.startTranscription...');
+
+        const result = await TranscriptionServiceV2.startTranscription(filePath, options);
+
+        console.log('✅ IPC Handler: TranscriptionServiceV2.startTranscription returned:', result);
+        return result;
+      } catch (error) {
+        console.error('❌ IPC Handler: Failed to start v2.0 transcription:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Get v2.0 transcription job
+    ipcMain.handle('transcription:getJobV2', async (_event, jobId: string) => {
+      try {
+        const job = TranscriptionServiceV2.getJob(jobId);
+        return { success: true, data: job };
+      } catch (error) {
+        console.error('Failed to get v2.0 transcription job:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Get all v2.0 transcription jobs
+    ipcMain.handle('transcription:getAllJobsV2', async (_event) => {
+      try {
+        const jobs = TranscriptionServiceV2.getAllJobs();
+        return { success: true, data: jobs };
+      } catch (error) {
+        console.error('Failed to get v2.0 transcription jobs:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Cancel v2.0 transcription job
+    ipcMain.handle('transcription:cancelV2', async (_event, jobId: string) => {
+      try {
+        const result = await TranscriptionServiceV2.cancelJob(jobId);
+        return result;
+      } catch (error) {
+        console.error('Failed to cancel v2.0 transcription:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+
+    // Import v2.0 transcription result directly to ProjectDataStore
+    ipcMain.handle('transcription:importV2', async (_event, segments: any[], speakers: any, audioMetadata: any) => {
+      try {
+        console.log('📝 Importing v2.0 transcription result to ProjectDataStore');
+
+        // Create v2.0 ProjectData structure
+        const projectData: ProjectData = {
+          version: '2.0',
+          project: {
+            projectId: 'proj_' + Date.now().toString(36),
+            name: audioMetadata.fileName || 'Untitled Project',
+            created: new Date().toISOString(),
+            lastModified: new Date().toISOString(),
+            version: '2.0',
+            audio: audioMetadata,
+            transcription: {
+              service: 'openai',
+              model: 'whisper-1',
+              language: 'en',
+              status: 'completed',
+              completedAt: new Date().toISOString()
+            },
+            ui: {
+              currentMode: 'transcript-edit',
+              sidebarWidth: 256,
+              playbackSpeed: 1.0,
+              volume: 1.0,
+              currentTime: 0
+            }
+          },
+          clips: {
+            version: '2.0',
+            clips: segments,
+            clipSettings: {
+              defaultDuration: 5.0,
+              autoExport: false,
+              exportFormat: 'wav',
+              grouping: {
+                pauseThreshold: 1.0,
+                maxClipDuration: 30.0,
+                minWordsPerClip: 5,
+                maxWordsPerClip: 100,
+                sentenceTerminators: ['.', '!', '?']
+              }
+            }
+          },
+          transcription: {
+            version: '2.0',
+            originalSegments: segments,
+            speakers: speakers || {},
+            speakerSegments: [],
+            globalMetadata: {
+              totalSegments: segments.length,
+              totalWords: segments.filter((s: any) => s.type === 'word').length,
+              averageConfidence: 0.9,
+              processingTime: 0,
+              editCount: 0
+            }
+          },
+          speakers: {
+            version: '2.0',
+            speakers: speakers || {},
+            speakerMappings: {},
+            defaultSpeaker: 'SPEAKER_00'
+          }
+        };
+
+        // Load into ProjectDataStore
+        this.projectDataStore.loadProject(projectData);
+
+        return { success: true };
+
+      } catch (error) {
+        console.error('Failed to import v2.0 transcription:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     });
 

@@ -1,7 +1,7 @@
 {
   "name": "podcast-transcriber",
-  "version": "0.1.0",
-  "description": "A cross-platform podcast transcript editor with integrated audio editing capabilities",
+  "version": "2.0.0",
+  "description": "A cross-platform podcast transcript editor with segment-based architecture and atomic edit operations",
   "main": "build/main/main/main.js",
   "homepage": "./",
   "author": "BlueElevatorProductions",

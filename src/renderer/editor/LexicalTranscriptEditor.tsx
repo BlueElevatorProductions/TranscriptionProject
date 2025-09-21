@@ -203,14 +203,12 @@ function LexicalTranscriptEditorContent({
         getSpeakerDisplayName,
         getSpeakerColor,
       });
-      // Initialize content hash to prevent first click from triggering rebuild
-      setTimeout(() => {
-        lastContentHashRef.current = calculateContentHash(editor);
-        const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
-        if (UI_DEBUG) {
-          console.log('[LexicalTranscriptEditor] Initialized content hash:', lastContentHashRef.current?.substring(0, 100) + '...');
-        }
-      }, 0);
+      // Initialize content hash synchronously to prevent first click from triggering rebuild
+      lastContentHashRef.current = calculateContentHash(editor);
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) {
+        console.log('[LexicalTranscriptEditor] Initialized content hash synchronously:', lastContentHashRef.current?.substring(0, 100) + '...');
+      }
       initializedRef.current = true;
       return;
     }
@@ -222,14 +220,12 @@ function LexicalTranscriptEditorContent({
         getSpeakerDisplayName,
         getSpeakerColor,
       });
-      // Initialize content hash to prevent first click from triggering rebuild
-      setTimeout(() => {
-        lastContentHashRef.current = calculateContentHash(editor);
-        const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
-        if (UI_DEBUG) {
-          console.log('[LexicalTranscriptEditor] Initialized content hash:', lastContentHashRef.current?.substring(0, 100) + '...');
-        }
-      }, 0);
+      // Initialize content hash synchronously to prevent first click from triggering rebuild
+      lastContentHashRef.current = calculateContentHash(editor);
+      const UI_DEBUG = (import.meta as any).env?.VITE_AUDIO_DEBUG === 'true';
+      if (UI_DEBUG) {
+        console.log('[LexicalTranscriptEditor] Initialized content hash synchronously:', lastContentHashRef.current?.substring(0, 100) + '...');
+      }
       initializedRef.current = true;
     }
   }, [editor, clips, segments, getSpeakerDisplayName, getSpeakerColor, calculateContentHash]);

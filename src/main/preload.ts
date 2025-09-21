@@ -101,9 +101,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('saveProjectDialog', defaultName),
   loadProject: (filePath: string) => 
     ipcRenderer.invoke('project:load', filePath),
-  saveProject: (projectData: any, filePath: string) => 
+  saveProject: (projectData: any, filePath: string) =>
     ipcRenderer.invoke('project:save', projectData, filePath),
-  
+
+  // ==================== V2.0 Project Data Store API ====================
+  projectApplyEdit: (operation: any) =>
+    ipcRenderer.invoke('project:applyEdit', operation),
+  projectGetState: () =>
+    ipcRenderer.invoke('project:getState'),
+  projectLoadIntoStore: (projectData: any) =>
+    ipcRenderer.invoke('project:loadIntoStore', projectData),
+  projectGetClips: () =>
+    ipcRenderer.invoke('project:getClips'),
+  projectValidate: () =>
+    ipcRenderer.invoke('project:validate'),
+  projectGetHistory: () =>
+    ipcRenderer.invoke('project:getHistory'),
+
+  // Project Data Store event listeners
+  onProjectUpdated: (callback: (projectData: any) => void) => {
+    ipcRenderer.on('project:updated', (_event, projectData) => callback(projectData));
+  },
+  onProjectError: (callback: (error: string) => void) => {
+    ipcRenderer.on('project:error', (_event, error) => callback(error));
+  },
+  onOperationApplied: (callback: (operation: any) => void) => {
+    ipcRenderer.on('operation:applied', (_event, operation) => callback(operation));
+  },
+  onOperationFailed: (callback: (operation: any, error: string) => void) => {
+    ipcRenderer.on('operation:failed', (_event, operation, error) => callback(operation, error));
+  },
+
   // Directory selection for new projects
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
 
@@ -119,6 +147,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAudioRecommendation: (analysis: any) => ipcRenderer.invoke('get-audio-recommendation', analysis),
   getSmartProjectSettings: (analysis: any) => ipcRenderer.invoke('get-smart-project-settings', analysis),
   convertAudio: (inputPath: string, options: any) => ipcRenderer.invoke('convert-audio', inputPath, options),
+
+  // ==================== V2.0 Transcription API ====================
+  transcriptionStartV2: (filePath: string, options: any) =>
+    ipcRenderer.invoke('transcription:startV2', filePath, options),
+  transcriptionGetJobV2: (jobId: string) =>
+    ipcRenderer.invoke('transcription:getJobV2', jobId),
+  transcriptionImportV2: (segments: any[], speakers: any, audioMetadata: any) =>
+    ipcRenderer.invoke('transcription:importV2', segments, speakers, audioMetadata),
+  transcriptionCancelV2: (jobId: string) =>
+    ipcRenderer.invoke('transcription:cancelV2', jobId),
   
   // User preferences management
   loadUserPreferences: () => ipcRenderer.invoke('load-user-preferences'),
@@ -137,6 +175,10 @@ console.log('🔧 electronAPI exposed to renderer process');
 console.log('🔧 Available methods:', Object.keys({
   loadProject: true,
   loadProjectLegacy: true,
+  transcriptionStartV2: true,
+  transcriptionGetJobV2: true,
+  transcriptionImportV2: true,
+  transcriptionCancelV2: true,
   // ... other methods
 }));
 
@@ -171,7 +213,19 @@ export interface ElectronAPI {
   saveProjectDialog: (defaultName?: string) => Promise<{canceled: boolean; filePath?: string}>;
   loadProject: (filePath: string) => Promise<any>;
   saveProject: (projectData: any, filePath: string) => Promise<{success: boolean}>;
-  
+
+  // V2.0 Project Data Store API
+  projectApplyEdit: (operation: any) => Promise<{success: boolean; error?: string}>;
+  projectGetState: () => Promise<{success: boolean; data?: any; error?: string}>;
+  projectLoadIntoStore: (projectData: any) => Promise<{success: boolean; error?: string}>;
+  projectGetClips: () => Promise<{success: boolean; data?: any[]; error?: string}>;
+  projectValidate: () => Promise<{success: boolean; data?: any; error?: string}>;
+  projectGetHistory: () => Promise<{success: boolean; data?: any[]; error?: string}>;
+  onProjectUpdated: (callback: (projectData: any) => void) => void;
+  onProjectError: (callback: (error: string) => void) => void;
+  onOperationApplied: (callback: (operation: any) => void) => void;
+  onOperationFailed: (callback: (operation: any, error: string) => void) => void;
+
   // Audio analysis and conversion (new enhanced import system)
   analyzeAudio: (filePath: string) => Promise<any>;
   getAudioRecommendation: (analysis: any) => Promise<any>;

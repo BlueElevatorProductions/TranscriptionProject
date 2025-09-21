@@ -545,8 +545,30 @@ export default function EditingPlugin({
               container = container.getParent && container.getParent();
             }
 
+            // Check if SpacerClickPlugin stored a clipId for us to use
+            if (!(container instanceof ClipContainerNode)) {
+              const storedClipId = editor.getEditorState().data.lastClickedSpacerClipId;
+              if (storedClipId) {
+                console.log('[EditingPlugin] Enter: Using stored spacer clipId:', storedClipId);
+                const root = $getRoot();
+                const topChildren = root.getChildren();
+                for (const topChild of topChildren) {
+                  if (topChild instanceof ClipContainerNode) {
+                    const containerClipId = (topChild as ClipContainerNode).getClipId?.();
+                    if (containerClipId === storedClipId) {
+                      container = topChild;
+                      console.log('[EditingPlugin] Enter: Resolved container via stored clipId:', storedClipId);
+                      // Clear the stored clipId after use
+                      delete editor.getEditorState().data.lastClickedSpacerClipId;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+
             // Special handling for spacer-positioned selection
-            // If we can't find the container via parent chain, check if we're near a spacer
+            // If we can't find the container via parent chain or stored clipId, check if we're near a spacer
             if (!(container instanceof ClipContainerNode)) {
               const paragraph = selection.anchor.getNode();
               let paragraphNode = paragraph;

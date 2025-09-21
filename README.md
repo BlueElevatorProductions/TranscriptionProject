@@ -1,6 +1,26 @@
-# TranscriptionProject
+# TranscriptionProject v2.0
 
 A professional desktop transcription application built with Electron, React, and TypeScript. Features a modern interface with cloud transcription services, advanced audio synchronization, and professional editing tools.
+
+## ⚠️ BREAKING CHANGES - Version 2.0
+
+**TranscriptionProject v2.0 represents a complete architectural refactoring for data integrity and scalability.**
+
+### Major Changes
+- **🔄 Complete Data Model Overhaul**: Segment-based architecture replaces legacy token system
+- **🏗️ Main Process Authority**: Canonical state moved to main process with validation
+- **🚫 No Backward Compatibility**: v2.0 projects incompatible with v1.x format
+- **⚡ Clean Slate Approach**: All legacy systems removed, focusing on stability and simplicity
+- **📚 New Documentation**: Comprehensive architecture documentation for developers
+
+### New Architecture Benefits
+- **Data Integrity**: Original transcription timestamps always preserved
+- **Performance**: Binary search optimization for large projects
+- **Scalability**: Atomic edit operations with undo support
+- **Maintainability**: Clear separation between main process and renderer
+- **Extensibility**: Ready for collaborative editing and advanced features
+
+For detailed technical information, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 
 ## Overview
 
@@ -203,60 +223,64 @@ The import dialog has been simplified for stability during the beta phase:
 
 - Editing + Audio Integration Cheat Sheet: `docs/Editing-Text-Audio-Integration.md`
 
-## Architecture
+## Architecture v2.0
+
+**Segment-Based Architecture with Main Process Authority**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Electron Application                      │
+│                    MAIN PROCESS                             │
 ├─────────────────────────────────────────────────────────────┤
-│ Main Process (src/main/)                                    │
-│ ├── main.ts                    # App entry & window mgmt    │
-│ ├── preload.ts                 # Secure IPC bridge         │
-│ └── services/                                               │
-│     ├── SimpleCloudTranscriptionService.ts  # Cloud APIs  │
-│     ├── ProjectFileService.ts               # File I/O     │
-│     ├── ProjectPackageService.ts            # ZIP handling │
-│     ├── AudioAnalyzer.ts                   # Audio analysis│
-│     ├── AudioConverter.ts                  # FLAC conversion│
-│     └── UserPreferences.ts                 # Settings mgmt │
+│ ProjectDataStore (Canonical State)                         │
+│ ├── Clip validation and invariants                         │
+│ ├── Atomic edit operations                                 │
+│ ├── Event emission to renderer                             │
+│ └── Operation history and undo                             │
 ├─────────────────────────────────────────────────────────────┤
-│ Renderer Process (src/renderer/)                           │
-│ ├── App.tsx                    # Main app component        │
-│ ├── main.tsx                   # React app entry point     │
-│ ├── contexts/                  # State management          │
-│ │   ├── ProjectContext.tsx                                 │
-│ │   ├── NotificationContext.tsx                           │
-│ │   └── index.tsx              # Combined providers        │
-│ ├── components/                                             │
-│ │   ├── ui/                                                │
-│ │   │   └── NewUIShell.tsx     # Main interface shell     │
-│ │   ├── AudioSystemIntegration.tsx # Audio system bridge  │
-│ │   ├── AudioErrorBoundary.tsx # Error recovery system    │
-│ │   ├── shared/                # Reusable components       │
-│ │   │   └── SpeakerDropdown.tsx # Speaker selection UI    │
-│ │   ├── ImportDialog/          # Enhanced import system    │
-│ │   ├── Settings/              # User preferences          │
-│ │   ├── Notifications/         # Toast system              │
-│ │   └── Legacy/                # Legacy components         │
-│ │       └── components/        # Unused legacy components  │
-│ ├── editor/                    # Lexical transcript editor  │
-│ │   ├── LexicalTranscriptEditor.tsx # Main editor component│
-│ │   ├── nodes/                 # Lexical custom nodes      │
-│ │   │   ├── SpacerNode.tsx    # UI-only gap pills          │
-│ │   │   └── SpeakerNode.tsx   # Speaker labels with dropdown│
-│ │   └── plugins/               # Lexical editor plugins    │
-│ ├── hooks/                     # Custom React hooks        │
-│ │   └── useAudioEditor.ts     # Unified audio hook        │
-│ ├── audio/                     # Audio system core         │
-│ │   ├── AudioManager.ts       # Unified audio management   │
-│ │   ├── AudioAppState.ts      # Centralized state         │
-│ │   ├── SimpleClipSequencer.ts # Timeline management      │
-│ │   ├── SimpleUndoManager.ts  # Snapshot-based undo       │
-│ │   └── TimelineValidator.ts  # Validation & repair       │
-│ ├── services/                  # Business logic            │
-│ └── types/                     # TypeScript definitions    │
+│ IPC Handlers                                               │
+│ ├── project:applyEdit                                      │
+│ ├── project:getState                                       │
+│ ├── project:loadIntoStore                                  │
+│ └── Event broadcasting                                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ IPC Events
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  RENDERER PROCESS                          │
+├─────────────────────────────────────────────────────────────┤
+│ ProjectContext v2 (Thin Cache)                             │
+│ ├── Dispatches operations to main                          │
+│ ├── Subscribes to state updates                            │
+│ ├── UI-specific state only                                 │
+│ └── Optimistic updates with rollback                       │
+├─────────────────────────────────────────────────────────────┤
+│ Services Layer                                             │
+│ ├── TranscriptionImportService                             │
+│ ├── EDLBuilderService                                      │
+│ └── JuceAudioManager v2                                    │
+├─────────────────────────────────────────────────────────────┤
+│ UI Components                                              │
+│ ├── Lexical Editor with segment nodes                      │
+│ ├── Edit operations plugin                                 │
+│ └── Atomic operation hooks                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Key v2.0 Components
+
+**Main Process**:
+- **ProjectDataStore**: Canonical state with validation and atomic operations
+- **IPC Handlers**: Bridge for structured edit operations
+
+**Renderer Process**:
+- **ProjectContextV2**: Thin cache that dispatches to main process
+- **TranscriptionImportService**: Clean import preserving original timestamps
+- **EDLBuilderService**: Pure function EDL generation with binary search
+- **JuceAudioManagerV2**: Simplified audio backend without fallback systems
+- **Lexical Nodes v2**: WordNodeV2, SpacerNodeV2, ClipNodeV2 with segment awareness
+
+For complete architectural details, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 
 ## Component Architecture
 

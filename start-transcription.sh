@@ -12,7 +12,7 @@ VITE_LOG="$LOG_DIR/vite_$(date +%Y%m%d_%H%M%S).log"
 ELECTRON_LOG="$LOG_DIR/electron_$(date +%Y%m%d_%H%M%S).log"
 {
   echo "=========================="
-  echo "🚀 New run started: $(date)"
+  echo "🚀 TranscriptionProject v2.0 started: $(date)"
   echo "=========================="
 } >> "$ELECTRON_LOG"
 

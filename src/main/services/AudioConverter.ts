@@ -373,10 +373,19 @@ export class AudioConverter {
         const files = fs.readdirSync(this.tempDir);
         for (const file of files) {
           const filePath = path.join(this.tempDir, file);
-          const stats = fs.statSync(filePath);
-          // Remove files older than 1 hour
-          if (Date.now() - stats.mtime.getTime() > 3600000) {
-            fs.unlinkSync(filePath);
+          try {
+            const stats = fs.statSync(filePath);
+            // Remove files older than 1 hour
+            if (Date.now() - stats.mtime.getTime() > 3600000) {
+              fs.unlinkSync(filePath);
+            }
+          } catch (fileError: any) {
+            // Skip files we can't access due to permission errors
+            if (fileError.code === 'EPERM' || fileError.code === 'EACCES') {
+              console.warn(`Skipping file due to permissions: ${filePath}`);
+            } else {
+              console.error(`Error processing file ${filePath}:`, fileError);
+            }
           }
         }
       }

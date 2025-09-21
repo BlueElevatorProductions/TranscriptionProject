@@ -1,0 +1,301 @@
+/**
+ * Glass Morphism Dialog Styles v2.0
+ *
+ * Consistent glass styling for all v2.0 dialogs and overlays.
+ * Uses design tokens from design-tokens.css for consistency.
+ */
+
+/* Base Glass Dialog */
+.dialog-v2 {
+  background: hsla(var(--bg-h), var(--bg-s), var(--bg-l), var(--opacity-glass-medium));
+  backdrop-filter: var(--backdrop-blur);
+  border: 1px solid hsla(var(--border-h), var(--border-s), var(--border-l), 0.1);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 32px hsla(0, 0%, 0%, 0.1),
+    0 2px 8px hsla(0, 0%, 0%, 0.05);
+  position: relative;
+  overflow: hidden;
+}
+
+.dialog-v2::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsla(var(--border-h), var(--border-s), var(--border-l), 0.2),
+    transparent
+  );
+}
+
+/* Dialog Overlay */
+.dialog-overlay-v2 {
+  position: fixed;
+  inset: 0;
+  background: hsla(0, 0%, 0%, 0.4);
+  backdrop-filter: blur(20px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* Dialog Content Container */
+.dialog-content-v2 {
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: dialog-enter 0.2s ease-out;
+}
+
+@keyframes dialog-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Dialog Header */
+.dialog-header-v2 {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid hsla(var(--border-h), var(--border-s), var(--border-l), 0.1);
+}
+
+.dialog-title-v2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  margin: 0;
+}
+
+.dialog-description-v2 {
+  color: hsl(var(--muted-foreground));
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+}
+
+/* Dialog Body */
+.dialog-body-v2 {
+  padding: 24px;
+}
+
+/* Dialog Footer */
+.dialog-footer-v2 {
+  padding: 16px 24px 24px;
+  border-top: 1px solid hsla(var(--border-h), var(--border-s), var(--border-l), 0.1);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Glass Buttons */
+.button-glass {
+  background: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.2);
+  color: hsl(var(--accent-foreground));
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.button-glass:hover {
+  background: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.2);
+  border-color: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.1);
+}
+
+.button-glass:active {
+  transform: translateY(0);
+}
+
+.button-glass:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Primary Glass Button */
+.button-glass.primary {
+  background: hsla(var(--primary-h), var(--primary-s), var(--primary-l), 0.9);
+  border-color: hsla(var(--primary-h), var(--primary-s), var(--primary-l), 1);
+  color: hsl(var(--primary-foreground));
+}
+
+.button-glass.primary:hover {
+  background: hsla(var(--primary-h), var(--primary-s), var(--primary-l), 1);
+  box-shadow: 0 4px 12px hsla(var(--primary-h), var(--primary-s), var(--primary-l), 0.3);
+}
+
+/* Secondary Glass Button */
+.button-glass.secondary {
+  background: hsla(var(--secondary-h), var(--secondary-s), var(--secondary-l), 0.1);
+  border-color: hsla(var(--border-h), var(--border-s), var(--border-l), 0.2);
+  color: hsl(var(--foreground));
+}
+
+.button-glass.secondary:hover {
+  background: hsla(var(--secondary-h), var(--secondary-s), var(--secondary-l), 0.2);
+}
+
+/* Glass Form Elements */
+.input-glass {
+  background: hsla(var(--bg-h), var(--bg-s), var(--bg-l), 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid hsla(var(--border-h), var(--border-s), var(--border-l), 0.2);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: hsl(var(--foreground));
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.input-glass::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.input-glass:focus {
+  outline: none;
+  border-color: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.5);
+  box-shadow: 0 0 0 3px hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.1);
+}
+
+/* Glass Select */
+.select-glass {
+  background: hsla(var(--bg-h), var(--bg-s), var(--bg-l), 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid hsla(var(--border-h), var(--border-s), var(--border-l), 0.2);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: hsl(var(--foreground));
+  font-size: 0.9rem;
+  cursor: pointer;
+  width: 100%;
+}
+
+.select-glass:focus {
+  outline: none;
+  border-color: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.5);
+  box-shadow: 0 0 0 3px hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.1);
+}
+
+/* Glass Panels */
+.panel-glass {
+  background: hsla(var(--bg-h), var(--bg-s), var(--bg-l), var(--opacity-glass-light));
+  backdrop-filter: blur(20px);
+  border: 1px solid hsla(var(--border-h), var(--border-s), var(--border-l), 0.1);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* Progress Overlay */
+.progress-overlay-v2 {
+  position: fixed;
+  inset: 0;
+  background: hsla(0, 0%, 0%, 0.4);
+  backdrop-filter: blur(20px);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-card-v2 {
+  background: hsla(var(--bg-h), var(--bg-s), var(--bg-l), var(--opacity-glass-medium));
+  backdrop-filter: var(--backdrop-blur);
+  border: 1px solid hsla(var(--border-h), var(--border-s), var(--border-l), 0.1);
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+  margin: 20px;
+}
+
+/* Form Groups */
+.form-group-v2 {
+  margin-bottom: 20px;
+}
+
+.form-group-v2:last-child {
+  margin-bottom: 0;
+}
+
+.form-label-v2 {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+  font-size: 0.9rem;
+}
+
+.form-help-v2 {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Error States */
+.input-glass.error {
+  border-color: hsla(var(--destructive-h), var(--destructive-s), var(--destructive-l), 0.5);
+}
+
+.error-message-v2 {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: hsl(var(--destructive));
+}
+
+/* Loading States */
+.loading-spinner-v2 {
+  width: 20px;
+  height: 20px;
+  border: 2px solid hsla(var(--primary-h), var(--primary-s), var(--primary-l), 0.3);
+  border-top-color: hsl(var(--primary));
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .dialog-content-v2 {
+    max-width: 100%;
+    margin: 10px;
+  }
+
+  .dialog-header-v2,
+  .dialog-body-v2 {
+    padding: 20px 16px;
+  }
+
+  .dialog-footer-v2 {
+    padding: 12px 16px 20px;
+    flex-direction: column;
+  }
+
+  .button-glass {
+    width: 100%;
+  }
+}
