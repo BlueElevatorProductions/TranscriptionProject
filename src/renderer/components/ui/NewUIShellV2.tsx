@@ -251,7 +251,7 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
   // Load audio when project has audio file
   useEffect(() => {
     const audio = projectState.projectData?.project?.audio;
-    const projectAudioPath = audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
+    const projectAudioPath = audio?.path || audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
     if (projectAudioPath && projectAudioPath !== '/demo/audio.wav' && projectAudioPath !== audioPath) {
       console.log('🎵 Loading audio from project:', projectAudioPath);
       setAudioPath(projectAudioPath);
@@ -271,7 +271,7 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
   // Initialize audio if not ready but clips exist and audio path is available
   useEffect(() => {
     const audio = projectState.projectData?.project?.audio;
-    const projectAudioPath = audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
+    const projectAudioPath = audio?.path || audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
     const hasClips = audioState.isReady === false &&
                    projectState.clips &&
                    projectState.clips.length > 0;

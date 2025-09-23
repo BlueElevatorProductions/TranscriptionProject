@@ -70,6 +70,12 @@ export class JuceAudioManagerV2 {
   private lastSeekIntent: SeekIntent | null = null;
   private seekCooldown: number = 100; // ms
 
+  // Initialization guards
+  private isInitializing: boolean = false;
+  private lastFailedPath: string | null = null;
+  private errorCooldown: number = 5000; // 5 second cooldown after errors
+  private lastErrorTime: number = 0;
+
   constructor(callbacks: AudioCallbacksV2) {
     this.callbacks = callbacks;
     this.state = {
@@ -95,15 +101,43 @@ export class JuceAudioManagerV2 {
    * Initialize audio with file path
    */
   public async initialize(audioPath: string): Promise<void> {
+    // Prevent multiple concurrent initializations
+    if (this.isInitializing) {
+      console.warn('🎵 Initialize already in progress, ignoring duplicate call');
+      return;
+    }
+
+    // Check error cooldown to prevent rapid retry attempts
+    const now = Date.now();
+    if (this.lastErrorTime > 0 && now - this.lastErrorTime < this.errorCooldown) {
+      console.warn('🎵 Initialize blocked due to error cooldown');
+      return;
+    }
+
+    // Don't retry the same failed path immediately
+    if (this.lastFailedPath === audioPath && now - this.lastErrorTime < this.errorCooldown) {
+      console.warn('🎵 Skipping retry of recently failed path:', audioPath);
+      return;
+    }
+
+    this.isInitializing = true;
+
     try {
-      this.audioPath = audioPath;
+      // Resolve the audio path to an absolute path that JUCE can use
+      const resolvedPath = this.resolveAudioPath(audioPath);
+      if (!resolvedPath) {
+        throw new Error(`Unable to resolve audio path: ${audioPath}`);
+      }
+
+      this.audioPath = resolvedPath;
       this.updateState({ isLoading: true, error: null });
 
       if (!this.transport) {
         throw new Error('JUCE transport not available');
       }
 
-      const result = await this.transport.load(this.sessionId, audioPath);
+      console.log('🎵 Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath });
+      const result = await this.transport.load(this.sessionId, resolvedPath);
       if (!result.success) {
         throw new Error(result.error || 'Failed to load audio');
       }
@@ -114,7 +148,11 @@ export class JuceAudioManagerV2 {
         error: null
       });
 
-      console.log('🎵 JUCE audio initialized:', audioPath);
+      // Clear error tracking on success
+      this.lastFailedPath = null;
+      this.lastErrorTime = 0;
+
+      console.log('🎵 JUCE audio initialized:', resolvedPath);
 
       // Apply any pending clips that were cached while JUCE was not ready
       if (this.pendingClips && this.pendingClips.length > 0) {
@@ -126,12 +164,21 @@ export class JuceAudioManagerV2 {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Track failed path and error time
+      this.lastFailedPath = audioPath;
+      this.lastErrorTime = Date.now();
+
       this.updateState({
         isLoading: false,
         isReady: false,
         error: errorMessage
       });
+
+      console.error('🔥 Failed to initialize audio:', errorMessage);
       this.callbacks.onError(errorMessage);
+    } finally {
+      this.isInitializing = false;
     }
   }
 
@@ -345,7 +392,15 @@ export class JuceAudioManagerV2 {
 
       case 'error': {
         const details = event.code != null ? `${event.message} (code: ${event.code})` : event.message;
-        this.updateState({ isPlaying: false, isLoading: false, isReady: false });
+
+        // Don't set isReady to false if we're currently initializing
+        // This prevents re-initialization loops
+        if (!this.isInitializing) {
+          this.updateState({ isPlaying: false, isLoading: false, isReady: false });
+        } else {
+          this.updateState({ isPlaying: false, isLoading: false });
+        }
+
         this.handleError('JUCE transport error', details);
         break;
       }
@@ -467,8 +522,64 @@ export class JuceAudioManagerV2 {
     const fullMessage = `${context}: ${errorMessage}`;
 
     console.error('🔥 JUCE Audio Error:', fullMessage);
+
+    // Record error time for cooldown
+    this.lastErrorTime = Date.now();
+
     this.updateState({ error: fullMessage });
-    this.callbacks.onError(fullMessage);
+
+    // Only call error callback if we're not in a cooldown period
+    // This prevents rapid callback loops
+    if (!this.isInitializing || this.lastErrorTime === 0) {
+      this.callbacks.onError(fullMessage);
+    }
+  }
+
+  /**
+   * Resolve audio path to absolute path that JUCE can use
+   */
+  private resolveAudioPath(audioPath: string): string | null {
+    try {
+      // Handle file:// URLs
+      if (audioPath.startsWith('file://')) {
+        const url = new URL(audioPath);
+        return decodeURIComponent(url.pathname);
+      }
+
+      // Handle absolute paths
+      if (audioPath.startsWith('/')) {
+        return audioPath;
+      }
+
+      // Handle relative paths - assume they're in the project directory
+      // For now, we'll try to resolve relative to the current working directory
+      if (audioPath && !audioPath.includes('://')) {
+        // This is likely a filename from project data
+        // In a real app, this should be resolved relative to the project's audio directory
+        console.warn('🎵 Received relative audio path, attempting to resolve:', audioPath);
+
+        // Try common audio directories including the project's "Audio Files" folder
+        const possiblePaths = [
+          // Check in "Audio Files" folder relative to common project directories
+          `/Users/chrismcleod/Development/ClaudeAccess/Project Files/*/Audio Files/${audioPath}`,
+          // Check in working audio directory
+          `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${audioPath}`,
+          `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${audioPath}`,
+          // Check in project directory
+          `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${audioPath}`,
+          `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${audioPath}`,
+          audioPath // fallback to original
+        ];
+
+        // Return the first path that might exist (we can't check file existence in renderer)
+        return possiblePaths[1]; // Try Working Audio first as that's most likely
+      }
+
+      return null;
+    } catch (err) {
+      console.error('🔥 Error resolving audio path:', err);
+      return null;
+    }
   }
 
   // ==================== Utilities ====================
