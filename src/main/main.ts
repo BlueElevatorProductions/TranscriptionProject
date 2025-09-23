@@ -1564,6 +1564,20 @@ class App {
     ipcMain.handle('transcription:importV2', async (_event, segments: any[], speakers: any, audioMetadata: any) => {
       try {
         console.log('📝 Importing v2.0 transcription result to ProjectDataStore');
+        console.log('🎵 Audio metadata received:', audioMetadata);
+
+        // Create proper AudioMetadata structure
+        const properAudioMetadata = {
+          originalFile: audioMetadata.audioPath || audioMetadata.fileName || 'unknown',
+          originalName: audioMetadata.fileName || 'Untitled Audio',
+          embeddedPath: undefined,
+          duration: audioMetadata.duration || 0,
+          format: 'unknown',
+          size: 0,
+          embedded: false
+        };
+
+        console.log('🎵 Processed audio metadata:', properAudioMetadata);
 
         // Create v2.0 ProjectData structure
         const projectData: ProjectData = {
@@ -1574,7 +1588,7 @@ class App {
             created: new Date().toISOString(),
             lastModified: new Date().toISOString(),
             version: '2.0',
-            audio: audioMetadata,
+            audio: properAudioMetadata,
             transcription: {
               service: 'openai',
               model: 'whisper-1',
@@ -1592,7 +1606,21 @@ class App {
           },
           clips: {
             version: '2.0',
-            clips: segments,
+            clips: [
+              {
+                id: `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                speaker: 'SPEAKER_00',
+                startTime: 0,
+                endTime: audioMetadata.duration || segments[segments.length - 1]?.end || 0,
+                duration: audioMetadata.duration || segments[segments.length - 1]?.end || 0,
+                segments: segments,
+                type: 'transcribed' as const,
+                createdAt: Date.now(),
+                modifiedAt: Date.now(),
+                order: 0,
+                status: 'active' as const
+              }
+            ],
             clipSettings: {
               defaultDuration: 5.0,
               autoExport: false,
@@ -1664,9 +1692,9 @@ class App {
   }
 
   private generateEncryptionKey(): string {
-    // Generate a machine-specific key (this is a simple approach)
-    // In production, you might want to use more sophisticated key derivation
-    const machineId = process.platform + app.getVersion() + app.getPath('exe');
+    // Generate a machine-specific key using more stable identifiers
+    // Use userData path instead of exe path for consistency across dev/prod
+    const machineId = process.platform + app.getVersion() + app.getPath('userData');
     return crypto.createHash('sha256').update(machineId).digest('hex'); // Full 64 character hex = 32 bytes
   }
 
@@ -1688,41 +1716,69 @@ class App {
   }
 
   private decryptApiKeys(encryptedData: string): { [service: string]: string } {
+    const algorithm = 'aes-256-cbc';
+    const parts = encryptedData.split(':');
+
+    if (parts.length !== 2) {
+      console.error('Invalid encrypted data format');
+      return {};
+    }
+
+    const iv = Buffer.from(parts[0], 'hex');
+    const encryptedText = parts[1];
+
+    // Try current encryption key first
     try {
-      const algorithm = 'aes-256-cbc';
-      const parts = encryptedData.split(':');
-      
-      if (parts.length !== 2) {
-        throw new Error('Invalid encrypted data format');
-      }
-      
-      const iv = Buffer.from(parts[0], 'hex');
-      const encryptedText = parts[1];
-      const key = Buffer.from(this.encryptionKey, 'hex').subarray(0, 32); // Ensure exactly 32 bytes
+      const key = Buffer.from(this.encryptionKey, 'hex').subarray(0, 32);
       const decipher = crypto.createDecipheriv(algorithm, key, iv);
-      
-      console.log('DEBUG: Decrypting API keys...');
-      console.log('DEBUG: Encryption key:', this.encryptionKey.substring(0, 10) + '...');
-      console.log('DEBUG: Machine ID components:', {
-        platform: process.platform,
-        version: app.getVersion(),
-        exePath: app.getPath('exe')
-      });
-      
+
       let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
-      
+
       const result = JSON.parse(decrypted);
-      console.log('DEBUG: Successfully decrypted keys:', Object.keys(result));
+      console.log('✅ Successfully decrypted API keys with current key:', Object.keys(result));
       return result;
-    } catch (error) {
-      console.error('Decryption error:', error);
-      console.error('DEBUG: Failed to decrypt. Machine ID components:', {
-        platform: process.platform,
-        version: app.getVersion(),
-        exePath: app.getPath('exe')
-      });
-      return {}; // Return empty object if decryption fails
+    } catch (currentKeyError) {
+      console.log('❌ Current key failed, trying legacy key...');
+
+      // Try legacy encryption key (with exe path)
+      try {
+        const legacyMachineId = process.platform + app.getVersion() + app.getPath('exe');
+        const legacyKey = crypto.createHash('sha256').update(legacyMachineId).digest('hex');
+        const key = Buffer.from(legacyKey, 'hex').subarray(0, 32);
+        const decipher = crypto.createDecipheriv(algorithm, key, iv);
+
+        let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+
+        const result = JSON.parse(decrypted);
+        console.log('✅ Successfully decrypted API keys with legacy key:', Object.keys(result));
+
+        // Re-encrypt with new key for future use
+        console.log('🔄 Re-encrypting API keys with new stable key...');
+        try {
+          const newEncryptedData = this.encryptApiKeys(result);
+          fs.writeFileSync(this.apiKeysPath, newEncryptedData);
+          console.log('✅ API keys re-encrypted with stable key');
+        } catch (reEncryptError) {
+          console.warn('⚠️  Failed to re-encrypt keys, but decryption successful');
+        }
+
+        return result;
+      } catch (legacyKeyError) {
+        console.error('❌ Both current and legacy decryption failed');
+        console.error('Current key error:', currentKeyError);
+        console.error('Legacy key error:', legacyKeyError);
+        console.log('🔧 Machine ID components:', {
+          platform: process.platform,
+          version: app.getVersion(),
+          userData: app.getPath('userData'),
+          exe: app.getPath('exe')
+        });
+
+        // Return empty object - user will need to re-enter API keys
+        return {};
+      }
     }
   }
 

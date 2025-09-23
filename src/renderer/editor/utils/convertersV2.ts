@@ -17,6 +17,7 @@ import {
   ParagraphNode,
   $createTextNode,
   LexicalNode,
+  createEditor,
 } from 'lexical';
 
 import {
@@ -26,9 +27,9 @@ import {
   SpacerSegment
 } from '../../../shared/types';
 
-import { WordNode, $createWordNode, $isWordNode } from '../nodes/WordNode';
-import { $createSpacerNode, $isSpacerNode } from '../nodes/SpacerNode';
-import { ClipNode, $createClipNode, $isClipNode } from '../nodes/ClipNode';
+import { WordNodeV2, $createWordNodeV2, $isWordNodeV2 } from '../nodes/WordNodeV2';
+import { $createSpacerNodeV2, $isSpacerNodeV2 } from '../nodes/SpacerNodeV2';
+import { ClipNodeV2, $createClipNodeV2, $isClipNodeV2 } from '../nodes/ClipNodeV2';
 
 // ==================== Types ====================
 
@@ -71,7 +72,12 @@ export function clipsToEditorStateV2(
     getSpeakerColor
   } = options;
 
-  return new EditorState().read(() => {
+  // Create a temporary editor to generate the state
+  const tempEditor = createEditor({
+    nodes: [WordNodeV2, SpacerNodeV2, ClipNodeV2]
+  });
+
+  return tempEditor.getEditorState().read(() => {
     const root = $getRoot();
     root.clear();
 
@@ -81,7 +87,7 @@ export function clipsToEditorStateV2(
       .sort((a, b) => a.order - b.order);
 
     for (const clip of sortedClips) {
-      const clipNode = $createClipNode({
+      const clipNode = $createClipNodeV2({
         clipId: clip.id,
         speaker: clip.speaker,
         displayName: getSpeakerDisplayName(clip.speaker),
@@ -106,7 +112,7 @@ export function clipsToEditorStateV2(
 
         if (segment.type === 'word') {
           const wordSegment = segment as WordSegment;
-          const wordNode = $createWordNode({
+          const wordNode = $createWordNodeV2({
             word: wordSegment.text,
             start: absoluteStartTime,
             end: absoluteEndTime,
@@ -130,7 +136,7 @@ export function clipsToEditorStateV2(
 
           // Only render spacers above threshold
           if (spacerSegment.duration >= spacerThreshold) {
-            const spacerNode = $createSpacerNode({
+            const spacerNode = $createSpacerNodeV2({
               start: absoluteStartTime,
               end: absoluteEndTime,
               duration: spacerSegment.duration,
@@ -172,8 +178,8 @@ export function editorStateToClipsV2(
     const children = root.getChildren();
 
     for (const node of children) {
-      if ($isClipNode(node)) {
-        const clipNode = node as ClipNode;
+      if ($isClipNodeV2(node)) {
+        const clipNode = node as ClipNodeV2;
         const clipId = clipNode.getClipId();
 
         // Find original clip for reference
@@ -209,7 +215,7 @@ export function editorStateToClipsV2(
 /**
  * Extract segments from a ClipNode
  */
-function extractSegmentsFromClipNode(clipNode: ClipNode, originalClip: Clip): Segment[] {
+function extractSegmentsFromClipNode(clipNode: ClipNodeV2, originalClip: Clip): Segment[] {
   const segments: Segment[] = [];
   let currentTime = 0;
 
@@ -220,8 +226,8 @@ function extractSegmentsFromClipNode(clipNode: ClipNode, originalClip: Clip): Se
   const children = paragraph.getChildren();
 
   for (const child of children) {
-    if ($isWordNode(child)) {
-      const wordNode = child as WordNode;
+    if ($isWordNodeV2(child)) {
+      const wordNode = child as WordNodeV2;
       const segmentIndex = wordNode.getSegmentIndex();
       const originalSegment = originalClip.segments[segmentIndex];
 
@@ -243,7 +249,7 @@ function extractSegmentsFromClipNode(clipNode: ClipNode, originalClip: Clip): Se
         segments.push(updatedSegment);
       }
 
-    } else if ($isSpacerNode(child)) {
+    } else if ($isSpacerNodeV2(child)) {
       const spacerNode = child as any; // Type assertion for spacer node
       const segmentIndex = spacerNode.getSegmentIndex();
       const originalSegment = originalClip.segments[segmentIndex];

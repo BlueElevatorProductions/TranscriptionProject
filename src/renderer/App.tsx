@@ -42,7 +42,10 @@ class AppErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: any, errorInfo: any) {
-    console.error('🔥 App v2.0 Error:', error, errorInfo);
+    console.error('🔥 App v2.0 Error Boundary Caught:', error);
+    console.error('🔥 Error Info:', errorInfo);
+    console.error('🔥 Component Stack:', errorInfo.componentStack);
+    console.error('🔥 Error Stack:', error.stack);
   }
 
   render() {

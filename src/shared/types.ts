@@ -504,7 +504,8 @@ export type EditOperationType =
   | 'insertSpacer'
   | 'nudgeBoundary'
   | 'editWord'
-  | 'changeSpeaker';
+  | 'changeSpeaker'
+  | 'renameSpeaker';
 
 export type EditOperationData =
   | SplitClipData
@@ -514,7 +515,8 @@ export type EditOperationData =
   | InsertSpacerData
   | NudgeBoundaryData
   | EditWordData
-  | ChangeSpeakerData;
+  | ChangeSpeakerData
+  | RenameSpeakerData;
 
 export interface SplitClipData {
   clipId: string;
@@ -555,6 +557,11 @@ export interface EditWordData {
 export interface ChangeSpeakerData {
   clipId: string;
   newSpeaker: string;
+}
+
+export interface RenameSpeakerData {
+  oldSpeakerName: string;
+  newSpeakerName: string;
 }
 
 // ==================== Segment Validation ====================

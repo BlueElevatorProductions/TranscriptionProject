@@ -18,6 +18,10 @@ import {
   ProjectData,
   TranscriptionResult
 } from '../../shared/types';
+import { spawn } from 'child_process';
+import { app } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
 import { SimpleCloudTranscriptionService } from './SimpleCloudTranscriptionService';
 
 // ==================== Configuration ====================
@@ -203,51 +207,20 @@ export class TranscriptionServiceV2 {
         this.emitJobUpdate(job);
 
       } else {
-        // Local transcription using existing local services
+        // Local transcription using Python whisper service
         console.log('🔧 TranscriptionServiceV2: Starting local transcription');
         job.progress = 25;
         this.emitJobUpdate(job);
 
-        // For now, create dummy segments for testing
-        // In production, this would use a local Whisper service
-        console.log('⚠️  TranscriptionServiceV2: Using dummy local transcription for testing');
+        // Call Python whisper service
+        rawResult = await this.runLocalTranscription(job.filePath, options, (progress) => {
+          job.progress = 25 + (progress * 0.5); // Progress from 25% to 75%
+          this.emitJobUpdate(job);
+        });
 
-        // Simulate processing time
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        job.progress = 50;
-        this.emitJobUpdate(job);
-
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Update progress after transcription
         job.progress = 75;
         this.emitJobUpdate(job);
-
-        // Create dummy result structure
-        rawResult = {
-          segments: [
-            {
-              id: 1,
-              start: 0.0,
-              end: 3.0,
-              text: "This is a test transcription from local processing.",
-              words: [
-                { word: "This", start: 0.0, end: 0.3, score: 0.9 },
-                { word: "is", start: 0.4, end: 0.5, score: 0.95 },
-                { word: "a", start: 0.6, end: 0.7, score: 0.9 },
-                { word: "test", start: 0.8, end: 1.1, score: 0.92 },
-                { word: "transcription", start: 1.2, end: 1.8, score: 0.88 },
-                { word: "from", start: 1.9, end: 2.1, score: 0.94 },
-                { word: "local", start: 2.2, end: 2.5, score: 0.91 },
-                { word: "processing.", start: 2.6, end: 3.0, score: 0.89 }
-              ],
-              speaker: "SPEAKER_00"
-            }
-          ],
-          speakers: {
-            "SPEAKER_00": "Speaker 1"
-          }
-        };
-
-        console.log('✅ TranscriptionServiceV2: Local transcription completed (dummy data)');
       }
 
       // Convert raw result to v2.0 segments
@@ -292,71 +265,135 @@ export class TranscriptionServiceV2 {
       return segments;
     }
 
-    let previousEndTime = 0;
+    let currentTime = 0;
 
     for (const rawSegment of rawResult.segments) {
       const segmentStart = rawSegment.start || 0;
       const segmentEnd = rawSegment.end || segmentStart;
 
-      // Create spacer segment for gap if needed
-      if (segmentStart - previousEndTime >= SPACER_THRESHOLD_SECONDS) {
+      // Create spacer segment for significant gaps only
+      if (segmentStart - currentTime >= SPACER_THRESHOLD_SECONDS) {
         const spacerSegment: SpacerSegment = {
           type: 'spacer',
           id: this.generateSegmentId(),
-          start: previousEndTime,
+          start: currentTime,
           end: segmentStart,
-          duration: segmentStart - previousEndTime,
-          label: `Gap (${(segmentStart - previousEndTime).toFixed(1)}s)`
+          duration: segmentStart - currentTime,
+          label: `Gap (${(segmentStart - currentTime).toFixed(1)}s)`
         };
         segments.push(spacerSegment);
+        currentTime = segmentStart;
       }
 
       // Create word segments from words in this segment
       if (rawSegment.words && Array.isArray(rawSegment.words)) {
         for (const word of rawSegment.words) {
           if (word.word && word.word.trim()) {
+            // Adjust start time to ensure continuity
+            const adjustedStart = Math.max(word.start || segmentStart, currentTime);
+            const originalEnd = word.end || word.start || segmentEnd;
+            const adjustedEnd = Math.max(adjustedStart + MIN_SEGMENT_DURATION, originalEnd);
+
             const wordSegment: WordSegment = {
               type: 'word',
               id: this.generateSegmentId(),
-              start: word.start || segmentStart,
-              end: word.end || word.start || segmentEnd,
+              start: adjustedStart,
+              end: adjustedEnd,
               text: word.word.trim(),
               confidence: word.score || word.confidence || 1.0,
               originalStart: word.start || segmentStart,
-              originalEnd: word.end || word.start || segmentEnd
+              originalEnd: originalEnd
             };
 
-            // Ensure minimum duration
-            if (wordSegment.end - wordSegment.start < MIN_SEGMENT_DURATION) {
-              wordSegment.end = wordSegment.start + MIN_SEGMENT_DURATION;
-            }
-
             segments.push(wordSegment);
+            currentTime = adjustedEnd;
           }
         }
       } else {
         // No word-level data, create segment-level word
         const text = rawSegment.text?.trim() || '';
         if (text) {
+          const adjustedStart = Math.max(segmentStart, currentTime);
+          const adjustedEnd = Math.max(adjustedStart + MIN_SEGMENT_DURATION, segmentEnd);
+
           const wordSegment: WordSegment = {
             type: 'word',
             id: this.generateSegmentId(),
-            start: segmentStart,
-            end: segmentEnd,
+            start: adjustedStart,
+            end: adjustedEnd,
             text: text,
             confidence: 1.0,
             originalStart: segmentStart,
             originalEnd: segmentEnd
           };
           segments.push(wordSegment);
+          currentTime = adjustedEnd;
         }
       }
-
-      previousEndTime = Math.max(previousEndTime, segmentEnd);
     }
 
-    console.log(`🎯 TranscriptionServiceV2: Created ${segments.length} segments`);
-    return segments;
+    // Post-process segments to ensure perfect coverage
+    const processedSegments = this.postProcessSegments(segments);
+
+    console.log(`🎯 TranscriptionServiceV2: Created ${processedSegments.length} segments`);
+    return processedSegments;
+  }
+
+  /**
+   * Post-process segments to ensure perfect coverage and no overlaps
+   */
+  private static postProcessSegments(segments: Segment[]): Segment[] {
+    if (segments.length === 0) return segments;
+
+    // Sort segments by start time
+    segments.sort((a, b) => a.start - b.start);
+
+    const processedSegments: Segment[] = [];
+    let expectedTime = 0;
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+
+      // Adjust start time to ensure continuity
+      if (segment.start > expectedTime) {
+        // Create small gap filler if needed (only for very small gaps)
+        const gap = segment.start - expectedTime;
+        if (gap < SPACER_THRESHOLD_SECONDS && gap > 0.001) {
+          // Fill small gap by extending previous segment or adjusting current start
+          if (processedSegments.length > 0) {
+            const lastSegment = processedSegments[processedSegments.length - 1];
+            if (lastSegment.type === 'word') {
+              (lastSegment as WordSegment).end = segment.start;
+            }
+          } else {
+            // Adjust current segment to start at expected time
+            const adjustedSegment = { ...segment };
+            adjustedSegment.start = expectedTime;
+            processedSegments.push(adjustedSegment);
+            expectedTime = adjustedSegment.end;
+            continue;
+          }
+        }
+      } else if (segment.start < expectedTime) {
+        // Overlap detected - adjust start time
+        const adjustedSegment = { ...segment };
+        adjustedSegment.start = expectedTime;
+
+        // Ensure minimum duration
+        if (adjustedSegment.end <= adjustedSegment.start) {
+          adjustedSegment.end = adjustedSegment.start + MIN_SEGMENT_DURATION;
+        }
+
+        processedSegments.push(adjustedSegment);
+        expectedTime = adjustedSegment.end;
+        continue;
+      }
+
+      processedSegments.push(segment);
+      expectedTime = segment.end;
+    }
+
+    return processedSegments;
   }
 
   /**
@@ -389,6 +426,141 @@ export class TranscriptionServiceV2 {
         this.eventEmitter.emit('transcription:error', job);
       }
     }
+  }
+
+  // ==================== Local Transcription ====================
+
+  /**
+   * Run local transcription using Python whisper service
+   */
+  private static async runLocalTranscription(
+    filePath: string,
+    options: TranscriptionOptionsV2,
+    progressCallback: (progress: number) => void
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      try {
+        // Get whisper service path
+        const projectRoot = app.getAppPath();
+        const whisperServicePath = path.join(projectRoot, 'whisper_service.py');
+
+        console.log('🐍 Local transcription using Python service');
+        console.log('📁 Project root:', projectRoot);
+        console.log('🔍 Whisper service path:', whisperServicePath);
+        console.log('📁 File exists:', fs.existsSync(whisperServicePath));
+
+        if (!fs.existsSync(whisperServicePath)) {
+          throw new Error(`Whisper service not found at: ${whisperServicePath}`);
+        }
+
+        // Map quality to model size
+        const modelSize = options.quality === 'high' ? 'medium' : 'base';
+        const language = options.language || 'en';
+
+        // Build Python command
+        const args = [
+          whisperServicePath,
+          'transcribe',
+          filePath,
+          '--model', modelSize
+        ];
+
+        if (language) {
+          args.push('--language', language);
+        }
+
+        console.log('🚀 Spawning Python process:', 'python3', args);
+
+        // Spawn Python process
+        const pythonProcess = spawn('python3', args, {
+          env: process.env
+        });
+
+        let output = '';
+        let errorOutput = '';
+
+        // Handle stdout (JSON result)
+        pythonProcess.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        // Handle stderr (progress and logs)
+        pythonProcess.stderr.on('data', (data) => {
+          const stderrData = data.toString();
+          errorOutput += stderrData;
+
+          // Parse progress updates (format: PROGRESS:XX)
+          const progressMatch = stderrData.match(/PROGRESS:(\d+)/);
+          if (progressMatch) {
+            const progress = parseInt(progressMatch[1]);
+            console.log(`📊 Local transcription progress: ${progress}%`);
+            progressCallback(progress);
+          }
+        });
+
+        // Handle process completion
+        pythonProcess.on('close', (code) => {
+          console.log('🏁 Python process closed with code:', code);
+          console.log('📤 Raw output length:', output.length);
+          console.log('⚠️  Error output:', errorOutput);
+
+          if (code !== 0) {
+            reject(new Error(`Whisper process failed with code ${code}: ${errorOutput}`));
+            return;
+          }
+
+          if (!output.trim()) {
+            reject(new Error('No output from whisper service'));
+            return;
+          }
+
+          try {
+            // Extract JSON from output (may have extra text before/after)
+            let jsonString = output.trim();
+
+            // Find JSON start and end markers
+            const jsonStart = jsonString.indexOf('{');
+            const jsonEnd = jsonString.lastIndexOf('}');
+
+            if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
+              throw new Error('No valid JSON found in output');
+            }
+
+            // Extract just the JSON portion
+            jsonString = jsonString.substring(jsonStart, jsonEnd + 1);
+
+            // Parse JSON result
+            const result = JSON.parse(jsonString);
+
+            if (result.status === 'error') {
+              reject(new Error(result.message || 'Transcription failed'));
+              return;
+            }
+
+            console.log('✅ Local transcription completed successfully');
+            console.log('📊 Segments:', result.segments?.length || 0);
+            console.log('🗣️  Speakers:', Object.keys(result.speakers || {}).length);
+
+            resolve(result);
+          } catch (parseError) {
+            console.error('❌ Failed to parse JSON output:', parseError);
+            console.log('📤 Raw output (first 500 chars):', output.substring(0, 500));
+            console.log('📤 Raw output (last 200 chars):', output.substring(Math.max(0, output.length - 200)));
+            reject(new Error(`Failed to parse transcription result: ${parseError}`));
+          }
+        });
+
+        // Handle process errors
+        pythonProcess.on('error', (error) => {
+          console.error('❌ Python process error:', error);
+          reject(new Error(`Failed to start Python process: ${error.message}`));
+        });
+
+      } catch (error) {
+        console.error('❌ Local transcription setup failed:', error);
+        reject(error);
+      }
+    });
   }
 
   // ==================== Utility Methods ====================

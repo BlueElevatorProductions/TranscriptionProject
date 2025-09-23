@@ -118,7 +118,7 @@ const NewProjectDialogV2: React.FC<NewProjectDialogV2Props> = ({
       };
 
       // Save project via main process
-      const saveResult = await (window as any).electronAPI?.saveProject?.(fullProjectPath, projectData);
+      const saveResult = await (window as any).electronAPI?.saveProject?.(projectData, fullProjectPath);
 
       if (saveResult?.success) {
         console.log('✅ v2.0 Project created successfully');

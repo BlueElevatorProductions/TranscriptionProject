@@ -21,7 +21,8 @@ import {
   createReorderClipsOperation,
   createInsertSpacerOperation,
   createEditWordOperation,
-  createChangeSpeakerOperation
+  createChangeSpeakerOperation,
+  createRenameSpeakerOperation
 } from '../../shared/operations';
 
 // ==================== Types ====================
@@ -65,6 +66,7 @@ interface ProjectContextActions {
   insertSpacer: (clipId: string, segmentIndex: number, duration: number) => Promise<boolean>;
   editWord: (clipId: string, segmentIndex: number, newText: string) => Promise<boolean>;
   changeSpeaker: (clipId: string, newSpeaker: string) => Promise<boolean>;
+  renameSpeaker: (oldSpeakerName: string, newSpeakerName: string) => Promise<boolean>;
 
   // Project management
   loadProject: (projectData: ProjectData) => Promise<boolean>;
@@ -115,6 +117,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   // Transcription state
   const [currentTranscriptionJob, setCurrentTranscriptionJob] = useState<TranscriptionJob | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionAudioPath, setTranscriptionAudioPath] = useState<string | null>(null);
 
   // UI selections
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
@@ -180,13 +183,18 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
         const importResult = await (window as any).electronAPI?.transcriptionImportV2?.(
           job.segments || [],
           job.speakers || {},
-          { fileName: job.fileName, duration: 0 }
+          {
+            fileName: job.fileName,
+            duration: 0,
+            audioPath: transcriptionAudioPath // Include the stored audio path
+          }
         );
 
         if (importResult?.success) {
           setIsTranscribing(false);
           setIsLoading(false);
           setCurrentTranscriptionJob(null);
+          setTranscriptionAudioPath(null); // Clear stored audio path
           // Refresh state from main process
           await refreshFromMain();
           console.log('✅ ProjectContextV2: Transcription imported successfully');
@@ -198,6 +206,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
         setError(error instanceof Error ? error.message : 'Failed to import transcription');
         setIsTranscribing(false);
         setIsLoading(false);
+        setTranscriptionAudioPath(null); // Clear stored audio path on error
       }
     };
 
@@ -213,6 +222,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
       setError(job.error || 'Transcription failed');
       setIsTranscribing(false);
       setIsLoading(false);
+      setTranscriptionAudioPath(null); // Clear stored audio path on error
     };
 
     // Set up transcription event listeners if available
@@ -380,6 +390,26 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     }
   }, []);
 
+  const renameSpeaker = useCallback(async (oldSpeakerName: string, newSpeakerName: string): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      const operation = createRenameSpeakerOperation(oldSpeakerName, newSpeakerName);
+      const result = await window.electronAPI.projectApplyEdit(operation);
+      setIsLoading(false);
+
+      if (result.success) {
+        return true;
+      } else {
+        setError(result.error || 'Rename speaker operation failed');
+        return false;
+      }
+    } catch (error) {
+      setIsLoading(false);
+      setError(`Rename speaker failed: ${error.message}`);
+      return false;
+    }
+  }, []);
+
   // ==================== Project Management Actions ====================
 
   const loadProject = useCallback(async (newProjectData: ProjectData): Promise<boolean> => {
@@ -462,6 +492,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
       setIsLoading(true);
       setIsTranscribing(true);
       setError(null);
+      setTranscriptionAudioPath(filePath);
 
       console.log('🔧 ProjectContextV2: State updated, calling electronAPI.transcriptionStartV2...');
 
@@ -497,6 +528,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
       setError(error instanceof Error ? error.message : 'Failed to start transcription');
       setIsTranscribing(false);
       setIsLoading(false);
+      setTranscriptionAudioPath(null); // Clear stored audio path on error
       return false;
     }
   }, []);
@@ -511,6 +543,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
         setCurrentTranscriptionJob(null);
         setIsTranscribing(false);
         setIsLoading(false);
+        setTranscriptionAudioPath(null); // Clear stored audio path on cancel
         return true;
       } else {
         throw new Error(result?.error || 'Failed to cancel transcription');
@@ -518,6 +551,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     } catch (error) {
       console.error('Failed to cancel transcription:', error);
       setError(error instanceof Error ? error.message : 'Failed to cancel transcription');
+      setTranscriptionAudioPath(null); // Clear stored audio path on error
       return false;
     }
   }, [currentTranscriptionJob]);
@@ -641,6 +675,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
       insertSpacer,
       editWord,
       changeSpeaker,
+      renameSpeaker,
 
       // Project management
       loadProject,

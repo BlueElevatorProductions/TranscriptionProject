@@ -79,6 +79,15 @@ export function createChangeSpeakerOperation(clipId: string, newSpeaker: string)
   };
 }
 
+export function createRenameSpeakerOperation(oldSpeakerName: string, newSpeakerName: string): EditOperation {
+  return {
+    id: `rename-speaker-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'renameSpeaker',
+    timestamp: Date.now(),
+    data: { oldSpeakerName, newSpeakerName }
+  };
+}
+
 // ==================== Segment Utilities ====================
 
 /**

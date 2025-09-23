@@ -190,6 +190,16 @@
     }
     
     /* === LAYOUT UTILITY CLASSES === */
+
+    /* Drag region classes for window interaction */
+    .drag-region {
+        -webkit-app-region: drag;
+    }
+
+    .no-drag {
+        -webkit-app-region: no-drag;
+    }
+
     .sidebar-width {
         width: var(--sidebar-width);
     }

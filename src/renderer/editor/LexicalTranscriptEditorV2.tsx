@@ -15,7 +15,6 @@ import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
-
 // v2.0 Nodes
 import { WordNodeV2 } from './nodes/WordNodeV2';
 import { SpacerNodeV2 } from './nodes/SpacerNodeV2';
@@ -23,25 +22,58 @@ import { ClipNodeV2 } from './nodes/ClipNodeV2';
 
 // v2.0 Plugins
 import EditOperationsPlugin from './plugins/EditOperationsPlugin';
+import ListenModePlugin from './plugins/ListenModePlugin';
+import EditTextModePlugin from './plugins/EditTextModePlugin';
+import EditAudioModePlugin from './plugins/EditAudioModePlugin';
+import ContentPopulationPlugin from './plugins/ContentPopulationPlugin';
 
 // Context
 import { useProjectV2 } from '../contexts/ProjectContextV2';
 
 export interface LexicalTranscriptEditorV2Props {
-  mode?: 'listen' | 'edit';
+  mode?: 'listen' | 'edit-text' | 'edit-audio';
   className?: string;
   onWordClick?: (clipId: string, segmentIndex: number) => void;
   onOperationComplete?: (operationType: string, success: boolean) => void;
+  currentTime?: number;
+  onSeek?: (time: number) => void;
+  onPlaybackStateChange?: (isPlaying: boolean) => void;
+  selectedClipId?: string | null;
+  onClipSelect?: (clipId: string | null) => void;
+  onClipReorder?: (clipId: string, newOrder: number) => void;
+  audioPath?: string | null;
+  duration?: number;
+  isPlaying?: boolean;
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
+  onAudioSplit?: (time: number) => void;
+  onAudioExport?: (startTime: number, endTime: number) => void;
 }
 
 const LexicalTranscriptEditorV2: React.FC<LexicalTranscriptEditorV2Props> = ({
-  mode = 'edit',
+  mode = 'edit-text',
   className = '',
   onWordClick,
   onOperationComplete,
+  currentTime = 0,
+  onSeek,
+  onPlaybackStateChange,
+  selectedClipId,
+  onClipSelect,
+  onClipReorder,
+  audioPath,
+  duration = 0,
+  isPlaying = false,
+  volume = 1,
+  onVolumeChange,
+  onAudioSplit,
+  onAudioExport,
 }) => {
   const { state: projectState } = useProjectV2();
   const isReadOnly = mode === 'listen';
+  const isListenMode = mode === 'listen';
+  const isEditTextMode = mode === 'edit-text';
+  const isEditAudioMode = mode === 'edit-audio';
 
   // Lexical configuration
   const initialConfig = useMemo(() => ({
@@ -63,6 +95,7 @@ const LexicalTranscriptEditorV2: React.FC<LexicalTranscriptEditorV2Props> = ({
     ],
     editable: !isReadOnly,
   }), [isReadOnly]);
+
 
   // Debug project state
   useEffect(() => {
@@ -111,6 +144,12 @@ const LexicalTranscriptEditorV2: React.FC<LexicalTranscriptEditorV2Props> = ({
           <HistoryPlugin />
           <AutoFocusPlugin />
 
+          {/* Content Population Plugin */}
+          <ContentPopulationPlugin
+            clips={projectState.clips}
+            isReadOnly={isReadOnly}
+          />
+
           {/* v2.0 Edit Operations Plugin */}
           <EditOperationsPlugin
             isReadOnly={isReadOnly}
@@ -122,12 +161,79 @@ const LexicalTranscriptEditorV2: React.FC<LexicalTranscriptEditorV2Props> = ({
             }}
             onOperationComplete={handleOperationComplete}
           />
+
+          {/* Listen Mode Plugin */}
+          <ListenModePlugin
+            isListenMode={isListenMode}
+            currentTime={currentTime}
+            onSeek={onSeek}
+            onPlaybackStateChange={onPlaybackStateChange}
+          />
+
+          {/* Edit Text Mode Plugin */}
+          <EditTextModePlugin
+            isEditTextMode={isEditTextMode}
+            selectedClipId={selectedClipId}
+            onClipSelect={onClipSelect}
+            onClipReorder={onClipReorder}
+            onClipSplit={(clipId, segmentIndex) => {
+              console.log('✂️ Clip split in Edit Text Mode:', { clipId, segmentIndex });
+              // This will be handled by the existing EditOperationsPlugin
+            }}
+            onWordEdit={(clipId, segmentIndex, newText) => {
+              console.log('📝 Word edited in Edit Text Mode:', { clipId, segmentIndex, newText });
+              // This will trigger the existing word edit flow
+            }}
+          />
+
+          {/* Edit Audio Mode Plugin */}
+          <EditAudioModePlugin
+            isEditAudioMode={isEditAudioMode}
+            audioPath={audioPath}
+            currentTime={currentTime}
+            duration={duration}
+            isPlaying={isPlaying}
+            volume={volume}
+            onSeek={onSeek}
+            onPlayPause={onPlaybackStateChange}
+            onVolumeChange={onVolumeChange}
+            onAudioSplit={onAudioSplit}
+            onAudioExport={onAudioExport}
+            clips={projectState.clips.map(clip => ({
+              id: clip.id,
+              startTime: clip.startTime,
+              endTime: clip.endTime,
+              speaker: clip.speaker
+            }))}
+          />
         </div>
 
         {/* Mode indicator */}
         <div className="mt-2 text-xs text-muted-foreground">
           Mode: {mode} | Clips: {projectState.clips.length} |
           {isReadOnly ? ' Read-only' : ' Editable'}
+          {isListenMode && (
+            <span>
+              {' | '}
+              Time: {currentTime.toFixed(1)}s
+            </span>
+          )}
+          {isEditTextMode && (
+            <span>
+              {' | '}
+              Selected: {selectedClipId || 'None'}
+              {' | '}
+              Press Enter to split clips
+            </span>
+          )}
+          {isEditAudioMode && (
+            <span>
+              {' | '}
+              Audio: {audioPath ? 'Loaded' : 'None'}
+              {' | '}
+              Waveform view active
+            </span>
+          )}
         </div>
       </LexicalComposer>
     </div>

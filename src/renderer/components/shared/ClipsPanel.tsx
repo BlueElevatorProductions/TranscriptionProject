@@ -1,15 +1,15 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Scissors, Plus, Play, Trash2, Copy, GripVertical } from 'lucide-react';
-import { Clip } from '../TranscriptEdit/useClips';
+import { Clip } from '../../../shared/types';
 
 interface ClipsPanelProps {
   clips: Clip[];
   selectedClipId?: string | null;
   onClipSelect?: (clipId: string) => void;
-  onClipDelete?: (clipId: string) => void;
+  onClipDelete?: (clipId: string) => Promise<boolean>;
   onClipPlay?: (clip: Clip) => void;
-  onClipMerge?: (clipIds: string[]) => void;
-  onClipReorder?: (fromIndex: number, toIndex: number) => void;
+  onClipMerge?: (clipIds: string[]) => Promise<boolean>;
+  onClipReorder?: (clipId: string, newOrder: number) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -46,8 +46,8 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Show only actual content clips, filtering out audio-only gaps
-  const allClips = clips.filter(clip => clip.type !== 'audio-only' && clip.status !== 'deleted');
+  // Show all clips in v2.0 - no 'audio-only' or 'status' fields
+  const allClips = clips || [];
   const userClips = clips.filter(clip => clip.type === 'user-created');
 
   // Handle clip selection with multi-select support
@@ -134,14 +134,15 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
     setDragOverIndex(null);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
+  const handleDrop = useCallback(async (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     if (draggedIndex !== null && draggedIndex !== dropIndex && onClipReorder) {
-      onClipReorder(draggedIndex, dropIndex);
+      const clipId = allClips[draggedIndex].id;
+      await onClipReorder(clipId, dropIndex);
     }
     setDraggedIndex(null);
     setDragOverIndex(null);
-  }, [draggedIndex, onClipReorder]);
+  }, [draggedIndex, onClipReorder, allClips]);
 
   const handleDragEnd = useCallback(() => {
     setDraggedIndex(null);
@@ -156,8 +157,17 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
 
   // Removed edit handlers - no longer needed
 
+  // Helper function to extract text from v2.0 segments
+  const getClipText = (clip: Clip): string => {
+    return clip.segments
+      .filter(segment => segment.type === 'word')
+      .map(segment => segment.text)
+      .join(' ')
+      .trim();
+  };
+
   const handleCopyClip = (clip: Clip) => {
-    navigator.clipboard.writeText(clip.text);
+    navigator.clipboard.writeText(getClipText(clip));
   };
 
   if (allClips.length === 0) {
@@ -275,7 +285,10 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
               </div>
               
               <p className="opacity-90" style={{ color: 'hsl(var(--text))' }}>
-                {clip.text.length > 100 ? `${clip.text.substring(0, 100)}...` : clip.text}
+                {(() => {
+                  const text = getClipText(clip);
+                  return text.length > 100 ? `${text.substring(0, 100)}...` : text;
+                })()}
               </p>
             </div>
             
@@ -285,7 +298,7 @@ const ClipsPanel: React.FC<ClipsPanelProps> = ({
                 Created {new Date(clip.createdAt).toLocaleDateString()}
               </span>
               <span className="text-xs text-white opacity-50">
-                {clip.words.length} words
+                {clip.segments.filter(s => s.type === 'word').length} words
               </span>
             </div>
           </div>
