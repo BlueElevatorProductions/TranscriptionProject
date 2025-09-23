@@ -59,6 +59,9 @@ export class JuceAudioManagerV2 {
   private currentEDL: EdlResult | null = null;
   private isApplyingEDL: boolean = false;
 
+  // Pending clips cache for race condition fix
+  private pendingClips: Clip[] | null = null;
+
   // JUCE transport interface
   private transport = (window as any).juceTransport;
   private eventHandler?: (evt: JuceEvent) => void;
@@ -113,6 +116,14 @@ export class JuceAudioManagerV2 {
 
       console.log('🎵 JUCE audio initialized:', audioPath);
 
+      // Apply any pending clips that were cached while JUCE was not ready
+      if (this.pendingClips && this.pendingClips.length > 0) {
+        console.log('🎵 Applying pending clips after initialization:', this.pendingClips.length);
+        const clipsToApply = this.pendingClips;
+        this.pendingClips = null; // Clear cache before applying to avoid recursion
+        await this.updateClips(clipsToApply);
+      }
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.updateState({
@@ -130,7 +141,8 @@ export class JuceAudioManagerV2 {
   public async updateClips(clips: Clip[]): Promise<void> {
     try {
       if (!this.transport || !this.state.isReady) {
-        console.warn('⚠️ Cannot update clips: JUCE not ready');
+        console.warn('⚠️ Cannot update clips: JUCE not ready, caching for later application');
+        this.pendingClips = [...clips]; // Cache clips for later
         return;
       }
 
@@ -280,6 +292,7 @@ export class JuceAudioManagerV2 {
     }
     this.currentEDL = null;
     this.lastSeekIntent = null;
+    this.pendingClips = null;
   }
 
   // ==================== Private Methods ====================

@@ -30,6 +30,41 @@ A professional desktop transcription application built with Electron, React, and
 - **API Key Integration**: Proper cloud service integration with encrypted key storage
 - **Audio Path Integration Work**: Comprehensive audio path handling implemented in frontend and backend - playback functionality still not operational
 
+### 🔧 Audio Playback Troubleshooting Progress (September 2025 - Current)
+
+**Issue**: Despite successful EDL (Edit Decision List) generation and backend integration, audio playback controls remain non-functional.
+
+#### ✅ **Fixes Completed**
+
+**1. Race Condition Fix (JuceAudioManagerV2)**:
+- **Problem**: `updateClips()` called before JUCE initialization completed
+- **Solution**: Added `pendingClips` cache mechanism to store clips until JUCE ready
+- **Status**: ✅ Fixed - clips now apply correctly after initialization
+
+**2. Infinite Loop Fix (NewUIShellV2)**:
+- **Problem**: `audioPath` in useEffect dependencies while calling `setAudioPath()` inside created circular updates
+- **Solution**: Removed `audioPath` from dependencies, added proper guard condition
+- **Status**: ✅ Fixed - no more infinite loops in console
+
+**3. Audio Path Resolution Fix (NewUIShellV2)**:
+- **Problem**: Code only checked `originalFile` but extracted audio stored in `extractedPath`/`embeddedPath`
+- **Solution**: Updated all audio path access to use proper fallback: `extractedPath || embeddedPath || originalFile`
+- **Status**: ✅ Fixed - NewUIShellV2.tsx now uses correct path resolution (lines 124, 251, 270)
+
+#### 📊 **Current State**
+- ✅ EDL generation working (confirmed via `/logs/edl/edl_debug_latest.json`)
+- ✅ Audio files extracted from .ptp to temp directories
+- ✅ Frontend receives correct full paths for extracted audio
+- ✅ No infinite loops or race conditions
+- ❌ **Audio playback still not functional**
+
+#### 🔍 **Next Investigation Required**
+The path integration is complete but playback may require investigation into:
+1. **JUCE Backend Initialization**: Verify audio loading commands reach JUCE
+2. **Audio Manager State**: Check if audio manager properly initializes with file
+3. **File Permissions**: Verify extracted temp files are accessible
+4. **Audio Format Support**: Confirm JUCE backend supports extracted file formats
+
 For detailed technical information, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 
 ## Overview

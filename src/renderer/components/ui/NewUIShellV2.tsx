@@ -121,7 +121,9 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
     if (currentMode === 'edit-audio') {
       // In a real implementation, this would get the actual audio file path
       // For demo purposes, we'll use a mock path
-      setAudioPath(projectState.projectData?.project?.audio?.originalFile || '/demo/audio.wav');
+      const audio = projectState.projectData?.project?.audio;
+      const audioPath = audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
+      setAudioPath(audioPath || '/demo/audio.wav');
     }
   }, [currentMode, projectState.clips.length, projectState.projectData]);
 
@@ -248,8 +250,9 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
 
   // Load audio when project has audio file
   useEffect(() => {
-    const projectAudioPath = projectState.projectData?.project?.audio?.originalFile;
-    if (projectAudioPath && projectAudioPath !== audioPath && projectAudioPath !== '/demo/audio.wav') {
+    const audio = projectState.projectData?.project?.audio;
+    const projectAudioPath = audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
+    if (projectAudioPath && projectAudioPath !== '/demo/audio.wav' && projectAudioPath !== audioPath) {
       console.log('🎵 Loading audio from project:', projectAudioPath);
       setAudioPath(projectAudioPath);
       audioControls.loadAudio(projectAudioPath).catch(error => {
@@ -263,11 +266,12 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
     } else if (!projectAudioPath && projectState.clips && projectState.clips.length > 0) {
       console.warn('🎵 Project has clips but no audio path - audio playback unavailable');
     }
-  }, [projectState.projectData?.project?.audio?.originalFile, audioPath, audioControls, addToast, projectState.clips]);
+  }, [projectState.projectData?.project?.audio?.extractedPath, projectState.projectData?.project?.audio?.embeddedPath, projectState.projectData?.project?.audio?.originalFile, audioControls, addToast, projectState.clips]);
 
   // Initialize audio if not ready but clips exist and audio path is available
   useEffect(() => {
-    const projectAudioPath = projectState.projectData?.project?.audio?.originalFile;
+    const audio = projectState.projectData?.project?.audio;
+    const projectAudioPath = audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
     const hasClips = audioState.isReady === false &&
                    projectState.clips &&
                    projectState.clips.length > 0;
@@ -283,7 +287,7 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
         });
       });
     }
-  }, [projectState.projectData?.project?.audio?.originalFile, projectState.clips, audioState.isReady, audioState.isLoading, audioControls, addToast]);
+  }, [projectState.projectData?.project?.audio?.extractedPath, projectState.projectData?.project?.audio?.embeddedPath, projectState.projectData?.project?.audio?.originalFile, projectState.clips, audioState.isReady, audioState.isLoading, audioControls, addToast]);
 
   // Audio player handlers
   const handlePlayPause = useCallback(async () => {
