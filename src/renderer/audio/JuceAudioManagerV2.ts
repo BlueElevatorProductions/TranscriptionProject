@@ -309,23 +309,46 @@ export class JuceAudioManagerV2 {
 
   private handleJuceEvent(event: JuceEvent): void {
     switch (event.type) {
-      case 'position':
-        this.handlePositionEvent(event.data);
+      case 'loaded': {
+        this.updateState({
+          isLoading: false,
+          isReady: true,
+          duration: typeof event.durationSec === 'number' ? event.durationSec : this.state.duration,
+          error: null
+        });
+        break;
+      }
+
+      case 'state': {
+        this.updateState({
+          isPlaying: !!event.playing,
+          isLoading: false,
+          isReady: true,
+          error: null
+        });
+        break;
+      }
+
+      case 'position': {
+        this.handlePositionEvent(event);
+        break;
+      }
+
+      case 'edlApplied':
+        console.log(`✅ EDL applied by JUCE (revision ${event.revision})`);
+        this.processPendingSeek();
         break;
 
-      case 'playbackStarted':
-        this.updateState({ isPlaying: true });
-        break;
-
-      case 'playbackStopped':
-      case 'playbackPaused':
+      case 'ended':
         this.updateState({ isPlaying: false });
         break;
 
-      case 'edlApplied':
-        console.log('✅ EDL applied by JUCE');
-        this.processPendingSeek();
+      case 'error': {
+        const details = event.code != null ? `${event.message} (code: ${event.code})` : event.message;
+        this.updateState({ isPlaying: false, isLoading: false, isReady: false });
+        this.handleError('JUCE transport error', details);
         break;
+      }
 
       default:
         // Ignore unknown events
@@ -333,12 +356,18 @@ export class JuceAudioManagerV2 {
     }
   }
 
-  private handlePositionEvent(data: any): void {
+  private handlePositionEvent(event: Extract<JuceEvent, { type: 'position' }>): void {
     if (!this.currentEDL) return;
 
-    const { editedTime, originalSec } = data;
-    const contiguousTime = editedTime || 0;
-    const originalTime = originalSec || 0;
+    const { editedSec, originalSec } = event;
+
+    if (typeof editedSec !== 'number' || typeof originalSec !== 'number') {
+      console.warn('⚠️ Received position event without valid timing data:', event);
+      return;
+    }
+
+    const contiguousTime = editedSec;
+    const originalTime = originalSec;
 
     // Update position state
     this.updateState({
