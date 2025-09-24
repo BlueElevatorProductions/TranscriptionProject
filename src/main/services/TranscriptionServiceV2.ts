@@ -26,7 +26,7 @@ import { SimpleCloudTranscriptionService } from './SimpleCloudTranscriptionServi
 
 // ==================== Configuration ====================
 
-const SPACER_THRESHOLD_SECONDS = 0.001;  // All gaps >1ms become spacer segments (fixes audio speed)
+const SPACER_THRESHOLD_SECONDS = 1.0;  // Gaps ≥1s become spacer segments
 const MIN_SEGMENT_DURATION = 0.1;      // Minimum segment duration
 
 // ==================== Types ====================
@@ -361,8 +361,9 @@ export class TranscriptionServiceV2 {
   }
 
   /**
-   * Post-process segments to ensure perfect coverage with explicit spacers
-   * Creates spacer segments for all gaps without modifying word durations
+   * Post-process segments to ensure perfect coverage with ratio-preserving gap handling
+   * Creates spacer segments for large gaps (≥1s) and extends words for small gaps
+   * Preserves timing ratios to prevent audio playback speed issues
    */
   private static postProcessSegments(segments: Segment[]): Segment[] {
     if (segments.length === 0) return segments;
@@ -376,20 +377,50 @@ export class TranscriptionServiceV2 {
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
 
-      // Handle gaps without modifying segment durations
+      // Handle gaps with ratio-preserving extension for small gaps
       if (segment.start > expectedTime) {
         const gap = segment.start - expectedTime;
-        if (gap > 0.001) {
-          // Create explicit spacer segment for any gap
+        if (gap >= SPACER_THRESHOLD_SECONDS) {
+          // Create explicit spacer segment for large gaps (≥1s)
           const spacerSegment: SpacerSegment = {
             id: `spacer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             type: 'spacer',
             start: expectedTime,
             end: segment.start,
             duration: gap,
-            label: gap >= 1.0 ? `${gap.toFixed(1)}s` : `${(gap * 1000).toFixed(0)}ms`
+            label: `${gap.toFixed(1)}s`
           };
           processedSegments.push(spacerSegment);
+        } else if (gap > 0.001 && processedSegments.length > 0) {
+          // Small gap - extend previous segment with proportional original timing
+          const lastSegment = processedSegments[processedSegments.length - 1];
+          if (lastSegment.type === 'word') {
+            const wordSegment = lastSegment as WordSegment;
+
+            // Only apply ratio-preserving logic if we have original timing data
+            if (wordSegment.originalStart !== undefined && wordSegment.originalEnd !== undefined) {
+              // Calculate proportional scaling to maintain timing ratio
+              const originalDuration = wordSegment.originalEnd - wordSegment.originalStart;
+              const currentEditedDuration = wordSegment.end - wordSegment.start;
+              const newEditedDuration = segment.start - wordSegment.start;
+
+              // Scale the original duration proportionally
+              const scaleFactor = newEditedDuration / currentEditedDuration;
+              const newOriginalEnd = wordSegment.originalStart + (originalDuration * scaleFactor);
+
+              processedSegments[processedSegments.length - 1] = {
+                ...wordSegment,
+                end: segment.start,
+                originalEnd: newOriginalEnd
+              };
+            } else {
+              // Fallback: simple extension without original timing
+              processedSegments[processedSegments.length - 1] = {
+                ...wordSegment,
+                end: segment.start
+              };
+            }
+          }
         }
         expectedTime = segment.start;
       } else if (segment.start < expectedTime) {
