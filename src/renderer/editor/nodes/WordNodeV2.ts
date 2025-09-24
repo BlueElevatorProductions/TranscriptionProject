@@ -161,6 +161,25 @@ export class WordNodeV2 extends TextNode {
 
   // Note: Timing changes should go through edit operations, not direct setters
 
+  // ==================== Editing Control ====================
+
+  isEditable(): boolean {
+    // Words are not directly editable in edit mode - only selectable for splitting
+    return false;
+  }
+
+  canInsertTextBefore(): boolean {
+    return false;
+  }
+
+  canInsertTextAfter(): boolean {
+    return false;
+  }
+
+  isKeyboardSelectable(): boolean {
+    return true; // Allow keyboard selection for accessibility
+  }
+
   // ==================== Lexical Methods ====================
 
   static importJSON(serializedNode: SerializedWordNodeV2): WordNodeV2 {
@@ -229,6 +248,10 @@ export class WordNodeV2 extends TextNode {
     if (this.__confidence < 0.7) {
       element.classList.add('word-low-confidence');
     }
+
+    // Make words non-editable by default
+    element.contentEditable = 'false';
+    element.setAttribute('data-lexical-text', 'false');
 
     return element;
   }

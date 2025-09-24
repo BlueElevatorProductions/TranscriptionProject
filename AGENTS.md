@@ -32,10 +32,31 @@ Log Handling
 	•	Electron and Vite logs (logs/electron_*.log, logs/vite_*.log).
 	•	Fallback for JUCE logs is /tmp/juce_debug.log.
 
+Agent Log Access Enhancements
+
+Agents now have access to an improved logging setup that simplifies environment configuration and ensures up-to-date log availability:
+	1.	Environment File
+	•	Created at:
+/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/logs/agent_env.sh
+	•	Agents can source this file to automatically set $EDL_DEBUG_DIR and $JUCE_DEBUG_DIR.
+
+	source /Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/logs/agent_env.sh
+
+		2.	EDL Latest Symlink
+	•	A symlink named edl_debug_latest.json always points to the most recent EDL debug file.
+	•	A background process refreshes this symlink every 5 seconds during app runtime.
+	3.	Accessible Logs
+	•	✅ edl_debug_latest.json → latest session data
+	•	✅ juce/juce_debug.log → backend audio logs
+	•	✅ logs/electron_*.log → renderer logs
+	•	✅ logs/juce_build_*.log → build logs with timestamps
+	•	✅ agent_env.sh → unified environment configuration
+
 Agent Responsibility
-	•	Continuously monitor and parse logs without requiring user intervention.
-	•	Surface errors, anomalies, and session state based on edl_debug_latest.json and related files.
-	•	Abort analysis if expected logs are missing and report the absence clearly.
+	•	Always source agent_env.sh before attempting to read logs.
+	•	Use the symlink edl_debug_latest.json for current EDL state instead of scanning multiple timestamped files.
+	•	Continue to surface errors, anomalies, and session state.
+	•	Abort analysis if expected logs are missing and request access (see Log Access Rule below).
 
 ⸻
 
@@ -77,12 +98,15 @@ Inspects build logs, Electron/Vite logs, and backend traces to identify errors.
 	•	When troubleshooting CLI Codex issues:
 	•	Attempt only one fix at a time.
 	•	Confirm whether the fix resolved the issue before attempting another.
-	•	Do not attempt multiple fixes in parallel, as this makes it unclear which action succeeded or caused side effects.
+	•	Do not attempt multiple fixes in parallel.
 	•	Adding or expanding logs does not count as a fix and may be done at any time.
 	4.	No Fallback Plans Without Permission
-	•	Agents must not implement fallback plans (alternate methods, workarounds, or secondary strategies) unless explicitly approved by the user.
+	•	Agents must not implement fallback plans without explicit user approval.
 	•	Primary functionality should always be achieved with the primary method first.
-	•	Only after confirming the primary method works may fallback strategies be proposed — and only if the user approves.
-	5.	Adherence to Project Conventions
-	•	Agents must follow the project’s README and launcher script conventions strictly.
+	•	Only after confirming the primary method works may fallback strategies be proposed.
+	5.	CLI Push Rule
+	•	When operating in CLI contexts, agents must not push code changes, commits, or branch updates unless the user has explicitly requested a push.
+	•	Staging, linting, or reviewing changes locally is allowed, but pushing is not.
+	6.	Adherence to Project Conventions
+	•	Agents must follow the project’s README, launcher script, and enhanced logging conventions strictly.
 	•	If logs are missing or behavior deviates, fail clearly and point to the missing path or inconsistency.

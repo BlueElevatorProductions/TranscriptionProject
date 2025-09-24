@@ -127,6 +127,10 @@ const AppContent: React.FC = () => {
   // Handle project creation
   const handleProjectCreated = (projectName: string, projectPath: string) => {
     console.log('✅ Project created:', { projectName, projectPath });
+
+    // Set the current project path in the context so it's available throughout the app
+    projectActions.setCurrentProjectPath(projectPath);
+
     setShowNewProjectDialog(false);
     // After project creation, show import dialog
     setShowImportDialog(true);

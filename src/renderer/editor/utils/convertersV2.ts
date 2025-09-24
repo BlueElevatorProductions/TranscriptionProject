@@ -28,7 +28,7 @@ import {
 } from '../../../shared/types';
 
 import { WordNodeV2, $createWordNodeV2, $isWordNodeV2 } from '../nodes/WordNodeV2';
-import { $createSpacerNodeV2, $isSpacerNodeV2 } from '../nodes/SpacerNodeV2';
+import { SpacerNodeV2, $createSpacerNodeV2, $isSpacerNodeV2 } from '../nodes/SpacerNodeV2';
 import { ClipNodeV2, $createClipNodeV2, $isClipNodeV2 } from '../nodes/ClipNodeV2';
 
 // ==================== Types ====================

@@ -33,6 +33,8 @@ export class JuceClient implements Transport {
   private readonly maxRestartAttempts = 5;
   private readonly emitter = new EventEmitter();
   private handlers: TransportEvents = {};
+  private pendingCommands = new Map<string, { resolve: (result: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout }>();
+  private currentLoadCommand: { commandKey: string; id: string } | null = null;
 
   constructor(opts: JuceClientOptions = {}) {
     this.options = {
@@ -45,9 +47,39 @@ export class JuceClient implements Transport {
   }
 
   // --- Public Transport API ---
-  async load(id: TransportId, filePath: string): Promise<void> {
+  async load(id: TransportId, filePath: string): Promise<{success: boolean, error?: string}> {
+    // Validate file exists before sending to backend
+    const fs = await import('fs');
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: `Audio file not found: ${filePath}` };
+    }
+
+    console.log(`[JUCE] Loading audio file: ${filePath}`);
     await this.ensureStarted();
-    this.send({ type: 'load', id, path: filePath });
+
+    return new Promise((resolve, reject) => {
+      const commandKey = `load_${id}_${Date.now()}`;
+
+      // Set up timeout for this command
+      const timeout = setTimeout(() => {
+        this.pendingCommands.delete(commandKey);
+        resolve({ success: false, error: 'Load command timed out' });
+      }, 10000); // 10 second timeout
+
+      // Store the promise handlers
+      this.pendingCommands.set(commandKey, { resolve, reject, timeout });
+
+      try {
+        this.send({ type: 'load', id, path: filePath });
+
+        // Store command info for response matching
+        this.currentLoadCommand = { commandKey, id };
+      } catch (error) {
+        this.pendingCommands.delete(commandKey);
+        clearTimeout(timeout);
+        resolve({ success: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    });
   }
 
   async updateEdl(id: TransportId, clips: EdlClip[]): Promise<void> {
@@ -208,6 +240,7 @@ export class JuceClient implements Transport {
         // per-type handler dispatch
         switch (evt.type) {
           case 'loaded':
+            this.handleLoadedEvent(evt);
             this.handlers.onLoaded?.(evt);
             break;
           case 'state':
@@ -220,6 +253,7 @@ export class JuceClient implements Transport {
             this.handlers.onEnded?.(evt);
             break;
           case 'error':
+            this.handleErrorEvent(evt);
             this.handlers.onError?.(evt);
             break;
         }
@@ -239,6 +273,30 @@ export class JuceClient implements Transport {
       this.child.stdin.write(payload, 'utf8');
     } catch (e) {
       this.emitError(`Failed to write to JUCE stdin: ${e}`);
+    }
+  }
+
+  private handleLoadedEvent(evt: JuceEvent) {
+    if (this.currentLoadCommand) {
+      const pending = this.pendingCommands.get(this.currentLoadCommand.commandKey);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        this.pendingCommands.delete(this.currentLoadCommand.commandKey);
+        pending.resolve({ success: true });
+        this.currentLoadCommand = null;
+      }
+    }
+  }
+
+  private handleErrorEvent(evt: JuceEvent) {
+    if (this.currentLoadCommand && evt.type === 'error') {
+      const pending = this.pendingCommands.get(this.currentLoadCommand.commandKey);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        this.pendingCommands.delete(this.currentLoadCommand.commandKey);
+        pending.resolve({ success: false, error: evt.message || 'JUCE error' });
+        this.currentLoadCommand = null;
+      }
     }
   }
 

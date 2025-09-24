@@ -134,7 +134,7 @@ export function createSpacerSegment(
 /**
  * Validate that segments maintain required invariants
  */
-export function validateSegments(segments: Segment[], clipDuration: number): ValidationResult {
+export function validateSegments(segments: Segment[], clipDuration: number, options: { isImport?: boolean; spacerThreshold?: number } = {}): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -173,7 +173,11 @@ export function validateSegments(segments: Segment[], clipDuration: number): Val
       completeCoverage = false;
     }
   } else {
-    const epsilon = 0.001; // 1ms tolerance
+    // Use more lenient tolerance during import to allow for transcription timing issues
+    const epsilon = options.isImport && options.spacerThreshold ?
+      Math.min(options.spacerThreshold, 0.1) : // Allow gaps up to spacer threshold (max 0.1s)
+      0.001; // Standard 1ms tolerance for normal operation
+
     if (Math.abs(segments[0].start) > epsilon) {
       errors.push(`First segment starts at ${segments[0].start}, should start at 0`);
       completeCoverage = false;
@@ -187,8 +191,14 @@ export function validateSegments(segments: Segment[], clipDuration: number): Val
     for (let i = 1; i < segments.length; i++) {
       const gap = segments[i].start - segments[i-1].end;
       if (gap > epsilon) {
-        errors.push(`Gap of ${gap}s between segments ${i-1} and ${i}`);
-        completeCoverage = false;
+        const message = `Gap of ${gap}s between segments ${i-1} and ${i}`;
+        if (options.isImport && gap < (options.spacerThreshold || 1.0)) {
+          // During import, treat small gaps as warnings rather than errors
+          warnings.push(message);
+        } else {
+          errors.push(message);
+          completeCoverage = false;
+        }
       }
     }
   }

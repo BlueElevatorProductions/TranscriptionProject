@@ -137,10 +137,7 @@ export class JuceAudioManagerV2 {
       }
 
       console.log('🎵 Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath });
-      const result = await this.transport.load(this.sessionId, resolvedPath);
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to load audio');
-      }
+      await this.loadFile(this.sessionId, resolvedPath);
 
       this.updateState({
         isLoading: false,
@@ -343,6 +340,26 @@ export class JuceAudioManagerV2 {
   }
 
   // ==================== Private Methods ====================
+
+  /**
+   * Load audio file into JUCE backend
+   */
+  private async loadFile(sessionId: string, filePath: string): Promise<void> {
+    if (!this.transport) {
+      throw new Error('JUCE transport not available');
+    }
+
+    try {
+      const result = await this.transport.load(sessionId, filePath);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load audio file');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('🔥 JUCE loadFile failed:', errorMessage);
+      throw new Error(`Load file failed: ${errorMessage}`);
+    }
+  }
 
   private initializeJuceEventHandling(): void {
     if (!this.transport) return;

@@ -30,33 +30,73 @@ A professional desktop transcription application built with Electron, React, and
 - **API Key Integration**: Proper cloud service integration with encrypted key storage
 - **Audio Playback Fixed**: Complete fix for audio path resolution and playback functionality - audio now working properly
 
-### ✅ Audio Playback System - Fully Operational (September 2025 - Latest)
+### ⚠️ Audio Playback System - Work in Progress (September 2025 - Latest)
 
-**Resolution**: Audio playback system has been completely fixed and is now working properly across all functionality.
+**Current Status**: Audio playback remains problematic despite multiple comprehensive troubleshooting attempts. This section documents our debugging journey.
 
-#### ✅ **Final Resolution Details**
+#### 🔧 **Attempted Fixes and Current Issues**
 
-**Critical Missing Path Check (NewUIShellV2)**:
-- **Root Cause**: Missing `audio?.path` property check - saved audio paths stored in different location than checked
-- **Solution**: Added `audio?.path` as first check in path resolution fallback chain
-- **Impact**: Audio files now properly located and loaded for playback
+**1. Path Resolution Enhancement (Attempt 1)**:
+- **Implementation**: Added `audio?.path` as first check in path resolution fallback chain
+- **Backend Integration**: Enhanced transcription import to store absolute paths in project metadata
+- **Result**: ❌ Audio still not playing - issue deeper than path resolution
 
-**Complete Fix Chain**:
-1. **Infinite Loop Prevention**: Added initialization guards and error cooldowns in JuceAudioManagerV2
-2. **Race Condition Elimination**: Proper sequencing of JUCE initialization and clip updates
-3. **Path Resolution Correction**: Complete audio path property checking including `audio?.path`
-4. **Enhanced Path Discovery**: Added common audio directory resolution in JuceAudioManagerV2
+**2. Sample Rate Mismatch Fix (Attempt 2)**:
+- **Problem**: Audio playing 8.8% too fast due to 44.1kHz vs 48kHz sample rate hardcode
+- **Solution**: Changed hardcoded 44100.0 to 48000.0 in JUCE backend main.cpp:315
+- **Result**: ✅ Speed issue fixed but introduced segmentation faults
+
+**3. Dynamic Sample Rate Implementation (Attempt 3)**:
+- **Problem**: Hardcoded sample rate change caused JUCE backend crashes (SIGSEGV)
+- **Solution**: Implemented dynamic sample rate detection instead of hardcoded values
+- **Technical**: Added safety checks and logging for sample rate initialization
+- **Result**: ✅ Segmentation faults resolved, backend launches successfully
+
+**4. JUCE Backend EPIPE Error Fix (Attempt 4)**:
+- **Problem**: JavaScript EPIPE error indicating JUCE backend process disconnection
+- **Root Cause**: EdlAudioSource sampleRate initialized to 0.0 causing division by zero
+- **Solution**:
+  - Changed sampleRate initialization from 0.0 to 48000.0 as safe default
+  - Added defensive checks in getNextReadPosition() and getTotalLength() methods
+  - Maintained dynamic sample rate updates in prepareToPlay()
+- **Result**: ✅ EPIPE errors eliminated, backend starts without crashes
 
 #### 📊 **Current Operational State**
-- ✅ Audio playback fully functional - no errors or infinite loops
-- ✅ EDL generation and audio synchronization working
-- ✅ All audio controls (play, pause, seek) operational
-- ✅ Word highlighting and audio synchronization active
-- ✅ Clean application startup without errors
-- ✅ Audio Files folder structure properly utilized
+- ✅ Application launches without crashes
+- ✅ JUCE backend initializes successfully
+- ✅ No JavaScript errors or EPIPE failures
+- ✅ Audio transport properly initialized with all expected methods
+- ❌ **Audio playback still non-functional** - root cause not yet identified
+- ❌ No audio heard during play attempts despite clean initialization
 
-#### 🎯 **Architecture Working Correctly**
-**Audio Files System**: Projects save converted WAV audio (48kHz, 16-bit) to "Audio Files" folder alongside .transcript file, with `project.audio.path` storing the file location for reliable playback access.
+#### 🔍 **Technical Details of Latest Fix**
+
+**JUCE Backend Stabilization**:
+```cpp
+// Fixed sample rate initialization to prevent crashes
+double sampleRate = 48000.0; // Default fallback, set dynamically in prepareToPlay
+
+// Added safety checks in audio calculations
+int64_t getNextReadPosition() const override {
+  if (sampleRate <= 0.0) return 0;  // Prevent division by zero
+  return (int64_t)(editedPosition * sampleRate);
+}
+```
+
+**Build System Verification**:
+- ✅ JUCE backend builds successfully
+- ✅ Launch script always uses latest binaries
+- ✅ No compilation or runtime crashes
+
+#### 🎯 **Architecture Status**
+**Audio Files System**: Projects save converted WAV audio (48kHz, 16-bit) to "Audio Files" folder alongside .transcript file. Path resolution and backend communication work correctly, but the final audio playback step remains problematic.
+
+#### 🔮 **Next Investigation Areas**
+Based on our systematic fixes, the remaining issue likely involves:
+1. **JUCE Audio Device Setup**: Audio device manager initialization or configuration
+2. **File Loading**: WAV file format compatibility or loading errors
+3. **Playback Pipeline**: Transport source or audio source chain issues
+4. **System Audio**: macOS audio permissions or device access problems
 
 For detailed technical information, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 

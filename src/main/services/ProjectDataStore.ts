@@ -34,12 +34,24 @@ export interface ProjectDataStoreEvents {
 }
 
 export class ProjectDataStore extends EventEmitter {
+  private static instance: ProjectDataStore | null = null;
   private projectData: ProjectData | null = null;
   private operationHistory: EditOperation[] = [];
   private readonly maxHistorySize = 100;
+  private currentProjectPath: string | null = null;
 
   constructor() {
     super();
+  }
+
+  /**
+   * Get singleton instance
+   */
+  public static getInstance(): ProjectDataStore {
+    if (!ProjectDataStore.instance) {
+      ProjectDataStore.instance = new ProjectDataStore();
+    }
+    return ProjectDataStore.instance;
   }
 
   // ==================== State Management ====================
@@ -50,7 +62,9 @@ export class ProjectDataStore extends EventEmitter {
   public loadProject(data: ProjectData): void {
     try {
       // Validate all clips before accepting the data
-      this.validateAllClips(data.clips.clips);
+      // Use lenient validation for imported transcription projects
+      const isImport = data.project?.transcription?.status === 'completed' || data.clips?.version === '2.0';
+      this.validateAllClips(data.clips.clips, isImport);
 
       this.projectData = { ...data };
       this.emit('project:updated', this.projectData);
@@ -74,6 +88,20 @@ export class ProjectDataStore extends EventEmitter {
     return this.projectData ?
       JSON.parse(JSON.stringify(this.projectData.clips.clips)) :
       [];
+  }
+
+  /**
+   * Set the current project file path
+   */
+  public setCurrentProjectPath(path: string | null): void {
+    this.currentProjectPath = path;
+  }
+
+  /**
+   * Get the current project file path
+   */
+  public getCurrentProjectPath(): string | null {
+    return this.currentProjectPath;
   }
 
   // ==================== Edit Operations ====================
@@ -371,11 +399,32 @@ export class ProjectDataStore extends EventEmitter {
 
   // ==================== Validation ====================
 
-  private validateAllClips(clips: Clip[]): void {
+  private validateAllClips(clips: Clip[], isImport: boolean = false): void {
     for (const clip of clips) {
-      const validation = validateSegments(clip.segments, clip.duration);
+      const validation = validateSegments(clip.segments, clip.duration, {
+        isImport,
+        spacerThreshold: 1.0 // Use standard spacer threshold
+      });
+
       if (!validation.isValid) {
-        throw new Error(`Clip ${clip.id} validation failed: ${validation.errors.join(', ')}`);
+        if (isImport) {
+          // During import, be more lenient - only fail on critical errors
+          const criticalErrors = validation.errors.filter(error =>
+            !error.includes('Gap of') || error.includes('Gap of 0.') // Only fail on zero-duration gaps or other critical issues
+          );
+
+          if (criticalErrors.length > 0) {
+            throw new Error(`Clip ${clip.id} validation failed: ${criticalErrors.join(', ')}`);
+          } else {
+            console.warn(`⚠️ Clip ${clip.id} has timing gaps that may need spacer segments:`, validation.errors);
+          }
+        } else {
+          throw new Error(`Clip ${clip.id} validation failed: ${validation.errors.join(', ')}`);
+        }
+      }
+
+      if (validation.warnings.length > 0) {
+        console.warn(`⚠️ Clip ${clip.id} validation warnings:`, validation.warnings);
       }
     }
 

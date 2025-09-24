@@ -122,7 +122,14 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
       // In a real implementation, this would get the actual audio file path
       // For demo purposes, we'll use a mock path
       const audio = projectState.projectData?.project?.audio;
-      const audioPath = audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
+      const audioPath = audio?.path || audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
+      console.log('🎵 NewUIShellV2: Resolving audio path from project data:', {
+        path: audio?.path,
+        extractedPath: audio?.extractedPath,
+        embeddedPath: audio?.embeddedPath,
+        originalFile: audio?.originalFile,
+        resolved: audioPath
+      });
       setAudioPath(audioPath || '/demo/audio.wav');
     }
   }, [currentMode, projectState.clips.length, projectState.projectData]);

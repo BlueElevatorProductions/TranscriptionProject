@@ -293,11 +293,11 @@ function SpacerComponent({
   return (
     <span
       className={`
-        inline-flex items-center px-2 py-1 mx-1 text-xs font-medium
+        lexical-spacer-pill inline-flex items-center px-2 py-1 mx-1 text-xs font-medium
         bg-gray-100 text-gray-700 rounded-full cursor-pointer
         border border-gray-200 hover:bg-gray-200 transition-colors
-        ${isActive ? 'bg-blue-100 border-blue-300 text-blue-800' : ''}
-        ${isSelectable ? 'focus:outline-none focus:ring-2 focus:ring-blue-500' : ''}
+        ${isActive ? 'spacer-active bg-blue-100 border-blue-300 text-blue-800' : ''}
+        ${isSelectable ? 'spacer-selectable focus:outline-none focus:ring-2 focus:ring-blue-500' : ''}
       `.trim()}
       onClick={handleClick}
       onKeyDown={isSelectable ? handleKeyDown : undefined}
@@ -305,6 +305,12 @@ function SpacerComponent({
       role={isSelectable ? 'button' : undefined}
       aria-label={`Audio gap: ${displayLabel}`}
       title={`Audio gap: ${displayLabel} (${startTime.toFixed(1)}s - ${endTime.toFixed(1)}s)`}
+      style={{
+        display: 'inline-flex',
+        visibility: 'visible',
+        opacity: 1,
+        minWidth: '40px'
+      }}
     >
       <svg
         className="w-3 h-3 mr-1"

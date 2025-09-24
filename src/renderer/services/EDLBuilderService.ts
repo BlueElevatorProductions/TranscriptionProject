@@ -392,7 +392,7 @@ export class EDLBuilderService {
   }
 
   /**
-   * Convert to legacy EDL format for backward compatibility
+   * Convert to format for JUCE backend with segments included
    */
   public static toLegacyFormat(edlResult: EdlResult): any[] {
     return edlResult.clips.map(clip => ({
@@ -402,7 +402,9 @@ export class EDLBuilderService {
       originalStartSec: clip.originalStartSec,
       originalEndSec: clip.originalEndSec,
       type: clip.type,
-      speaker: clip.speaker
+      speaker: clip.speaker,
+      segments: clip.segments || [], // Include segments for JUCE backend
+      segmentBoundaries: clip.segmentBoundaries || [] // Include boundaries for optimization
     }));
   }
 }

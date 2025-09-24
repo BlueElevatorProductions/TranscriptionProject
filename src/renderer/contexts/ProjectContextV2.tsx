@@ -559,7 +559,7 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
   const saveProject = useCallback(async (): Promise<boolean> => {
     try {
       setIsLoading(true);
-      const result = await (window as any).electronAPI?.saveProject?.(currentProjectPath, projectData);
+      const result = await (window as any).electronAPI?.saveProject?.(projectData, currentProjectPath);
       setIsLoading(false);
 
       if (result?.success) {
@@ -578,6 +578,8 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
 
   // Monitor transcription progress
   const monitorTranscriptionProgress = useCallback((jobId: string) => {
+    let hasImported = false; // Flag to prevent duplicate imports
+
     const checkProgress = async () => {
       try {
         const result = await (window as any).electronAPI?.transcriptionGetJobV2?.(jobId);
@@ -593,21 +595,55 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
             error: job.error,
           });
 
-          if (job.status === 'completed') {
+          if (job.status === 'completed' && !hasImported) {
+            hasImported = true; // Prevent duplicate imports
             console.log('✅ Transcription completed, importing segments');
 
-            // Import segments directly to ProjectDataStore
+            // Import segments directly to ProjectDataStore with audio metadata
+            const audioMetadata = {
+              fileName: job.fileName,
+              audioPath: job.audioPath || transcriptionAudioPath,
+              originalPath: job.audioPath || transcriptionAudioPath,
+              duration: job.audioMetadata?.duration || 0,
+              format: 'unknown',
+              size: 0
+            };
+
+            console.log('📁 Passing audio metadata to import:', audioMetadata);
+
             const importResult = await (window as any).electronAPI?.transcriptionImportV2?.(
               job.segments || [],
               job.speakers || {},
-              { fileName: job.fileName, duration: 0 }
+              audioMetadata
             );
 
             if (importResult?.success) {
+              console.log('✅ ProjectContextV2: Transcription imported successfully');
               setIsTranscribing(false);
               setIsLoading(false);
+              setTranscriptionAudioPath(null); // Clear stored audio path
+              setCurrentTranscriptionJob(null); // Clear job
               // Refresh state from main process
               await refreshFromMain();
+
+              // Auto-save the project to create WAV file in Audio Files folder
+              if (currentProjectPath) {
+                try {
+                  console.log('💾 Auto-saving project to create WAV file:', currentProjectPath);
+                  const saved = await saveProject();
+                  if (saved) {
+                    console.log('✅ Project auto-saved successfully with WAV file created');
+                  } else {
+                    console.warn('⚠️ Auto-save failed, but transcription import was successful');
+                  }
+                } catch (error) {
+                  console.error('Failed to auto-save project:', error);
+                  // Don't set error state since the import was successful
+                  // The WAV file just won't be created until manual save
+                }
+              } else {
+                console.warn('⚠️ No current project path available for auto-save');
+              }
             } else {
               throw new Error('Failed to import transcription result');
             }

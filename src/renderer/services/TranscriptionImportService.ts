@@ -46,6 +46,8 @@ export class TranscriptionImportService {
     audioMetadata: any
   ): ProjectData {
     console.log('🔄 Starting transcription import with segment-based architecture');
+    console.log('🎵 Audio file path:', audioFilePath);
+    console.log('🎵 Audio metadata:', audioMetadata);
 
     const { segments: rawSegments, speakers, speakerSegments } = transcriptionResult;
 
@@ -66,7 +68,10 @@ export class TranscriptionImportService {
         created: new Date().toISOString(),
         lastModified: new Date().toISOString(),
         version: '2.0',
-        audio: audioMetadata,
+        audio: {
+          ...audioMetadata,
+          path: audioFilePath // Ensure path is set for WAV conversion
+        },
         transcription: {
           service: 'openai', // TODO: Get from actual service
           model: 'whisper-1',
@@ -242,8 +247,11 @@ export class TranscriptionImportService {
 
         if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
           // Create spacer segment for significant gap
-          const spacerStart = currentTime;
-          const spacerEnd = currentTime + gapDuration;
+          // Use clip-relative timing for both start and end
+          const spacerStart = wordEnd; // Start right after current word ends (clip-relative)
+          const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
+
+          console.log(`🔍 Creating spacer: gap=${gapDuration.toFixed(3)}s, start=${spacerStart.toFixed(3)}, end=${spacerEnd.toFixed(3)}`);
 
           const spacerSegment = createSpacerSegment(
             spacerStart,
@@ -256,11 +264,12 @@ export class TranscriptionImportService {
         } else if (gapDuration > 0) {
           // Small gap - extend current word segment to cover it
           // Note: We're not modifying the original word timing, just the clip-relative segment
+          const nextWordClipRelativeStart = nextWord.start - clipStartTime;
           segments[segments.length - 1] = {
             ...segments[segments.length - 1],
-            end: wordEnd + gapDuration
+            end: nextWordClipRelativeStart
           };
-          currentTime = wordEnd + gapDuration;
+          currentTime = nextWordClipRelativeStart;
         }
       }
     }
@@ -269,10 +278,16 @@ export class TranscriptionImportService {
     const lastWord = words[words.length - 1];
     const clipDuration = currentTime;
 
-    // Validate segments
-    const validation = validateSegments(segments, clipDuration);
+    // Validate segments with lenient import mode
+    const validation = validateSegments(segments, clipDuration, {
+      isImport: true,
+      spacerThreshold: SPACER_THRESHOLD_SECONDS
+    });
     if (!validation.isValid) {
       console.warn(`⚠️ Clip validation failed:`, validation.errors);
+    }
+    if (validation.warnings.length > 0) {
+      console.warn(`⚠️ Clip validation warnings:`, validation.warnings);
     }
 
     const clip: Clip = {

@@ -46,7 +46,7 @@ export interface TransportEvents {
 }
 
 export interface Transport {
-  load(id: TransportId, path: string): Promise<void>;
+  load(id: TransportId, path: string): Promise<{success: boolean, error?: string}>;
   updateEdl(id: TransportId, clips: EdlClip[]): Promise<void>;
   play(id: TransportId): Promise<void>;
   pause(id: TransportId): Promise<void>;

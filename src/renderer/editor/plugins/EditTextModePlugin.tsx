@@ -31,7 +31,6 @@ export interface EditTextModePluginProps {
   onClipReorder?: (clipId: string, newOrder: number) => void;
   onClipSelect?: (clipId: string | null) => void;
   selectedClipId?: string | null;
-  onWordEdit?: (clipId: string, segmentIndex: number, newText: string) => void;
 }
 
 export default function EditTextModePlugin({
@@ -39,13 +38,12 @@ export default function EditTextModePlugin({
   onClipSplit,
   onClipReorder,
   onClipSelect,
-  selectedClipId,
-  onWordEdit
+  selectedClipId
 }: EditTextModePluginProps) {
   const [editor] = useLexicalComposerContext();
   const [draggedClipId, setDraggedClipId] = useState<string | null>(null);
   const [dragOverClipId, setDragOverClipId] = useState<string | null>(null);
-  const [editingWordId, setEditingWordId] = useState<string | null>(null);
+  const [selectedElement, setSelectedElement] = useState<HTMLElement | null>(null);
 
   // ==================== CSS Injection for Edit Text Mode ====================
 
@@ -157,41 +155,109 @@ export default function EditTextModePlugin({
         border-radius: 2px;
       }
 
-      /* Word editing enhancements */
+      /* Word selection enhancements (editing disabled) */
       .lexical-word-node {
-        cursor: text;
-        border-radius: 3px;
-        padding: 1px 2px;
-        transition: all 0.2s ease;
+        cursor: pointer !important;
+        border-radius: 3px !important;
+        padding: 2px 4px !important;
+        transition: all 0.2s ease !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        -moz-user-select: none !important;
+        -ms-user-select: none !important;
       }
 
       .lexical-word-node:hover {
-        background: hsl(var(--accent) / 0.3);
+        font-weight: bold !important;
+        /* Clean hover effect without boxes */
       }
 
-      .lexical-word-node.editing {
-        background: hsl(var(--primary) / 0.2);
-        outline: 2px solid hsl(var(--primary));
-        outline-offset: 1px;
+      .lexical-word-node.word-selected {
+        background: hsl(var(--primary) / 0.15) !important;
+        outline: none !important;
+        font-weight: bold !important;
+        border-radius: 3px !important;
+        /* Subtle selection without heavy borders */
+      }
+
+      .lexical-word-node:focus {
+        outline: 2px solid hsl(var(--ring)) !important;
+        outline-offset: 2px !important;
       }
 
       /* Spacer enhancements for editing */
       .lexical-spacer-node {
-        background: hsl(var(--muted));
-        color: hsl(var(--muted-foreground));
-        padding: 2px 6px;
-        border-radius: 3px;
-        margin: 0 2px;
-        cursor: pointer;
-        display: inline-block;
-        min-width: 20px;
-        text-align: center;
-        transition: all 0.2s ease;
+        background: hsl(var(--muted)) !important;
+        color: hsl(var(--muted-foreground)) !important;
+        padding: 4px 8px !important;
+        border-radius: 12px !important;
+        margin: 0 3px !important;
+        cursor: pointer !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        min-width: 40px !important;
+        text-align: center !important;
+        font-size: 11px !important;
+        font-weight: 500 !important;
+        border: 1px solid hsl(var(--border)) !important;
+        transition: all 0.2s ease !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        position: relative !important;
+        z-index: 1 !important;
       }
 
       .lexical-spacer-node:hover {
-        background: hsl(var(--accent));
-        color: hsl(var(--accent-foreground));
+        background: hsl(var(--accent)) !important;
+        color: hsl(var(--accent-foreground)) !important;
+        transform: scale(1.05) !important;
+        /* Clean hover effect for spacers */
+      }
+
+      .lexical-spacer-node:focus {
+        outline: 2px solid hsl(var(--ring)) !important;
+        outline-offset: 2px !important;
+      }
+
+      .lexical-spacer-node.spacer-selected {
+        background: hsl(var(--primary) / 0.25) !important;
+        color: hsl(var(--primary-foreground)) !important;
+        font-weight: bold !important;
+        transform: scale(1.05) !important;
+        box-shadow: 0 2px 6px hsl(var(--primary) / 0.2) !important;
+        /* Consistent with word selection styling */
+      }
+
+      /* Ensure spacer children are visible */
+      .lexical-spacer-node svg {
+        display: inline-block !important;
+        margin-right: 4px !important;
+        opacity: 0.7 !important;
+      }
+
+      /* Make sure spacers show up in different contexts */
+      .lexical-editor-v2[data-edit-text-mode="true"] .lexical-spacer-node {
+        display: inline-flex !important;
+        visibility: visible !important;
+      }
+
+      /* Selection indicators and hints */
+      .word-selected::after,
+      .spacer-selected::after {
+        content: "Press Enter to split";
+        position: absolute;
+        bottom: -20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: hsl(var(--popover));
+        color: hsl(var(--popover-foreground));
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        white-space: nowrap;
+        border: 1px solid hsl(var(--border));
+        z-index: 100;
+        pointer-events: none;
       }
 
       /* Split indicator */
@@ -325,35 +391,38 @@ export default function EditTextModePlugin({
     );
 
     return removeEnterCommand;
-  }, [isEditTextMode, editor, onClipSplit]);
+  }, [isEditTextMode, editor, onClipSplit, selectedElement]);
 
   const handleEnterKeySplit = (): boolean => {
-    return editor.getEditorState().read(() => {
-      const selection = $getSelection();
-
-      if ($isRangeSelection(selection)) {
-        const anchorNode = selection.anchor.getNode();
-        let targetClipId: string | null = null;
-        let targetSegmentIndex: number | null = null;
-
-        // Find the clip and segment to split
-        if ($isWordNodeV2(anchorNode)) {
-          targetClipId = anchorNode.getClipId();
-          targetSegmentIndex = anchorNode.getSegmentIndex();
-        } else if ($isSpacerNodeV2(anchorNode)) {
-          targetClipId = anchorNode.getClipId();
-          targetSegmentIndex = anchorNode.getSegmentIndex();
-        }
-
-        if (targetClipId && targetSegmentIndex !== null && onClipSplit) {
-          console.log('🎯 Splitting clip at Enter key:', { targetClipId, targetSegmentIndex });
-          onClipSplit(targetClipId, targetSegmentIndex);
-          return true;
-        }
-      }
-
+    // Check if we have a selected word or spacer element
+    if (!selectedElement) {
+      console.log('🚫 No word or spacer selected for splitting');
       return false;
-    });
+    }
+
+    // Get the data attributes from the selected element
+    const clipId = selectedElement.getAttribute('data-clip-id');
+    const segmentIndex = selectedElement.getAttribute('data-segment-index');
+
+    if (clipId && segmentIndex !== null && onClipSplit) {
+      const segmentIndexNum = parseInt(segmentIndex);
+      console.log('🎯 Splitting clip at selected element:', {
+        clipId,
+        segmentIndex: segmentIndexNum,
+        elementType: selectedElement.classList.contains('lexical-word-node') ? 'word' : 'spacer'
+      });
+
+      onClipSplit(clipId, segmentIndexNum);
+
+      // Clear selection after split
+      setSelectedElement(null);
+      selectedElement.classList.remove('word-selected', 'spacer-selected');
+
+      return true;
+    }
+
+    console.log('🚫 Selected element missing required data for splitting:', { clipId, segmentIndex });
+    return false;
   };
 
   // ==================== Clip Selection ====================
@@ -579,85 +648,50 @@ export default function EditTextModePlugin({
     };
   }, [isEditTextMode, editor, selectedClipId]);
 
-  // ==================== Word Editing Enhancements ====================
+  // ==================== Word/Spacer Selection for Splitting ====================
+  // Note: Word editing disabled - words and spacers are now only selectable for clip splitting
 
   useEffect(() => {
     if (!isEditTextMode) return;
 
-    const handleDoubleClick = (event: MouseEvent) => {
+    const handleClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
 
-      if (target.classList.contains('lexical-word-node')) {
-        const wordId = target.getAttribute('data-word-id');
-        const clipId = target.getAttribute('data-clip-id');
-        const segmentIndex = target.getAttribute('data-segment-index');
+      // Handle word/spacer selection (not editing)
+      if (target.classList.contains('lexical-word-node') || target.classList.contains('lexical-spacer-node')) {
+        // Clear previous selections
+        const editorElement = editor.getRootElement();
+        if (editorElement) {
+          const allSelectables = editorElement.querySelectorAll('.word-selected, .spacer-selected');
+          allSelectables.forEach(el => el.classList.remove('word-selected', 'spacer-selected'));
+        }
 
-        if (wordId && clipId && segmentIndex) {
-          setEditingWordId(wordId);
-          target.classList.add('editing');
+        // Update selected element state
+        setSelectedElement(target);
 
-          // Create inline editor
-          createInlineWordEditor(target, clipId, parseInt(segmentIndex));
+        // Add selection to current element
+        if (target.classList.contains('lexical-word-node')) {
+          target.classList.add('word-selected');
+        } else if (target.classList.contains('lexical-spacer-node')) {
+          target.classList.add('spacer-selected');
+        }
+      } else {
+        // Click elsewhere clears selection
+        setSelectedElement(null);
+        const editorElement = editor.getRootElement();
+        if (editorElement) {
+          const allSelectables = editorElement.querySelectorAll('.word-selected, .spacer-selected');
+          allSelectables.forEach(el => el.classList.remove('word-selected', 'spacer-selected'));
         }
       }
     };
 
     const editorElement = editor.getRootElement();
     if (editorElement) {
-      editorElement.addEventListener('dblclick', handleDoubleClick);
-      return () => editorElement.removeEventListener('dblclick', handleDoubleClick);
+      editorElement.addEventListener('click', handleClick);
+      return () => editorElement.removeEventListener('click', handleClick);
     }
-  }, [isEditTextMode, editor, onWordEdit]);
-
-  const createInlineWordEditor = (element: HTMLElement, clipId: string, segmentIndex: number) => {
-    const originalText = element.textContent || '';
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = originalText;
-    input.className = 'inline-word-editor';
-    input.style.cssText = `
-      background: hsl(var(--background));
-      border: 2px solid hsl(var(--primary));
-      border-radius: 3px;
-      padding: 2px 4px;
-      font: inherit;
-      color: inherit;
-      min-width: 60px;
-    `;
-
-    const finishEditing = () => {
-      const newText = input.value.trim();
-      element.textContent = newText;
-      element.classList.remove('editing');
-      setEditingWordId(null);
-
-      if (newText !== originalText && onWordEdit) {
-        onWordEdit(clipId, segmentIndex, newText);
-      }
-
-      element.style.display = '';
-      input.remove();
-    };
-
-    input.addEventListener('blur', finishEditing);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        finishEditing();
-      } else if (e.key === 'Escape') {
-        element.textContent = originalText;
-        element.classList.remove('editing');
-        setEditingWordId(null);
-        element.style.display = '';
-        input.remove();
-      }
-    });
-
-    element.style.display = 'none';
-    element.parentNode?.insertBefore(input, element);
-    input.focus();
-    input.select();
-  };
+  }, [isEditTextMode, editor]);
 
   // ==================== Debug Information ====================
 
@@ -666,11 +700,11 @@ export default function EditTextModePlugin({
       console.log('✏️ Edit Text Mode activated');
       console.log('Selected clip:', selectedClipId);
       console.log('Dragged clip:', draggedClipId);
-      console.log('Editing word:', editingWordId);
+      console.log('Selected element:', selectedElement?.classList.toString() || 'none');
     } else {
       console.log('✏️ Edit Text Mode deactivated');
     }
-  }, [isEditTextMode, selectedClipId, draggedClipId, editingWordId]);
+  }, [isEditTextMode, selectedClipId, draggedClipId, selectedElement]);
 
   return null; // This plugin doesn't render anything
 }

@@ -153,8 +153,8 @@ class App {
     this.audioConverter = new AudioConverter();
     this.userPreferences = new UserPreferencesService(this.encryptionKey);
 
-    // Initialize project data store
-    this.projectDataStore = new ProjectDataStore();
+    // Initialize project data store using singleton
+    this.projectDataStore = ProjectDataStore.getInstance();
     this.setupProjectDataStoreEvents();
 
     this.initialize();
@@ -1033,13 +1033,45 @@ class App {
         await fs.promises.mkdir(audioDir, { recursive: true });
 
         // Determine source audio path from projectData
-        const srcAudio = projectData?.project?.audio?.extractedPath 
-          || projectData?.project?.audio?.embeddedPath 
-          || projectData?.project?.audio?.path 
+        console.log('🔍 Looking for source audio in projectData:', {
+          extractedPath: projectData?.project?.audio?.extractedPath,
+          embeddedPath: projectData?.project?.audio?.embeddedPath,
+          path: projectData?.project?.audio?.path,
+          originalFile: projectData?.project?.audio?.originalFile
+        });
+
+        let srcAudio = projectData?.project?.audio?.extractedPath
+          || projectData?.project?.audio?.embeddedPath
+          || projectData?.project?.audio?.path
           || projectData?.project?.audio?.originalFile;
+
+        console.log('🎵 Selected source audio path:', srcAudio);
+
+        // Enhanced fallback path resolution if file doesn't exist
+        if (srcAudio && !fs.existsSync(srcAudio)) {
+          console.warn('⚠️ Source audio not found at stored path, attempting fallback resolution...');
+
+          // Extract just the filename
+          const fileName = path.basename(srcAudio);
+          const fallbackPaths = [
+            `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${fileName}`,
+            `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${fileName}`,
+            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${fileName}`,
+            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${fileName}`
+          ];
+
+          for (const fallbackPath of fallbackPaths) {
+            if (fs.existsSync(fallbackPath)) {
+              console.log('🔍 Found source audio via fallback at:', fallbackPath);
+              srcAudio = fallbackPath;
+              break;
+            }
+          }
+        }
 
         let targetWavPath: string | null = null;
         if (srcAudio && fs.existsSync(srcAudio)) {
+          console.log('✅ Source audio file exists, starting WAV conversion...');
           targetWavPath = path.join(audioDir, `${baseName}.wav`);
           try {
             const result = await this.audioConverter.resampleAudio(
@@ -1057,16 +1089,19 @@ class App {
                 }
               }
             );
-            console.log('Saved WAV to:', result.outputPath);
+            console.log('✅ Saved WAV to:', result.outputPath);
             targetWavPath = result.outputPath;
           } catch (e) {
-            console.error('WAV conversion failed, copying original:', e);
+            console.error('❌ WAV conversion failed, copying original:', e);
             const copyTarget = path.join(audioDir, path.basename(srcAudio));
             await fs.promises.copyFile(srcAudio, copyTarget);
             targetWavPath = copyTarget;
+            console.log('📁 Copied original audio to:', copyTarget);
           }
+        } else if (srcAudio) {
+          console.error('❌ Source audio file does not exist:', srcAudio);
         } else {
-          console.warn('No source audio found in projectData; saving metadata only');
+          console.error('❌ NO SOURCE AUDIO FOUND - Cannot create WAV file. Check audio path in projectData.');
         }
 
         // Update projectData to point to WAV path
@@ -1081,6 +1116,10 @@ class App {
 
         // Write JSON .transcript file
         await fs.promises.writeFile(filePath, JSON.stringify(projectData, null, 2), 'utf8');
+
+        // Store project path in ProjectDataStore
+        this.projectDataStore.setCurrentProjectPath(filePath);
+
         return { success: true };
       } catch (error) {
         console.error('Failed to save project:', error);
@@ -1100,6 +1139,10 @@ class App {
           const resolved = path.join(dir, audio.path);
           projectData.project.audio.path = resolved;
         }
+
+        // Store project path in ProjectDataStore
+        this.projectDataStore.setCurrentProjectPath(filePath);
+
         return projectData;
       } catch (error) {
         console.error('Failed to load project:', error);
@@ -1560,100 +1603,84 @@ class App {
       }
     });
 
-    // Import v2.0 transcription result directly to ProjectDataStore
+    // Import v2.0 transcription result using TranscriptionImportService
     ipcMain.handle('transcription:importV2', async (_event, segments: any[], speakers: any, audioMetadata: any) => {
       try {
-        console.log('📝 Importing v2.0 transcription result to ProjectDataStore');
+        console.log('📝 Importing v2.0 transcription result using TranscriptionImportService');
         console.log('🎵 Audio metadata received:', audioMetadata);
+        console.log('📄 Segments received:', segments.length);
 
-        // Create proper AudioMetadata structure
+        // Import required service
+        const { TranscriptionImportService } = await import('../renderer/services/TranscriptionImportService');
+
+        // Create transcription result structure for the import service
+        const transcriptionResult = {
+          segments: segments,
+          speakers: speakers || {},
+          speakerSegments: [], // Will be built by the import service
+          language: 'en'
+        };
+
+        // Create proper audio metadata with path for WAV conversion
+        let audioPath = audioMetadata.audioPath || audioMetadata.originalPath || audioMetadata.fileName;
+
+        // Enhanced path resolution - ensure we have a valid absolute path to source audio
+        if (audioPath && !audioPath.startsWith('/')) {
+          // If it's just a filename, try to find it in common locations
+          const possiblePaths = [
+            `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${audioPath}`,
+            `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${audioPath}`,
+            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${audioPath}`,
+            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${audioPath}`
+          ];
+
+          for (const possiblePath of possiblePaths) {
+            if (fs.existsSync(possiblePath)) {
+              console.log('🔍 Found source audio at:', possiblePath);
+              audioPath = possiblePath;
+              break;
+            }
+          }
+        }
+
+        // Verify the resolved path exists
+        if (audioPath && audioPath !== 'unknown' && !fs.existsSync(audioPath)) {
+          console.warn('⚠️ Source audio file not found at resolved path:', audioPath);
+          console.log('🔍 Available audio files in Working Audio:');
+          const workingAudioDir = '/Users/chrismcleod/Development/ClaudeAccess/Working Audio';
+          try {
+            const files = fs.readdirSync(workingAudioDir);
+            files.forEach(file => console.log('  -', file));
+          } catch (e) {
+            console.log('  Directory not accessible:', e instanceof Error ? e.message : String(e));
+          }
+        }
+
         const properAudioMetadata = {
-          originalFile: audioMetadata.audioPath || audioMetadata.fileName || 'unknown',
+          originalFile: audioPath || 'unknown',
           originalName: audioMetadata.fileName || 'Untitled Audio',
           embeddedPath: undefined,
+          path: audioPath, // This is critical for WAV conversion during save
           duration: audioMetadata.duration || 0,
-          format: 'unknown',
-          size: 0,
+          format: audioMetadata.format || 'unknown',
+          size: audioMetadata.size || 0,
           embedded: false
         };
 
-        console.log('🎵 Processed audio metadata:', properAudioMetadata);
+        console.log('🎵 Processed audio metadata with resolved path:', {
+          original: audioMetadata.audioPath,
+          resolved: audioPath,
+          exists: audioPath && audioPath !== 'unknown' ? fs.existsSync(audioPath) : false
+        });
 
-        // Create v2.0 ProjectData structure
-        const projectData: ProjectData = {
-          version: '2.0',
-          project: {
-            projectId: 'proj_' + Date.now().toString(36),
-            name: audioMetadata.fileName || 'Untitled Project',
-            created: new Date().toISOString(),
-            lastModified: new Date().toISOString(),
-            version: '2.0',
-            audio: properAudioMetadata,
-            transcription: {
-              service: 'openai',
-              model: 'whisper-1',
-              language: 'en',
-              status: 'completed',
-              completedAt: new Date().toISOString()
-            },
-            ui: {
-              currentMode: 'transcript-edit',
-              sidebarWidth: 256,
-              playbackSpeed: 1.0,
-              volume: 1.0,
-              currentTime: 0
-            }
-          },
-          clips: {
-            version: '2.0',
-            clips: [
-              {
-                id: `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                speaker: 'SPEAKER_00',
-                startTime: 0,
-                endTime: audioMetadata.duration || segments[segments.length - 1]?.end || 0,
-                duration: audioMetadata.duration || segments[segments.length - 1]?.end || 0,
-                segments: segments,
-                type: 'transcribed' as const,
-                createdAt: Date.now(),
-                modifiedAt: Date.now(),
-                order: 0,
-                status: 'active' as const
-              }
-            ],
-            clipSettings: {
-              defaultDuration: 5.0,
-              autoExport: false,
-              exportFormat: 'wav',
-              grouping: {
-                pauseThreshold: 1.0,
-                maxClipDuration: 30.0,
-                minWordsPerClip: 5,
-                maxWordsPerClip: 100,
-                sentenceTerminators: ['.', '!', '?']
-              }
-            }
-          },
-          transcription: {
-            version: '2.0',
-            originalSegments: segments,
-            speakers: speakers || {},
-            speakerSegments: [],
-            globalMetadata: {
-              totalSegments: segments.length,
-              totalWords: segments.filter((s: any) => s.type === 'word').length,
-              averageConfidence: 0.9,
-              processingTime: 0,
-              editCount: 0
-            }
-          },
-          speakers: {
-            version: '2.0',
-            speakers: speakers || {},
-            speakerMappings: {},
-            defaultSpeaker: 'SPEAKER_00'
-          }
-        };
+        // Use TranscriptionImportService to create proper ProjectData with segments
+        const projectData = TranscriptionImportService.importTranscription(
+          transcriptionResult,
+          audioPath,
+          properAudioMetadata
+        );
+
+        console.log('✅ TranscriptionImportService created project with', projectData.clips.clips.length, 'clips');
 
         // Load into ProjectDataStore
         this.projectDataStore.loadProject(projectData);

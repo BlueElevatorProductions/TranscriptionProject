@@ -128,12 +128,11 @@ const LexicalTranscriptEditorV2: React.FC<LexicalTranscriptEditorV2Props> = ({
               <ContentEditable
                 className="lexical-content-editable min-h-[200px] p-4 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={
-                  <div className="absolute top-4 left-4 text-muted-foreground pointer-events-none">
-                    {projectState.clips.length === 0
-                      ? 'Import an audio file to start transcription...'
-                      : 'Loading transcript...'
-                    }
-                  </div>
+                  projectState.clips.length === 0 ? (
+                    <div className="absolute top-4 left-4 text-muted-foreground pointer-events-none">
+                      Import an audio file to start transcription...
+                    </div>
+                  ) : null
                 }
               />
             }

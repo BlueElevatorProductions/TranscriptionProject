@@ -42,6 +42,8 @@ export interface TranscriptionJobV2 {
   error?: string;
   startedAt: string;
   completedAt?: string;
+  audioPath?: string; // Store original audio path for import
+  audioMetadata?: any; // Store audio metadata for import
 }
 
 export interface TranscriptionOptionsV2 {
@@ -85,14 +87,28 @@ export class TranscriptionServiceV2 {
 
       const jobId = this.generateJobId();
       const fileName = filePath.split('/').pop() || 'Unknown file';
+      const originalFilePath = filePath; // Store original path for reference
+
+      // Convert audio file to WAV and place in project audio directory
+      // Try to get current project path to determine audio directory
+      const currentProjectPath = this.getCurrentProjectPath();
+      const projectAudioDir = this.getProjectAudioDirectory(currentProjectPath);
+      const audioFileName = fileName;
+      const projectAudioPath = await this.convertAudioToWav(originalFilePath, projectAudioDir, audioFileName);
 
       const job: TranscriptionJobV2 = {
         id: jobId,
-        filePath,
+        filePath: projectAudioPath, // Use converted WAV path for transcription processing
         fileName,
         status: 'pending',
         progress: 0,
         startedAt: new Date().toISOString(),
+        audioPath: projectAudioPath, // Use project audio path for import
+        audioMetadata: {
+          fileName,
+          audioPath: projectAudioPath, // Point to converted WAV file
+          originalPath: originalFilePath       // Keep reference to original MP3/source
+        }
       };
 
       this.activeJobs.set(jobId, job);
@@ -234,6 +250,11 @@ export class TranscriptionServiceV2 {
       job.segments = segments;
       job.speakers = speakers;
       job.completedAt = new Date().toISOString();
+
+      // Ensure audioMetadata includes duration from transcription result if available
+      if (job.audioMetadata && rawResult?.duration) {
+        job.audioMetadata.duration = rawResult.duration;
+      }
 
       console.log('✅ TranscriptionServiceV2: Job completed', {
         jobId,
@@ -561,6 +582,104 @@ export class TranscriptionServiceV2 {
         reject(error);
       }
     });
+  }
+
+  /**
+   * Get project audio directory - dynamic path resolution
+   */
+  private static getProjectAudioDirectory(projectPath?: string): string {
+    const path = require('path');
+    const { app } = require('electron');
+
+    if (projectPath) {
+      // If we have a project path, use its directory + Audio Files
+      const projectDir = path.dirname(projectPath);
+      return path.join(projectDir, 'Audio Files');
+    }
+
+    // If no project path, use a temp directory in userData
+    return path.join(app.getPath('userData'), 'temp_audio');
+  }
+
+  /**
+   * Convert audio file to WAV and place in project directory
+   */
+  private static async convertAudioToWav(
+    sourcePath: string,
+    targetDir: string,
+    targetFileName: string
+  ): Promise<string> {
+    const fs = require('fs');
+    const path = require('path');
+    const { spawn } = require('child_process');
+
+    // Ensure target directory exists
+    await fs.promises.mkdir(targetDir, { recursive: true });
+
+    // Force WAV extension
+    const baseName = path.parse(targetFileName).name;
+    const wavFileName = `${baseName}.wav`;
+    const targetPath = path.join(targetDir, wavFileName);
+
+    // Check if source exists
+    if (!fs.existsSync(sourcePath)) {
+      console.warn(`⚠️ TranscriptionServiceV2: Source audio file not found: ${sourcePath}`);
+      return sourcePath; // Return original path as fallback
+    }
+
+    // If WAV already exists, return it
+    if (fs.existsSync(targetPath)) {
+      console.log(`📁 TranscriptionServiceV2: WAV file already exists: ${targetPath}`);
+      return targetPath;
+    }
+
+    console.log(`🎵 TranscriptionServiceV2: Converting to WAV: ${sourcePath} -> ${targetPath}`);
+
+    return new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-i', sourcePath,
+        '-acodec', 'pcm_s16le',
+        '-ar', '48000',
+        '-ac', '2',
+        '-y', // Overwrite output file
+        targetPath
+      ]);
+
+      let stderr = '';
+      ffmpeg.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      ffmpeg.on('close', (code: number | null) => {
+        if (code === 0) {
+          console.log(`✅ TranscriptionServiceV2: Successfully converted to WAV: ${targetPath}`);
+          resolve(targetPath);
+        } else {
+          console.error(`❌ TranscriptionServiceV2: FFmpeg conversion failed (code ${code}):`, stderr);
+          reject(new Error(`Audio conversion failed: ${stderr}`));
+        }
+      });
+
+      ffmpeg.on('error', (error: Error) => {
+        console.error(`❌ TranscriptionServiceV2: FFmpeg spawn error:`, error);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Get current project path if available
+   * Accesses ProjectDataStore to get the current project path
+   */
+  private static getCurrentProjectPath(): string | undefined {
+    try {
+      const { ProjectDataStore } = require('./ProjectDataStore');
+      const store = ProjectDataStore.getInstance();
+      return store.getCurrentProjectPath();
+    } catch (error) {
+      console.warn('⚠️ TranscriptionServiceV2: Could not access ProjectDataStore:', error);
+      return undefined;
+    }
   }
 
   // ==================== Utility Methods ====================
