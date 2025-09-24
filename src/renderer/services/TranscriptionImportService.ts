@@ -6,7 +6,7 @@
  *
  * Key principles:
  * - NEVER modify original word timestamps
- * - Create explicit spacer segments for gaps ≥1s
+ * - Create explicit spacer segments for ALL gaps >1ms (fixes audio speed issues)
  * - Build clips with complete segment coverage
  * - Maintain original timing data for debugging/recovery
  */
@@ -30,7 +30,7 @@ import {
 
 // ==================== Configuration ====================
 
-const SPACER_THRESHOLD_SECONDS = 1.0;  // Gaps ≥1s become spacer segments
+const SPACER_THRESHOLD_SECONDS = 0.001;  // All gaps >1ms become spacer segments (fixes audio speed)
 const MAX_CLIP_DURATION = 30.0;        // Split long speaker segments
 const MIN_CLIP_DURATION = 1.0;         // Merge very short clips
 
@@ -241,12 +241,12 @@ export class TranscriptionImportService {
       segments.push(wordSegment);
       currentTime = wordEnd;
 
-      // Check for gap to next word
+      // Check for gap to next word - always create spacer segments for any gap
       if (nextWord) {
         const gapDuration = nextWord.start - word.end;
 
-        if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
-          // Create spacer segment for significant gap
+        if (gapDuration > 0.001) { // Any gap larger than 1ms becomes a spacer
+          // Create spacer segment for any gap
           // Use clip-relative timing for both start and end
           const spacerStart = wordEnd; // Start right after current word ends (clip-relative)
           const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
@@ -256,20 +256,11 @@ export class TranscriptionImportService {
           const spacerSegment = createSpacerSegment(
             spacerStart,
             spacerEnd,
-            `${gapDuration.toFixed(1)}s`
+            gapDuration >= 1.0 ? `${gapDuration.toFixed(1)}s` : `${(gapDuration * 1000).toFixed(0)}ms`
           );
 
           segments.push(spacerSegment);
           currentTime = spacerEnd;
-        } else if (gapDuration > 0) {
-          // Small gap - extend current word segment to cover it
-          // Note: We're not modifying the original word timing, just the clip-relative segment
-          const nextWordClipRelativeStart = nextWord.start - clipStartTime;
-          segments[segments.length - 1] = {
-            ...segments[segments.length - 1],
-            end: nextWordClipRelativeStart
-          };
-          currentTime = nextWordClipRelativeStart;
         }
       }
     }

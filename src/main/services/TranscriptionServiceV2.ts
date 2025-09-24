@@ -26,7 +26,7 @@ import { SimpleCloudTranscriptionService } from './SimpleCloudTranscriptionServi
 
 // ==================== Configuration ====================
 
-const SPACER_THRESHOLD_SECONDS = 1.0;  // Gaps ≥1s become spacer segments
+const SPACER_THRESHOLD_SECONDS = 0.001;  // All gaps >1ms become spacer segments (fixes audio speed)
 const MIN_SEGMENT_DURATION = 0.1;      // Minimum segment duration
 
 // ==================== Types ====================
@@ -361,7 +361,8 @@ export class TranscriptionServiceV2 {
   }
 
   /**
-   * Post-process segments to ensure perfect coverage and no overlaps
+   * Post-process segments to ensure perfect coverage with explicit spacers
+   * Creates spacer segments for all gaps without modifying word durations
    */
   private static postProcessSegments(segments: Segment[]): Segment[] {
     if (segments.length === 0) return segments;
@@ -375,26 +376,22 @@ export class TranscriptionServiceV2 {
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
 
-      // Adjust start time to ensure continuity
+      // Handle gaps without modifying segment durations
       if (segment.start > expectedTime) {
-        // Create small gap filler if needed (only for very small gaps)
         const gap = segment.start - expectedTime;
-        if (gap < SPACER_THRESHOLD_SECONDS && gap > 0.001) {
-          // Fill small gap by extending previous segment or adjusting current start
-          if (processedSegments.length > 0) {
-            const lastSegment = processedSegments[processedSegments.length - 1];
-            if (lastSegment.type === 'word') {
-              (lastSegment as WordSegment).end = segment.start;
-            }
-          } else {
-            // Adjust current segment to start at expected time
-            const adjustedSegment = { ...segment };
-            adjustedSegment.start = expectedTime;
-            processedSegments.push(adjustedSegment);
-            expectedTime = adjustedSegment.end;
-            continue;
-          }
+        if (gap > 0.001) {
+          // Create explicit spacer segment for any gap
+          const spacerSegment: SpacerSegment = {
+            id: `spacer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'spacer',
+            start: expectedTime,
+            end: segment.start,
+            duration: gap,
+            label: gap >= 1.0 ? `${gap.toFixed(1)}s` : `${(gap * 1000).toFixed(0)}ms`
+          };
+          processedSegments.push(spacerSegment);
         }
+        expectedTime = segment.start;
       } else if (segment.start < expectedTime) {
         // Overlap detected - adjust start time
         const adjustedSegment = { ...segment };
