@@ -30,11 +30,11 @@ A professional desktop transcription application built with Electron, React, and
 - **API Key Integration**: Proper cloud service integration with encrypted key storage
 - **Audio Playback Fixed**: Complete fix for audio path resolution and playback functionality - audio now working properly
 
-### ⚠️ Audio Playback System - Work in Progress (September 2025 - Latest)
+### ⚠️ Audio Playback Speed Issues - Comprehensive Fix Attempts (September 2025 - Latest)
 
-**Current Status**: Audio playback remains problematic despite multiple comprehensive troubleshooting attempts. This section documents our debugging journey.
+**Current Status**: Audio playback speed remains incorrect despite multiple systematic troubleshooting attempts. Audio plays but at wrong tempo. This section documents our debugging journey.
 
-#### 🔧 **Attempted Fixes and Current Issues**
+#### 🔧 **Audio Speed Fix Attempts - Complete Timeline**
 
 **1. Path Resolution Enhancement (Attempt 1)**:
 - **Implementation**: Added `audio?.path` as first check in path resolution fallback chain
@@ -61,13 +61,44 @@ A professional desktop transcription application built with Electron, React, and
   - Maintained dynamic sample rate updates in prepareToPlay()
 - **Result**: ✅ EPIPE errors eliminated, backend starts without crashes
 
+**5. Audio Speed Analysis & Segment Fix (Attempt 5 - September 2025)**:
+- **Problem**: Two expert diagnoses identified segment timing mismatches as root cause
+- **Root Cause**: Small gaps (<1s) extended word segments without updating original timestamps
+- **Technical Issue**:
+  - Edited duration: 1.3s (extended to cover 0.8s gap)
+  - Original duration: 0.5s (unchanged)
+  - JUCE backend assumed they matched, causing audio replay/speed issues
+- **Solution**: Create explicit spacer segments for ALL gaps >1ms instead of extending words
+- **Result**: ❌ Created 788 segments for 145s audio, JUCE backend crashed with SIGSEGV
+
+**6. Ratio-Preserving Gap Handling (Attempt 6)**:
+- **Problem**: Too many segments (5.4/second) overwhelmed JUCE backend
+- **Solution**: Reverted to 1s spacer threshold but preserved timing ratios
+- **Technical**: When extending segments for gaps <1s:
+  - `newOriginalEnd = originalStart + (originalDuration × scaleFactor)`
+  - `scaleFactor = newEditedDuration / currentEditedDuration`
+- **Files**: TranscriptionImportService.ts, TranscriptionServiceV2.ts
+- **Result**: ✅ Reasonable segment count, no crashes, but speed still wrong
+
+**7. JUCE Backend Duration Ratio Fix (Attempt 7 - Latest)**:
+- **Problem**: Backend advanced `editedPosition` by raw sample time, ignoring duration ratios
+- **Root Cause**: Line 280: `editedPosition += (double)samplesToRead / sampleRate`
+- **Solution**: Applied duration ratio to position advancement:
+  ```cpp
+  double durationRatio = editedDuration / originalDuration;
+  editedPosition += originalTimeAdvanced * durationRatio;
+  ```
+- **Files**: native/juce-backend/src/main.cpp
+- **Result**: ❌ **Speed issue persists** - fundamental architectural problem remains
+
 #### 📊 **Current Operational State**
 - ✅ Application launches without crashes
-- ✅ JUCE backend initializes successfully
-- ✅ No JavaScript errors or EPIPE failures
-- ✅ Audio transport properly initialized with all expected methods
-- ❌ **Audio playback still non-functional** - root cause not yet identified
-- ❌ No audio heard during play attempts despite clean initialization
+- ✅ JUCE backend builds and initializes successfully
+- ✅ No segmentation faults or EPIPE errors
+- ✅ Reasonable segment count (~30-50 per 30s clip)
+- ✅ Audio plays and position tracking works
+- ❌ **Audio speed still incorrect** - plays too fast/slow depending on gap distribution
+- ❌ Duration ratio calculations not resolving core timing mismatch
 
 #### 🔍 **Technical Details of Latest Fix**
 
@@ -92,11 +123,18 @@ int64_t getNextReadPosition() const override {
 **Audio Files System**: Projects save converted WAV audio (48kHz, 16-bit) to "Audio Files" folder alongside .transcript file. Path resolution and backend communication work correctly, but the final audio playback step remains problematic.
 
 #### 🔮 **Next Investigation Areas**
-Based on our systematic fixes, the remaining issue likely involves:
-1. **JUCE Audio Device Setup**: Audio device manager initialization or configuration
-2. **File Loading**: WAV file format compatibility or loading errors
-3. **Playback Pipeline**: Transport source or audio source chain issues
-4. **System Audio**: macOS audio permissions or device access problems
+After 7 comprehensive fix attempts, the remaining issue suggests fundamental architectural problems:
+
+1. **Complete Audio Architecture Redesign**: Current segment-based approach may be incompatible with real-time playback
+2. **Alternative Backend Strategy**: Consider bypassing JUCE EDL processing for simpler direct audio file playback
+3. **Timing Model Reevaluation**: Gap-filling approach may be fundamentally flawed - need cleaner word/spacer boundaries
+4. **Reference Implementation**: Study working audio editors to understand proper segment-to-audio mapping
+5. **Profiling & Deep Debug**: Instrument the entire audio pipeline to identify where timing drift occurs
+
+**Commits Available**: All fix attempts committed to `codex/diagnose-audio-conversion-playback-issue` branch:
+- f662c6b1: Initial explicit spacer creation attempt
+- f5fe098: Ratio-preserving gap handling
+- 9f0364d: JUCE backend duration ratio fix
 
 For detailed technical information, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 
