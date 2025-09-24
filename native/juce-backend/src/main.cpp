@@ -275,9 +275,29 @@ public:
         
         samplesWritten += samplesToRead;
         samplesNeeded -= samplesToRead;
-        
-        // Advance edited position
-        editedPosition += (double)samplesToRead / sampleRate;
+
+        // Advance edited position using duration ratio to handle gap-filled segments
+        double originalTimeAdvanced = (double)samplesToRead / sampleRate;
+
+        // Calculate the ratio between edited and original durations for this segment
+        double editedDuration = segment.end - segment.start;
+        double originalDuration = segment.hasOriginal() ?
+          (segment.originalEnd - segment.originalStart) : segment.dur;
+
+        // Handle potential division by zero
+        if (originalDuration > 0.0) {
+          double durationRatio = editedDuration / originalDuration;
+          editedPosition += originalTimeAdvanced * durationRatio;
+
+          // Log ratio-based advancement for debugging
+          juceDLog("[JUCE] Position advanced: original=" + std::to_string(originalTimeAdvanced) +
+                   "s, ratio=" + std::to_string(durationRatio) +
+                   ", edited=" + std::to_string(originalTimeAdvanced * durationRatio) + "s");
+        } else {
+          // Fallback to original method if duration is invalid
+          editedPosition += originalTimeAdvanced;
+          juceDLog("[JUCE] Position advanced (fallback): " + std::to_string(originalTimeAdvanced) + "s");
+        }
       }
       
       // Check if we've reached the end of current segment
