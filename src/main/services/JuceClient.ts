@@ -39,12 +39,9 @@ export class JuceClient implements Transport {
   private currentLoadCommand: { commandKey: string; id: string } | null = null;
 
   // Command queue and flow control
-  private commandQueue: Array<{ command: JuceCommand; resolve: (result: any) => void; reject: (error: any) => void; retries: number }> = [];
+  private commandQueue: Array<{ command: JuceCommand; resolve: (result: boolean) => void; reject: (error: any) => void }> = [];
   private isProcessingQueue = false;
-  private maxRetries = 3;
-  private retryDelay = 100; // ms
-  private waitingForDrain = false;
-  private readonly edlInlineThresholdBytes = 128 * 1024; // 128KB
+  private readonly edlInlineThresholdBytes = 8 * 1024; // 8KB threshold keeps large payloads file-based
   private edlTempDirectory: string | null = null;
 
   constructor(opts: JuceClientOptions = {}) {
@@ -438,102 +435,25 @@ export class JuceClient implements Transport {
     return new Promise((resolve, reject) => {
       if (!this.child) {
         this.emitError('Attempted to send command but JUCE process is null');
-        reject(false);
+        reject(new Error('JUCE process not started'));
         return;
       }
 
-      // Check if child process is still alive
       if (this.child.killed || this.child.exitCode !== null) {
         this.emitError('Attempted to send command but JUCE process has exited');
-        reject(false);
+        reject(new Error('JUCE process exited'));
         return;
       }
 
-      // Check if stdin is available and writable
       if (!this.child.stdin || this.child.stdin.destroyed || !this.child.stdin.writable) {
         this.emitError('Attempted to send command but JUCE stdin is not writable');
-        reject(false);
+        reject(new Error('stdin not available'));
         return;
       }
 
-      // Try immediate send first
-      this.attemptSend(cmd, resolve, reject, 0);
+      this.commandQueue.push({ command: cmd, resolve, reject });
+      this.processCommandQueue();
     });
-  }
-
-  private attemptSend(cmd: JuceCommand, resolve: (result: boolean) => void, reject: (error: any) => void, retries: number) {
-    if (!this.child?.stdin) {
-      reject(new Error('stdin not available'));
-      return;
-    }
-
-    try {
-      const payload = JSON.stringify(cmd) + '\n';
-      const success = this.child.stdin.write(payload, 'utf8');
-
-      if (success) {
-        // Write successful
-        console.log(`[JUCE] ✅ Command sent successfully: ${cmd.type}`);
-        resolve(true);
-      } else {
-        // Buffer is full, handle backpressure
-        console.warn(`[JUCE] ⚠️ Buffer full for command: ${cmd.type}, handling backpressure...`);
-        this.handleBackpressure(cmd, resolve, reject, retries);
-      }
-    } catch (e) {
-      if (retries < this.maxRetries) {
-        console.warn(`[JUCE] ⚠️ Send failed (attempt ${retries + 1}/${this.maxRetries}), retrying: ${e}`);
-        setTimeout(() => {
-          this.attemptSend(cmd, resolve, reject, retries + 1);
-        }, this.retryDelay * Math.pow(2, retries)); // Exponential backoff
-      } else {
-        console.error(`[JUCE] ❌ Send failed after ${this.maxRetries} retries: ${e}`);
-        this.emitError(`Failed to write to JUCE stdin after ${this.maxRetries} retries: ${e}`);
-        reject(e);
-      }
-    }
-  }
-
-  private handleBackpressure(cmd: JuceCommand, resolve: (result: boolean) => void, reject: (error: any) => void, retries: number) {
-    if (!this.child?.stdin) {
-      reject(new Error('stdin not available'));
-      return;
-    }
-
-    if (retries >= this.maxRetries) {
-      console.error(`[JUCE] ❌ Buffer full after ${this.maxRetries} retries, giving up`);
-      this.emitError('Failed to write to JUCE stdin: buffer persistently full');
-      reject(new Error('Buffer persistently full'));
-      return;
-    }
-
-    // Queue command for retry when drain fires
-    this.commandQueue.push({ command: cmd, resolve, reject, retries: retries + 1 });
-
-    if (!this.waitingForDrain) {
-      this.waitingForDrain = true;
-      console.log(`[JUCE] 🔄 Waiting for drain event to process ${this.commandQueue.length} queued commands...`);
-
-      // Set up drain listener
-      const onDrain = () => {
-        this.child?.stdin?.off('drain', onDrain);
-        this.waitingForDrain = false;
-        console.log(`[JUCE] ✅ Drain event received, processing ${this.commandQueue.length} queued commands`);
-        this.processCommandQueue();
-      };
-
-      this.child.stdin.once('drain', onDrain);
-
-      // Fallback timeout in case drain never fires
-      setTimeout(() => {
-        if (this.waitingForDrain) {
-          this.child?.stdin?.off('drain', onDrain);
-          this.waitingForDrain = false;
-          console.warn(`[JUCE] ⚠️ Drain timeout, force-processing ${this.commandQueue.length} queued commands`);
-          this.processCommandQueue();
-        }
-      }, 1000);
-    }
   }
 
   private processCommandQueue() {
@@ -541,24 +461,67 @@ export class JuceClient implements Transport {
       return;
     }
 
-    this.isProcessingQueue = true;
-    console.log(`[JUCE] 🔄 Processing ${this.commandQueue.length} queued commands...`);
+    if (!this.child?.stdin) {
+      while (this.commandQueue.length > 0) {
+        const pending = this.commandQueue.shift();
+        pending?.reject(new Error('stdin not available'));
+      }
+      return;
+    }
 
-    const processNext = () => {
-      if (this.commandQueue.length === 0) {
-        this.isProcessingQueue = false;
-        console.log(`[JUCE] ✅ Queue processing complete`);
+    this.isProcessingQueue = true;
+    const { command, resolve, reject } = this.commandQueue.shift()!;
+
+    const stdin = this.child.stdin;
+    const payload = JSON.stringify(command) + '\n';
+    let settled = false;
+    let drainListener: (() => void) | null = null;
+
+    const finish = (error?: Error) => {
+      if (settled) {
         return;
       }
+      settled = true;
+      stdin.off('error', onError);
+      if (drainListener) {
+        stdin.off('drain', drainListener);
+        drainListener = null;
+      }
 
-      const { command, resolve, reject, retries } = this.commandQueue.shift()!;
-      this.attemptSend(command, resolve, reject, retries);
+      this.isProcessingQueue = false;
 
-      // Small delay between commands to prevent overwhelming the buffer again
-      setTimeout(processNext, 10);
+      if (error) {
+        console.error(`[JUCE] ❌ Failed to write command ${command.type}:`, error);
+        this.emitError(`Failed to write to JUCE stdin: ${error.message || error}`);
+        reject(error);
+      } else {
+        console.log(`[JUCE] ✅ Command sent successfully: ${command.type}`);
+        resolve(true);
+      }
+
+      setTimeout(() => this.processCommandQueue(), 0);
     };
 
-    processNext();
+    const onError = (err: Error) => finish(err);
+    stdin.once('error', onError);
+
+    const writeCallback = (err?: Error | null) => {
+      if (err) {
+        finish(err instanceof Error ? err : new Error(String(err)));
+      }
+    };
+
+    try {
+      const wroteImmediately = stdin.write(payload, 'utf8', writeCallback);
+      if (wroteImmediately) {
+        finish();
+      } else {
+        drainListener = () => finish();
+        stdin.once('drain', drainListener);
+      }
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private async ensureEdlTempDir(): Promise<string> {
