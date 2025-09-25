@@ -15,10 +15,16 @@ export interface AudioManagerCallbacks {
   onClipChange: (clipId: string | null) => void;
 }
 
+export interface JuceAudioManagerOptions {
+  callbacks: AudioManagerCallbacks;
+  projectDirectory?: string;
+}
+
 export class JuceAudioManager {
   private state: AudioAppState;
   private sequencer: SimpleClipSequencer;
   private callbacks: AudioManagerCallbacks;
+  private projectDirectory?: string;
   private transport = (window as any).juceTransport as undefined | {
     load: (id: string, path: string) => Promise<{ success: boolean; error?: string }>;
     updateEdl: (id: string, clips: EdlClip[]) => Promise<{ success: boolean; error?: string }>;
@@ -55,9 +61,19 @@ export class JuceAudioManager {
   private readonly seekEpsilonSec = 0.08;   // acceptable difference to consider seek complete
   private readonly maxSeekReissues = 2;     // maximum reseek attempts
 
-  constructor(callbacks: AudioManagerCallbacks) {
+  constructor(options: JuceAudioManagerOptions | AudioManagerCallbacks) {
     this.state = createInitialState();
-    this.callbacks = callbacks;
+
+    // Handle both old callback-only and new options-based constructors
+    if ('callbacks' in options) {
+      this.callbacks = options.callbacks;
+      this.projectDirectory = options.projectDirectory;
+    } else {
+      // Backward compatibility: treat as callbacks directly
+      this.callbacks = options;
+      this.projectDirectory = undefined;
+    }
+
     this.sequencer = new SimpleClipSequencer([]);
     if (!this.transport) {
       throw new Error('JUCE transport is not available in preload');
@@ -865,6 +881,33 @@ export class JuceAudioManager {
         return decodeURIComponent(u.pathname);
       }
       if (audioUrl.startsWith('/')) return audioUrl; // absolute path
+
+      // Handle relative paths using project directory
+      if (this.projectDirectory && !audioUrl.includes('://')) {
+        // Use Node.js path module via electronAPI
+        const path = (window as any).electronAPI?.path;
+        if (path) {
+          // Get the directory containing the .transcript file
+          const projectDir = path.dirname(this.projectDirectory);
+          // Try multiple candidates for relative path resolution
+          const candidates = [
+            path.join(projectDir, audioUrl), // Direct relative path
+            path.join(projectDir, 'Audio Files', path.basename(audioUrl)), // Common project structure
+            path.join(projectDir, audioUrl.replace(/^Audio Files[\/\\]/, '')) // Remove Audio Files prefix if present
+          ];
+
+          console.log('[JuceAudioManager] Resolving relative path:', {
+            audioUrl,
+            projectDirectory: this.projectDirectory,
+            projectDir,
+            candidates
+          });
+
+          // Return the first candidate - the JUCE client will validate existence
+          return candidates[0];
+        }
+      }
+
       return null;
     } catch {
       return null;

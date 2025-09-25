@@ -41,6 +41,11 @@ export interface AudioCallbacksV2 {
   onError: (error: string) => void;
 }
 
+export interface JuceAudioManagerV2Options {
+  callbacks: AudioCallbacksV2;
+  projectDirectory?: string;
+}
+
 export interface SeekIntent {
   time: number;
   isOriginalTime: boolean;
@@ -78,9 +83,18 @@ export class JuceAudioManagerV2 {
 
   // Track last resolved project directory to resolve relative paths later
   private lastResolvedProjectDir: { base: string; isWindows: boolean } | null = null;
+  private projectDirectory?: string;
 
-  constructor(callbacks: AudioCallbacksV2) {
-    this.callbacks = callbacks;
+  constructor(options: JuceAudioManagerV2Options | AudioCallbacksV2) {
+    // Handle both old callback-only and new options-based constructors
+    if ('callbacks' in options) {
+      this.callbacks = options.callbacks;
+      this.projectDirectory = options.projectDirectory;
+    } else {
+      // Backward compatibility: treat as callbacks directly
+      this.callbacks = options;
+      this.projectDirectory = undefined;
+    }
     this.state = {
       isPlaying: false,
       isLoading: false,
@@ -594,6 +608,28 @@ export class JuceAudioManagerV2 {
         console.warn('🎵 Received relative audio path, attempting to resolve:', audioPath);
 
         const candidates: string[] = [];
+
+        // First try using the projectDirectory if available
+        if (this.projectDirectory) {
+          const path = (window as any).electronAPI?.path;
+          if (path) {
+            // Get the directory containing the .transcript file
+            const projectDir = path.dirname(this.projectDirectory);
+            // Add candidates based on common project structures
+            candidates.push(
+              path.join(projectDir, audioPath), // Direct relative path
+              path.join(projectDir, 'Audio Files', path.basename(audioPath)), // Common project structure
+              path.join(projectDir, audioPath.replace(/^Audio Files[\/\\]/, '')) // Remove Audio Files prefix if present
+            );
+
+            console.log('🎵 JuceAudioManagerV2: Resolving relative path with project directory:', {
+              audioPath,
+              projectDirectory: this.projectDirectory,
+              projectDir,
+              newCandidates: candidates.slice(-3)
+            });
+          }
+        }
 
         const resolvedFromCache = this.resolveRelativeToProject(audioPath);
         if (resolvedFromCache) {
