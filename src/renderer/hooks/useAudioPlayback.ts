@@ -61,8 +61,8 @@ export interface UseAudioPlaybackReturn {
 
 // ==================== Hook Implementation ====================
 
-export function useAudioPlayback(clips: Clip[] = []): UseAudioPlaybackReturn {
-  console.log('🎵 useAudioPlayback: Hook initializing with clips:', clips.length);
+export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string): UseAudioPlaybackReturn {
+  console.log('🎵 useAudioPlayback: Hook initializing with clips:', clips.length, 'projectDirectory:', projectDirectory);
 
   // Load persisted settings
   const getPersistedSettings = () => {
@@ -155,9 +155,11 @@ export function useAudioPlayback(clips: Clip[] = []): UseAudioPlaybackReturn {
   useEffect(() => {
     console.log('🎵 useAudioPlayback: Initializing audio manager...');
 
+    // Dispose existing manager if projectDirectory changed
     if (audioManagerRef.current) {
-      console.log('🎵 useAudioPlayback: Audio manager already exists, skipping initialization');
-      return;
+      console.log('🎵 useAudioPlayback: Disposing existing audio manager due to project directory change');
+      audioManagerRef.current.dispose();
+      audioManagerRef.current = null;
     }
 
     // Check JUCE transport availability
@@ -206,8 +208,11 @@ export function useAudioPlayback(clips: Clip[] = []): UseAudioPlaybackReturn {
     };
 
     try {
-      audioManagerRef.current = new JuceAudioManagerV2(callbacks);
-      console.log('🎵 useAudioPlayback: Audio Manager successfully initialized');
+      audioManagerRef.current = new JuceAudioManagerV2({
+        callbacks,
+        projectDirectory
+      });
+      console.log('🎵 useAudioPlayback: Audio Manager successfully initialized with projectDirectory:', projectDirectory);
     } catch (error) {
       console.error('🎵 useAudioPlayback: Failed to initialize Audio Manager:', error);
       setState(prevState => ({
@@ -223,7 +228,7 @@ export function useAudioPlayback(clips: Clip[] = []): UseAudioPlaybackReturn {
         audioManagerRef.current = null;
       }
     };
-  }, [calculateTotalDuration, findCurrentClipAndSegment]);
+  }, [calculateTotalDuration, findCurrentClipAndSegment, projectDirectory]);
 
   // Update clips when they change
   useEffect(() => {

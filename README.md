@@ -147,15 +147,34 @@ A professional desktop transcription application built with Electron, React, and
 - **Result**: ✅ **Path resolution improved** - relative paths now resolve to absolute paths
 - **Current Status**: ❌ **Audio playback still not functioning** - path resolution fixed but deeper issues remain
 
+**11. useAudioPlayback Project Directory Fix (Attempt 11 - Latest - September 2025)**:
+- **Problem**: useAudioPlayback hook not passing project directory to JuceAudioManagerV2
+- **Root Cause Analysis**: Critical missing parameter in playback hook initialization
+  - useAudioEditor correctly passes projectDirectory to JuceAudioManager
+  - useAudioPlayback creates JuceAudioManagerV2 with only callbacks, missing projectDirectory
+  - JuceAudioManagerV2.projectDirectory remains undefined, path resolution falls back to hardcoded paths
+  - JUCE backend refuses to load non-existent resolved paths, playback never becomes ready
+- **Technical Solution**:
+  - **Hook Signature Update**: Added projectDirectory parameter to useAudioPlayback
+  - **Manager Instantiation Fix**: Pass options object with callbacks and projectDirectory
+  - **Component Integration**: NewUIShellV2 passes currentProjectPath from ProjectContextV2
+  - **Proper Re-initialization**: Added projectDirectory to useEffect dependency array with cleanup
+- **Files**:
+  - `src/renderer/hooks/useAudioPlayback.ts` - Added projectDirectory parameter and proper manager initialization
+  - `src/renderer/components/ui/NewUIShellV2.tsx` - Pass currentProjectPath to useAudioPlayback hook
+- **Result**: ✅ **useAudioPlayback now receives project directory** - path resolution should work in playback hook
+- **Current Status**: ❌ **Audio playback still not functioning** - project directory integration complete but playback remains broken
+
 #### 📊 **Current Operational State (September 2025 - Latest)**
 - ✅ Application launches without crashes
 - ✅ JUCE backend builds and initializes successfully
 - ✅ No segmentation faults or EPIPE errors
 - ✅ Audio loading and file access working properly
 - ✅ **Path resolution system improved** - relative paths now resolve to absolute paths
+- ✅ **useAudioPlayback project directory integration** - both audio hooks now receive project context
 - ❌ **Audio playback still not functioning** - no sound output during transcription
 - ❌ **Position tracking broken** - no position updates or word highlighting
-- ❌ **Complete playback failure** - fundamental audio system issues persist beyond path resolution
+- ❌ **Complete playback failure** - fundamental audio system issues persist beyond path resolution and project integration
 - ✅ **Backend stability maintained** - no crashes, but core audio functionality remains broken
 
 #### 🔍 **Technical Details of Latest Fix**
