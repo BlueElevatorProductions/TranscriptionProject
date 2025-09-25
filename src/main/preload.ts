@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import * as nodePath from 'path';
 import type { JuceEvent, EdlClip } from '../shared/types/transport';
 
 console.log('🔧 PRELOAD SCRIPT LOADING...');
@@ -168,6 +169,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeAudioEditor: () => ipcRenderer.invoke('close-audio-editor'),
   // Audio peaks (dev utility)
   getAudioPeaks: (filePath: string, samplesPerPixel?: number) => ipcRenderer.invoke('audio:peaks', filePath, samplesPerPixel),
+
+  // Minimal path utilities for renderer-safe path resolution
+  path: {
+    join: (...segments: string[]) => nodePath.join(...segments),
+    dirname: (input: string) => nodePath.dirname(input),
+    basename: (input: string) => nodePath.basename(input),
+    resolve: (...segments: string[]) => nodePath.resolve(...segments),
+    isAbsolute: (input: string) => nodePath.isAbsolute(input),
+    normalize: (input: string) => nodePath.normalize(input),
+    sep: nodePath.sep,
+  },
 });
 
 console.log('🔧 PRELOAD SCRIPT LOADED SUCCESSFULLY!');
@@ -231,7 +243,10 @@ export interface ElectronAPI {
   getAudioRecommendation: (analysis: any) => Promise<any>;
   getSmartProjectSettings: (analysis: any) => Promise<any>;
   convertAudio: (inputPath: string, options: any) => Promise<any>;
-  
+
+  // Audio peaks (dev utility)
+  getAudioPeaks: (filePath: string, samplesPerPixel?: number) => Promise<number[]>;
+
   // User preferences management
   loadUserPreferences: () => Promise<any>;
   saveUserPreferences: (preferences: any) => Promise<{success: boolean}>;
@@ -241,6 +256,17 @@ export interface ElectronAPI {
   clipsGet: () => Promise<any[]>;
   clipsSet: (clips: any[]) => Promise<any>;
   onClipsChanged: (callback: (clips: any[]) => void) => void;
+
+  // Minimal path utilities for renderer-safe path resolution
+  path?: {
+    join: (...segments: string[]) => string;
+    dirname: (input: string) => string;
+    basename: (input: string) => string;
+    resolve: (...segments: string[]) => string;
+    isAbsolute: (input: string) => boolean;
+    normalize: (input: string) => string;
+    sep: string;
+  };
 }
 
 declare global {
