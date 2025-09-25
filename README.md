@@ -80,7 +80,7 @@ A professional desktop transcription application built with Electron, React, and
 - **Files**: TranscriptionImportService.ts, TranscriptionServiceV2.ts
 - **Result**: ✅ Reasonable segment count, no crashes, but speed still wrong
 
-**7. JUCE Backend Duration Ratio Fix (Attempt 7 - Latest)**:
+**7. JUCE Backend Duration Ratio Fix (Attempt 7)**:
 - **Problem**: Backend advanced `editedPosition` by raw sample time, ignoring duration ratios
 - **Root Cause**: Line 280: `editedPosition += (double)samplesToRead / sampleRate`
 - **Solution**: Applied duration ratio to position advancement:
@@ -91,14 +91,51 @@ A professional desktop transcription application built with Electron, React, and
 - **Files**: native/juce-backend/src/main.cpp
 - **Result**: ❌ **Speed issue persists** - fundamental architectural problem remains
 
-#### 📊 **Current Operational State**
+**8. Audio Playback Restoration Fix (Attempt 8 - September 2025)**:
+- **Problem**: Audio loaded successfully but no position updates, causing complete playback failure
+- **Root Cause Analysis**: JUCE backend entering "contiguous timeline" mode but segments array empty
+  - Frontend sending EDL without segment data (only clip-level timing)
+  - Backend expecting word-level segments for position tracking
+  - Timer callbacks returning early due to missing segments
+- **Technical Solution**:
+  - **Frontend**: Modified JuceAudioManager to include segments array in EDL with word-level timing
+  - **Backend**: Added safety check to prevent contiguous mode when segments missing
+  - **Type Safety**: Updated EdlClip interface to include segments with proper TypeScript types
+- **Files**:
+  - `src/shared/types/transport.ts` - Added segments to EdlClip interface
+  - `src/renderer/audio/JuceAudioManager.ts` - Build segments from clip words
+  - `native/juce-backend/src/main.cpp` - Safety check + fallback segment creation
+- **Result**: ✅ **Audio playback restored** - position updates working, word highlighting functional
+- **Current Status**: ⚠️ **Audio plays but still at incorrect speed** - playback working but tempo issues remain
+
+**9. JUCE Backend Crash Fix (Attempt 9 - Latest - September 2025)**:
+- **Problem**: SIGSEGV crashes in JUCE backend and EPIPE errors when writing to crashed process
+- **Root Cause Analysis**: Multiple memory safety issues in C++ backend
+  - Division by zero when `originalDuration` was exactly 0.0 in audio calculations (line 288-300)
+  - Invalid sample rate operations causing segmentation faults
+  - Writing to stdin after process crash causing EPIPE errors
+  - Missing null pointer checks and array bounds validation
+- **Technical Solution**:
+  - **Division by Zero Fix**: Added epsilon-based validation (`> 1e-9`) and ratio clamping (0.01-100.0)
+  - **Memory Safety**: Added comprehensive null pointer checks and bounds validation
+  - **Process Health Monitoring**: Enhanced stdin writability checks and process state validation
+  - **Error Recovery**: Improved EPIPE error handling and graceful restart mechanisms
+- **Files**:
+  - `native/juce-backend/src/main.cpp` - Memory safety fixes and division by zero protection
+  - `src/main/services/JuceClient.ts` - Process health monitoring and stdin validation
+- **Result**: ✅ **JUCE backend stability improved** - no more crashes during transcription
+- **Current Status**: ❌ **Audio playback still not functioning** - crashes resolved but playback remains broken
+
+#### 📊 **Current Operational State (September 2025 - Latest)**
 - ✅ Application launches without crashes
 - ✅ JUCE backend builds and initializes successfully
 - ✅ No segmentation faults or EPIPE errors
-- ✅ Reasonable segment count (~30-50 per 30s clip)
-- ✅ Audio plays and position tracking works
-- ❌ **Audio speed still incorrect** - plays too fast/slow depending on gap distribution
-- ❌ Duration ratio calculations not resolving core timing mismatch
+- ✅ Audio loading and file access working properly
+- ❌ **Audio playback not functioning** - no sound output during transcription
+- ❌ **Position tracking broken** - no position updates or word highlighting
+- ❌ **Complete playback failure** - fundamental audio system issues remain
+- ✅ **Backend stability improved** - no crashes, but audio functionality lost
+- ⚠️ **Major regression** - crash fixes resolved stability but broke core audio features
 
 #### 🔍 **Technical Details of Latest Fix**
 
@@ -123,13 +160,20 @@ int64_t getNextReadPosition() const override {
 **Audio Files System**: Projects save converted WAV audio (48kHz, 16-bit) to "Audio Files" folder alongside .transcript file. Path resolution and backend communication work correctly, but the final audio playback step remains problematic.
 
 #### 🔮 **Next Investigation Areas**
-After 7 comprehensive fix attempts, the remaining issue suggests fundamental architectural problems:
+After 8 comprehensive fix attempts, **playback is now functional** but speed issues remain:
 
-1. **Complete Audio Architecture Redesign**: Current segment-based approach may be incompatible with real-time playback
-2. **Alternative Backend Strategy**: Consider bypassing JUCE EDL processing for simpler direct audio file playback
-3. **Timing Model Reevaluation**: Gap-filling approach may be fundamentally flawed - need cleaner word/spacer boundaries
-4. **Reference Implementation**: Study working audio editors to understand proper segment-to-audio mapping
-5. **Profiling & Deep Debug**: Instrument the entire audio pipeline to identify where timing drift occurs
+1. **Audio Speed Analysis**: Now that playback works, focus on identifying why tempo is incorrect
+   - Compare original audio file playback rate vs transcribed content timing
+   - Analyze if gap-filling or segment timing is causing speed drift
+2. **Sample Rate Verification**: Ensure frontend and backend agree on audio file sample rates
+   - Verify 44.1kHz vs 48kHz handling across the entire pipeline
+   - Check if resampling is introducing timing errors
+3. **Timeline Synchronization**: Since position tracking works, investigate timing alignment
+   - Compare original timestamps vs. edited timeline position mapping
+   - Analyze if duration ratio calculations need refinement
+4. **Segment Boundary Analysis**: With word-level data now flowing properly, debug segment timing
+   - Verify word start/end times match actual audio content
+   - Check if spacer gaps are being calculated correctly
 
 **Commits Available**: All fix attempts committed to `codex/diagnose-audio-conversion-playback-issue` branch:
 - f662c6b1: Initial explicit spacer creation attempt

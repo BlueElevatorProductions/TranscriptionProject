@@ -220,10 +220,14 @@ public:
   void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override {
     bufferToFill.clearActiveBufferRegion();
 
-    if (!reader || segments.empty()) return;
+    if (!reader || segments.empty()) {
+      juceDLog("[JUCE] getNextAudioBlock: reader=" + std::to_string(reader != nullptr) +
+               ", segments.size=" + std::to_string(segments.size()));
+      return;
+    }
 
     // Safety check for sample rate before calculations
-    if (sampleRate <= 0.0) {
+    if (sampleRate <= 1.0) {  // Must be at least 1Hz
       juceDLog("[JUCE] ERROR: Invalid sample rate in getNextAudioBlock: " + std::to_string(sampleRate));
       return;
     }
@@ -232,6 +236,12 @@ public:
     int samplesWritten = 0;
     
     while (samplesNeeded > 0 && currentSegmentIndex < segments.size()) {
+      // Bounds check for segment access
+      if (currentSegmentIndex >= segments.size()) {
+        juceDLog("[JUCE] ERROR: currentSegmentIndex out of bounds: " + std::to_string(currentSegmentIndex) +
+                 "/" + std::to_string(segments.size()));
+        break;
+      }
       const auto& segment = segments[currentSegmentIndex];
       
       // Calculate positions in samples
@@ -284,9 +294,11 @@ public:
         double originalDuration = segment.hasOriginal() ?
           (segment.originalEnd - segment.originalStart) : segment.dur;
 
-        // Handle potential division by zero
-        if (originalDuration > 0.0) {
+        // Handle potential division by zero and invalid durations
+        if (originalDuration > 1e-9 && editedDuration > 1e-9) {  // Use epsilon instead of 0.0
           double durationRatio = editedDuration / originalDuration;
+          // Clamp ratio to reasonable bounds to prevent overflow
+          durationRatio = std::max(0.01, std::min(100.0, durationRatio));
           editedPosition += originalTimeAdvanced * durationRatio;
 
           // Log ratio-based advancement for debugging
@@ -296,7 +308,9 @@ public:
         } else {
           // Fallback to original method if duration is invalid
           editedPosition += originalTimeAdvanced;
-          juceDLog("[JUCE] Position advanced (fallback): " + std::to_string(originalTimeAdvanced) + "s");
+          juceDLog("[JUCE] Position advanced (fallback): " + std::to_string(originalTimeAdvanced) +
+                   "s, originalDur=" + std::to_string(originalDuration) +
+                   ", editedDur=" + std::to_string(editedDuration) + "s");
         }
       }
       
@@ -830,6 +844,13 @@ void Backend::handleStandardTimelinePlayback() {
 void Backend::handleContiguousTimelinePlayback() {
   double pos = transportSource.getCurrentPosition(); // original audio time
 
+  // Safety check for segments
+  if (segments.empty()) {
+    juceDLog("[JUCE] CONTIGUOUS: No segments available");
+    endPlayback();
+    return;
+  }
+
   if (!contiguousInitialized && segments.size() > 0 && segments[0].hasOriginal()) {
     // Initialize to the current edited position's corresponding original time,
     // to respect any user seek that happened just before playback.
@@ -848,9 +869,16 @@ void Backend::handleContiguousTimelinePlayback() {
   // Find which segment we're currently playing (by original position)
   int segIdx = -1;
   for (size_t i = 0; i < segments.size(); i++) {
-    if (segments[i].hasOriginal() &&
-        pos >= segments[i].originalStart &&
-        pos < segments[i].originalEnd) {
+    // Bounds check before accessing segment
+    if (i >= segments.size()) {
+      juceDLog("[JUCE] CONTIGUOUS: Segment index out of bounds: " + std::to_string(i));
+      break;
+    }
+
+    const auto& seg = segments[i];
+    if (seg.hasOriginal() &&
+        pos >= seg.originalStart &&
+        pos < seg.originalEnd) {
       segIdx = i;
       break;
     }
