@@ -610,25 +610,26 @@ export class JuceAudioManagerV2 {
         const candidates: string[] = [];
 
         // First try using the projectDirectory if available
-        if (this.projectDirectory) {
-          const path = (window as any).electronAPI?.path;
-          if (path) {
-            // Get the directory containing the .transcript file
-            const projectDir = path.dirname(this.projectDirectory);
-            // Add candidates based on common project structures
-            candidates.push(
-              path.join(projectDir, audioPath), // Direct relative path
-              path.join(projectDir, 'Audio Files', path.basename(audioPath)), // Common project structure
-              path.join(projectDir, audioPath.replace(/^Audio Files[\/\\]/, '')) // Remove Audio Files prefix if present
-            );
+        const pathApi = (window as any).electronAPI?.path;
+        if (this.projectDirectory && pathApi) {
+          const projectDir = pathApi.dirname(this.projectDirectory);
+          const sanitizedRelative = audioPath.replace(/^Audio Files[\/\\]/i, '').replace(/^[./\\]+/, '');
+          const audioFileName = pathApi.basename(audioPath);
 
-            console.log('🎵 JuceAudioManagerV2: Resolving relative path with project directory:', {
-              audioPath,
-              projectDirectory: this.projectDirectory,
-              projectDir,
-              newCandidates: candidates.slice(-3)
-            });
-          }
+          const projectCandidates = [
+            pathApi.join(projectDir, audioPath),
+            pathApi.join(projectDir, sanitizedRelative),
+            pathApi.join(projectDir, 'Audio Files', audioFileName)
+          ].map(candidate => pathApi.normalize(candidate));
+
+          candidates.push(...projectCandidates);
+
+          console.log('🎵 JuceAudioManagerV2: Resolving relative path with project directory:', {
+            audioPath,
+            projectDirectory: this.projectDirectory,
+            projectDir,
+            projectCandidates
+          });
         }
 
         const resolvedFromCache = this.resolveRelativeToProject(audioPath);
