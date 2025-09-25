@@ -5,7 +5,7 @@
  * playback state and controls across all modes (Listen, Edit Text, Edit Audio).
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { JuceAudioManagerV2, AudioStateV2, AudioCallbacksV2 } from '../audio/JuceAudioManagerV2';
 import { Clip } from '../../shared/types';
 
@@ -253,147 +253,175 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
   }, [clips]);
 
   // Control functions
-  const controls: PlaybackControls = {
-    play: useCallback(async () => {
-      if (!audioManagerRef.current) {
-        throw new Error('Audio manager not initialized');
-      }
-      await audioManagerRef.current.play();
-    }, []),
+  const play = useCallback(async () => {
+    if (!audioManagerRef.current) {
+      throw new Error('Audio manager not initialized');
+    }
+    await audioManagerRef.current.play();
+  }, []);
 
-    pause: useCallback(async () => {
-      if (!audioManagerRef.current) {
-        throw new Error('Audio manager not initialized');
-      }
+  const pause = useCallback(async () => {
+    if (!audioManagerRef.current) {
+      throw new Error('Audio manager not initialized');
+    }
+    await audioManagerRef.current.pause();
+  }, []);
+
+  const toggle = useCallback(async () => {
+    if (!audioManagerRef.current) {
+      console.warn('🎵 Cannot toggle playback: Audio manager not initialized');
+      throw new Error('Audio manager not initialized');
+    }
+    if (!state.isReady) {
+      console.warn('🎵 Cannot toggle playback: Audio not ready');
+      throw new Error('Audio not ready for playback');
+    }
+    console.log('🎵 Toggling playback:', state.isPlaying ? 'pause' : 'play');
+    if (state.isPlaying) {
       await audioManagerRef.current.pause();
-    }, []),
+    } else {
+      await audioManagerRef.current.play();
+    }
+  }, [state.isPlaying, state.isReady]);
 
-    toggle: useCallback(async () => {
-      if (!audioManagerRef.current) {
-        console.warn('🎵 Cannot toggle playback: Audio manager not initialized');
-        throw new Error('Audio manager not initialized');
-      }
-      if (!state.isReady) {
-        console.warn('🎵 Cannot toggle playback: Audio not ready');
-        throw new Error('Audio not ready for playback');
-      }
-      console.log('🎵 Toggling playback:', state.isPlaying ? 'pause' : 'play');
-      if (state.isPlaying) {
-        await audioManagerRef.current.pause();
-      } else {
-        await audioManagerRef.current.play();
-      }
-    }, [state.isPlaying, state.isReady]),
+  const seek = useCallback(async (time: number, isOriginalTime: boolean = false) => {
+    if (!audioManagerRef.current) {
+      throw new Error('Audio manager not initialized');
+    }
+    await audioManagerRef.current.seek(time, isOriginalTime);
+  }, []);
 
-    seek: useCallback(async (time: number, isOriginalTime: boolean = false) => {
-      if (!audioManagerRef.current) {
-        throw new Error('Audio manager not initialized');
-      }
-      await audioManagerRef.current.seek(time, isOriginalTime);
-    }, []),
+  const setVolume = useCallback(async (volume: number) => {
+    if (!audioManagerRef.current) {
+      throw new Error('Audio manager not initialized');
+    }
+    await audioManagerRef.current.setVolume(volume);
+  }, []);
 
-    setVolume: useCallback(async (volume: number) => {
-      if (!audioManagerRef.current) {
-        throw new Error('Audio manager not initialized');
-      }
-      await audioManagerRef.current.setVolume(volume);
-    }, []),
+  const setPlaybackRate = useCallback(async (rate: number) => {
+    if (!audioManagerRef.current) {
+      throw new Error('Audio manager not initialized');
+    }
+    await audioManagerRef.current.setPlaybackRate(rate);
+  }, []);
 
-    setPlaybackRate: useCallback(async (rate: number) => {
-      if (!audioManagerRef.current) {
-        throw new Error('Audio manager not initialized');
-      }
-      await audioManagerRef.current.setPlaybackRate(rate);
-    }, []),
+  const skipToClipStart = useCallback(async () => {
+    if (!state.currentClipId || !clipsRef.current || !audioManagerRef.current) return;
 
-    skipToClipStart: useCallback(async () => {
-      if (!state.currentClipId || !clipsRef.current || !audioManagerRef.current) return;
+    const currentClip = clipsRef.current.find(clip => clip.id === state.currentClipId);
+    if (currentClip) {
+      await audioManagerRef.current.seek(currentClip.startTime);
+    }
+  }, [state.currentClipId]);
 
-      const currentClip = clipsRef.current.find(clip => clip.id === state.currentClipId);
-      if (currentClip) {
-        await audioManagerRef.current.seek(currentClip.startTime);
-      }
-    }, [state.currentClipId]),
+  const skipToClipEnd = useCallback(async () => {
+    if (!state.currentClipId || !clipsRef.current || !audioManagerRef.current) return;
 
-    skipToClipEnd: useCallback(async () => {
-      if (!state.currentClipId || !clipsRef.current || !audioManagerRef.current) return;
+    const currentClip = clipsRef.current.find(clip => clip.id === state.currentClipId);
+    if (currentClip) {
+      await audioManagerRef.current.seek(currentClip.endTime);
+    }
+  }, [state.currentClipId]);
 
-      const currentClip = clipsRef.current.find(clip => clip.id === state.currentClipId);
-      if (currentClip) {
-        await audioManagerRef.current.seek(currentClip.endTime);
-      }
-    }, [state.currentClipId]),
+  const seekToClip = useCallback(async (clipId: string) => {
+    if (!audioManagerRef.current) return;
 
-    seekToClip: useCallback(async (clipId: string) => {
-      if (!audioManagerRef.current) return;
+    const clip = clipsRef.current.find(c => c.id === clipId);
+    if (clip) {
+      await audioManagerRef.current.seek(clip.startTime);
+    }
+  }, []);
 
-      const clip = clipsRef.current.find(c => c.id === clipId);
-      if (clip) {
-        await audioManagerRef.current.seek(clip.startTime);
-      }
-    }, []),
+  const loadAudio = useCallback(async (audioPath: string) => {
+    if (!audioManagerRef.current) {
+      throw new Error('Audio manager not initialized');
+    }
 
-    loadAudio: useCallback(async (audioPath: string) => {
-      if (!audioManagerRef.current) {
-        throw new Error('Audio manager not initialized');
-      }
+    setState(prevState => ({
+      ...prevState,
+      isLoading: true,
+      error: null
+    }));
 
+    try {
+      await audioManagerRef.current.initialize(audioPath);
+      console.log('🎵 Audio loaded:', audioPath);
+    } catch (error) {
+      console.error('Failed to load audio:', error);
       setState(prevState => ({
         ...prevState,
-        isLoading: true,
-        error: null
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false
       }));
+      throw error;
+    }
+  }, []);
 
-      try {
-        await audioManagerRef.current.initialize(audioPath);
-        console.log('🎵 Audio loaded:', audioPath);
-      } catch (error) {
-        console.error('Failed to load audio:', error);
-        setState(prevState => ({
-          ...prevState,
-          error: error instanceof Error ? error.message : String(error),
-          isLoading: false
-        }));
-        throw error;
-      }
-    }, []),
+  const updateClipsControl = useCallback(async (newClips: Clip[]) => {
+    if (!audioManagerRef.current) return;
 
-    updateClips: useCallback(async (newClips: Clip[]) => {
-      if (!audioManagerRef.current) return;
+    try {
+      await audioManagerRef.current.updateClips(newClips);
+      console.log('🎵 Clips updated:', newClips.length);
+    } catch (error) {
+      console.error('Failed to update clips:', error);
+      setState(prevState => ({
+        ...prevState,
+        error: error instanceof Error ? error.message : String(error)
+      }));
+      throw error;
+    }
+  }, []);
 
-      try {
-        await audioManagerRef.current.updateClips(newClips);
-        console.log('🎵 Clips updated:', newClips.length);
-      } catch (error) {
-        console.error('Failed to update clips:', error);
-        setState(prevState => ({
-          ...prevState,
-          error: error instanceof Error ? error.message : String(error)
-        }));
-        throw error;
-      }
-    }, []),
+  const dispose = useCallback(() => {
+    if (audioManagerRef.current) {
+      audioManagerRef.current.dispose();
+      audioManagerRef.current = null;
+      setState({
+        isPlaying: false,
+        isLoading: false,
+        currentTime: 0,
+        originalTime: 0,
+        duration: 0,
+        sampleRate: null,
+        channels: null,
+        volume: 1.0,
+        playbackRate: 1.0,
+        currentClipId: null,
+        currentSegmentIndex: null,
+        isReady: false,
+        error: null
+      });
+    }
+  }, []);
 
-    dispose: useCallback(() => {
-      if (audioManagerRef.current) {
-        audioManagerRef.current.dispose();
-        audioManagerRef.current = null;
-        setState({
-          isPlaying: false,
-          isLoading: false,
-          currentTime: 0,
-          originalTime: 0,
-          duration: 0,
-          volume: 1.0,
-          playbackRate: 1.0,
-          currentClipId: null,
-          currentSegmentIndex: null,
-          isReady: false,
-          error: null
-        });
-      }
-    }, [])
-  };
+  const controls = useMemo<PlaybackControls>(() => ({
+    play,
+    pause,
+    toggle,
+    seek,
+    setVolume,
+    setPlaybackRate,
+    skipToClipStart,
+    skipToClipEnd,
+    seekToClip,
+    loadAudio,
+    updateClips: updateClipsControl,
+    dispose
+  }), [
+    play,
+    pause,
+    toggle,
+    seek,
+    setVolume,
+    setPlaybackRate,
+    skipToClipStart,
+    skipToClipEnd,
+    seekToClip,
+    loadAudio,
+    updateClipsControl,
+    dispose
+  ]);
 
   return {
     state,
