@@ -824,22 +824,35 @@ export class JuceAudioManager {
       const segments = (() => {
         if (Array.isArray((clip as any).segments) && (clip as any).segments.length > 0) {
           return (clip as any).segments.map((segment: any) => {
+            const startSec = Number(segment.start) || 0;
+            const endSec = Number(segment.end);
+            const safeEnd = Number.isFinite(endSec) ? endSec : startSec;
+            const fallbackOriginalStart = clip.startTime + startSec;
+            const fallbackOriginalEnd = clip.startTime + safeEnd;
+
             if (segment.type === 'word') {
-              const originalStart = segment.originalStart ?? clip.startTime + segment.start;
-              const originalEnd = segment.originalEnd ?? clip.startTime + segment.end;
+              const originalStart = Number.isFinite(segment.originalStart)
+                ? segment.originalStart
+                : fallbackOriginalStart;
+              const originalEnd = Number.isFinite(segment.originalEnd)
+                ? segment.originalEnd
+                : fallbackOriginalEnd;
               return {
                 type: 'word' as const,
-                startSec: segment.start,
-                endSec: segment.end,
+                startSec,
+                endSec: safeEnd,
                 text: segment.text,
                 originalStartSec: originalStart,
                 originalEndSec: originalEnd,
               };
             }
+
             return {
               type: 'spacer' as const,
-              startSec: segment.start,
-              endSec: segment.end,
+              startSec,
+              endSec: safeEnd,
+              originalStartSec: fallbackOriginalStart,
+              originalEndSec: fallbackOriginalEnd,
             };
           });
         }

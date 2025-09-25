@@ -15,8 +15,7 @@
 import {
   Clip,
   Segment,
-  WordSegment,
-  SpacerSegment
+  WordSegment
 } from '../../shared/types';
 
 // ==================== EDL Types ====================
@@ -148,7 +147,7 @@ export class EDLBuilderService {
 
     for (const clip of clips) {
       // Convert clip segments to EDL segments
-      const edlSegments = this.convertSegmentsToEdl(clip.segments);
+      const edlSegments = this.convertSegmentsToEdl(clip);
 
       // Build segment boundaries for binary search
       const segmentBoundaries = edlSegments.map(seg => seg.startSec);
@@ -183,19 +182,32 @@ export class EDLBuilderService {
   /**
    * Convert clip segments to EDL format
    */
-  private static convertSegmentsToEdl(segments: Segment[]): EdlSegment[] {
-    return segments.map(segment => {
+  private static convertSegmentsToEdl(clip: Clip): EdlSegment[] {
+    return clip.segments.map(segment => {
+      const startSec = Number(segment.start) || 0;
+      const endSecRaw = Number(segment.end);
+      const endSec = Number.isFinite(endSecRaw) ? endSecRaw : startSec;
+      const fallbackOriginalStart = clip.startTime + startSec;
+      const fallbackOriginalEnd = clip.startTime + endSec;
+
       const edlSegment: EdlSegment = {
         type: segment.type,
-        startSec: segment.start,
-        endSec: segment.end
+        startSec,
+        endSec
       };
 
       if (segment.type === 'word') {
         const wordSegment = segment as WordSegment;
         edlSegment.text = wordSegment.text;
-        edlSegment.originalStartSec = wordSegment.originalStart;
-        edlSegment.originalEndSec = wordSegment.originalEnd;
+        edlSegment.originalStartSec = Number.isFinite(wordSegment.originalStart)
+          ? wordSegment.originalStart
+          : fallbackOriginalStart;
+        edlSegment.originalEndSec = Number.isFinite(wordSegment.originalEnd)
+          ? wordSegment.originalEnd
+          : fallbackOriginalEnd;
+      } else {
+        edlSegment.originalStartSec = fallbackOriginalStart;
+        edlSegment.originalEndSec = fallbackOriginalEnd;
       }
 
       return edlSegment;
