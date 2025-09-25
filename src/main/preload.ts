@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import path from 'path';
 import type { JuceEvent, EdlClip } from '../shared/types/transport';
 
 console.log('🔧 PRELOAD SCRIPT LOADING...');
@@ -76,6 +77,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveApiKeys: (apiKeys: { [service: string]: string }) => 
     ipcRenderer.invoke('save-api-keys', apiKeys),
   getApiKeys: () => ipcRenderer.invoke('get-api-keys'),
+
+  // Minimal path helpers exposed for renderer-side path resolution
+  path: {
+    join: (...segments: string[]) => path.join(...segments),
+    dirname: (target: string) => path.dirname(target),
+    basename: (target: string) => path.basename(target),
+    resolve: (...segments: string[]) => path.resolve(...segments),
+    normalize: (target: string) => path.normalize(target),
+    isAbsolute: (target: string) => path.isAbsolute(target),
+    sep: path.sep,
+    delimiter: path.delimiter,
+  },
 
   // Project file management (legacy)
   saveProjectLegacy: (projectData: any, savePath: string, options?: any) => 
@@ -202,6 +215,16 @@ export interface ElectronAPI {
   readAudioFile: (filePath: string) => Promise<ArrayBuffer>;
   saveApiKeys: (apiKeys: { [service: string]: string }) => Promise<{success: boolean; error?: string}>;
   getApiKeys: () => Promise<{ [service: string]: string }>;
+  path: {
+    join: (...paths: string[]) => string;
+    dirname: (target: string) => string;
+    basename: (target: string) => string;
+    resolve: (...paths: string[]) => string;
+    normalize: (target: string) => string;
+    isAbsolute: (target: string) => boolean;
+    sep: string;
+    delimiter: string;
+  };
   saveProjectLegacy: (projectData: any, savePath: string, options?: any) => Promise<{success: boolean; path?: string; error?: string}>;
   loadProjectLegacy: (projectPath: string) => Promise<{success: boolean; project?: any; error?: string}>;
   showSaveProjectDialog: (options?: any) => Promise<{success: boolean; canceled?: boolean; filePath?: string; error?: string}>;
