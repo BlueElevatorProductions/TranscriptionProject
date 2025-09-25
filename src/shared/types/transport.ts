@@ -12,6 +12,15 @@ export interface EdlClip {
   // For reordered clips with contiguous timeline, include original audio positions
   originalStartSec?: number; // original audio file position
   originalEndSec?: number;   // original audio file position
+  // Segments array for JUCE backend word-level playback
+  segments?: Array<{
+    type: 'word' | 'spacer';
+    startSec: number; // relative to clip start
+    endSec: number;   // relative to clip start
+    text?: string;    // word text (empty for spacers)
+    originalStartSec?: number; // original audio file position
+    originalEndSec?: number;   // original audio file position
+  }>;
 }
 
 // Commands sent to the JUCE backend (JSON lines over stdio)

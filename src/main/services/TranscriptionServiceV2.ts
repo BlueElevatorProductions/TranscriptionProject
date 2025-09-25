@@ -361,7 +361,9 @@ export class TranscriptionServiceV2 {
   }
 
   /**
-   * Post-process segments to ensure perfect coverage and no overlaps
+   * Post-process segments to ensure perfect coverage with ratio-preserving gap handling
+   * Creates spacer segments for large gaps (≥1s) and extends words for small gaps
+   * Preserves timing ratios to prevent audio playback speed issues
    */
   private static postProcessSegments(segments: Segment[]): Segment[] {
     if (segments.length === 0) return segments;
@@ -375,26 +377,52 @@ export class TranscriptionServiceV2 {
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
 
-      // Adjust start time to ensure continuity
+      // Handle gaps with ratio-preserving extension for small gaps
       if (segment.start > expectedTime) {
-        // Create small gap filler if needed (only for very small gaps)
         const gap = segment.start - expectedTime;
-        if (gap < SPACER_THRESHOLD_SECONDS && gap > 0.001) {
-          // Fill small gap by extending previous segment or adjusting current start
-          if (processedSegments.length > 0) {
-            const lastSegment = processedSegments[processedSegments.length - 1];
-            if (lastSegment.type === 'word') {
-              (lastSegment as WordSegment).end = segment.start;
+        if (gap >= SPACER_THRESHOLD_SECONDS) {
+          // Create explicit spacer segment for large gaps (≥1s)
+          const spacerSegment: SpacerSegment = {
+            id: `spacer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'spacer',
+            start: expectedTime,
+            end: segment.start,
+            duration: gap,
+            label: `${gap.toFixed(1)}s`
+          };
+          processedSegments.push(spacerSegment);
+        } else if (gap > 0.001 && processedSegments.length > 0) {
+          // Small gap - extend previous segment with proportional original timing
+          const lastSegment = processedSegments[processedSegments.length - 1];
+          if (lastSegment.type === 'word') {
+            const wordSegment = lastSegment as WordSegment;
+
+            // Only apply ratio-preserving logic if we have original timing data
+            if (wordSegment.originalStart !== undefined && wordSegment.originalEnd !== undefined) {
+              // Calculate proportional scaling to maintain timing ratio
+              const originalDuration = wordSegment.originalEnd - wordSegment.originalStart;
+              const currentEditedDuration = wordSegment.end - wordSegment.start;
+              const newEditedDuration = segment.start - wordSegment.start;
+
+              // Scale the original duration proportionally
+              const scaleFactor = newEditedDuration / currentEditedDuration;
+              const newOriginalEnd = wordSegment.originalStart + (originalDuration * scaleFactor);
+
+              processedSegments[processedSegments.length - 1] = {
+                ...wordSegment,
+                end: segment.start,
+                originalEnd: newOriginalEnd
+              };
+            } else {
+              // Fallback: simple extension without original timing
+              processedSegments[processedSegments.length - 1] = {
+                ...wordSegment,
+                end: segment.start
+              };
             }
-          } else {
-            // Adjust current segment to start at expected time
-            const adjustedSegment = { ...segment };
-            adjustedSegment.start = expectedTime;
-            processedSegments.push(adjustedSegment);
-            expectedTime = adjustedSegment.end;
-            continue;
           }
         }
+        expectedTime = segment.start;
       } else if (segment.start < expectedTime) {
         // Overlap detected - adjust start time
         const adjustedSegment = { ...segment };

@@ -81,6 +81,7 @@ export const AudioSystemIntegration: React.FC<AudioSystemIntegrationProps> = ({
     onStateChange: (newState) => {
       if (AUDIO_TRACE) console.log('[AudioSystemIntegration] Audio state changed:', newState);
     },
+    projectDirectory: projectState.currentProjectPath
   });
 
   // Removed normalizeClipsForAudio to avoid unintended structural changes

@@ -41,6 +41,11 @@ export interface AudioCallbacksV2 {
   onError: (error: string) => void;
 }
 
+export interface JuceAudioManagerV2Options {
+  callbacks: AudioCallbacksV2;
+  projectDirectory?: string;
+}
+
 export interface SeekIntent {
   time: number;
   isOriginalTime: boolean;
@@ -76,8 +81,20 @@ export class JuceAudioManagerV2 {
   private errorCooldown: number = 5000; // 5 second cooldown after errors
   private lastErrorTime: number = 0;
 
-  constructor(callbacks: AudioCallbacksV2) {
-    this.callbacks = callbacks;
+  // Track last resolved project directory to resolve relative paths later
+  private lastResolvedProjectDir: { base: string; isWindows: boolean } | null = null;
+  private projectDirectory?: string;
+
+  constructor(options: JuceAudioManagerV2Options | AudioCallbacksV2) {
+    // Handle both old callback-only and new options-based constructors
+    if ('callbacks' in options) {
+      this.callbacks = options.callbacks;
+      this.projectDirectory = options.projectDirectory;
+    } else {
+      // Backward compatibility: treat as callbacks directly
+      this.callbacks = options;
+      this.projectDirectory = undefined;
+    }
     this.state = {
       isPlaying: false,
       isLoading: false,
@@ -124,7 +141,7 @@ export class JuceAudioManagerV2 {
 
     try {
       // Resolve the audio path to an absolute path that JUCE can use
-      const resolvedPath = this.resolveAudioPath(audioPath);
+      const resolvedPath = await this.resolveAudioPath(audioPath);
       if (!resolvedPath) {
         throw new Error(`Unable to resolve audio path: ${audioPath}`);
       }
@@ -555,17 +572,32 @@ export class JuceAudioManagerV2 {
   /**
    * Resolve audio path to absolute path that JUCE can use
    */
-  private resolveAudioPath(audioPath: string): string | null {
+  private async resolveAudioPath(audioPath: string): Promise<string | null> {
     try {
+      if (!audioPath || typeof audioPath !== 'string') {
+        return null;
+      }
+
       // Handle file:// URLs
       if (audioPath.startsWith('file://')) {
         const url = new URL(audioPath);
-        return decodeURIComponent(url.pathname);
+        let resolvedPath = decodeURIComponent(url.pathname);
+
+        // Windows file:// URLs include an extra leading slash before drive letter
+        if (/^\/[a-zA-Z]:/.test(resolvedPath)) {
+          resolvedPath = resolvedPath.substring(1);
+        }
+
+        const normalized = this.normalizePathForPlatform(resolvedPath);
+        this.rememberProjectDir(normalized);
+        return normalized;
       }
 
       // Handle absolute paths
-      if (audioPath.startsWith('/')) {
-        return audioPath;
+      if (this.isAbsolutePath(audioPath)) {
+        const normalized = this.normalizePathForPlatform(audioPath);
+        this.rememberProjectDir(normalized);
+        return normalized;
       }
 
       // Handle relative paths - assume they're in the project directory
@@ -575,21 +607,73 @@ export class JuceAudioManagerV2 {
         // In a real app, this should be resolved relative to the project's audio directory
         console.warn('🎵 Received relative audio path, attempting to resolve:', audioPath);
 
-        // Try common audio directories including the project's "Audio Files" folder
-        const possiblePaths = [
-          // Check in "Audio Files" folder relative to common project directories
-          `/Users/chrismcleod/Development/ClaudeAccess/Project Files/*/Audio Files/${audioPath}`,
-          // Check in working audio directory
+        const candidates: string[] = [];
+
+        // First try using the projectDirectory if available
+        if (this.projectDirectory) {
+          const path = (window as any).electronAPI?.path;
+          if (path) {
+            // Get the directory containing the .transcript file
+            const projectDir = path.dirname(this.projectDirectory);
+            // Add candidates based on common project structures
+            candidates.push(
+              path.join(projectDir, audioPath), // Direct relative path
+              path.join(projectDir, 'Audio Files', path.basename(audioPath)), // Common project structure
+              path.join(projectDir, audioPath.replace(/^Audio Files[\/\\]/, '')) // Remove Audio Files prefix if present
+            );
+
+            console.log('🎵 JuceAudioManagerV2: Resolving relative path with project directory:', {
+              audioPath,
+              projectDirectory: this.projectDirectory,
+              projectDir,
+              newCandidates: candidates.slice(-3)
+            });
+          }
+        }
+
+        const resolvedFromCache = this.resolveRelativeToProject(audioPath);
+        if (resolvedFromCache) {
+          candidates.push(resolvedFromCache);
+        }
+
+        // Legacy fallback locations (maintained for compatibility during migration)
+        candidates.push(
           `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${audioPath}`,
           `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${audioPath}`,
-          // Check in project directory
           `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${audioPath}`,
           `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${audioPath}`,
-          audioPath // fallback to original
-        ];
+        );
 
-        // Return the first path that might exist (we can't check file existence in renderer)
-        return possiblePaths[1]; // Try Working Audio first as that's most likely
+        // Always include the original relative path last as a fallback
+        candidates.push(audioPath);
+
+        const checkFileExists = (window as any).electronAPI?.checkFileExists;
+        for (const candidate of candidates) {
+          const normalizedCandidate = this.normalizePathForPlatform(candidate);
+          if (typeof checkFileExists === 'function') {
+            try {
+              const exists = await checkFileExists(normalizedCandidate);
+              if (exists) {
+                this.rememberProjectDir(normalizedCandidate);
+                return normalizedCandidate;
+              }
+            } catch (error) {
+              console.warn('🎵 Failed to verify path existence for candidate:', normalizedCandidate, error);
+            }
+          } else {
+            // Without a way to verify existence, use the first candidate
+            this.rememberProjectDir(normalizedCandidate);
+            return normalizedCandidate;
+          }
+        }
+
+        if (candidates.length > 0) {
+          const fallback = this.normalizePathForPlatform(candidates[candidates.length - 1]);
+          this.rememberProjectDir(fallback);
+          return fallback;
+        }
+
+        return null;
       }
 
       return null;
@@ -597,6 +681,63 @@ export class JuceAudioManagerV2 {
       console.error('🔥 Error resolving audio path:', err);
       return null;
     }
+  }
+
+  private isAbsolutePath(p: string): boolean {
+    if (!p) return false;
+    return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p) || /^\/\//.test(p);
+  }
+
+  private normalizePathForPlatform(p: string): string {
+    if (!p) return p;
+    const hasWindowsDrive = /^[a-zA-Z]:[\\/]/.test(p);
+    const isUnc = /^\\\\/.test(p) || /^\/\//.test(p);
+
+    if (hasWindowsDrive || isUnc) {
+      return p.replace(/\//g, '\\');
+    }
+
+    return p;
+  }
+
+  private rememberProjectDir(fullPath: string): void {
+    if (!fullPath) return;
+
+    const normalized = fullPath.replace(/\\/g, '/');
+    if (!this.isAbsolutePath(normalized)) {
+      return;
+    }
+    const lower = normalized.toLowerCase();
+    let base = normalized;
+
+    const audioDirIndex = lower.lastIndexOf('/audio files');
+    if (audioDirIndex >= 0) {
+      base = normalized.substring(0, audioDirIndex);
+    } else {
+      const lastSlash = normalized.lastIndexOf('/');
+      if (lastSlash >= 0) {
+        base = normalized.substring(0, lastSlash);
+      }
+    }
+
+    const isWindows = /^[a-zA-Z]:/.test(base);
+    this.lastResolvedProjectDir = { base, isWindows };
+  }
+
+  private resolveRelativeToProject(relativePath: string): string | null {
+    if (!relativePath || !this.lastResolvedProjectDir) {
+      return null;
+    }
+
+    const sanitized = relativePath.replace(/^[./\\]+/, '').replace(/\\/g, '/');
+    const base = this.lastResolvedProjectDir.base;
+    const combined = `${base}/${sanitized}`.replace(/\/+/g, '/');
+
+    if (this.lastResolvedProjectDir.isWindows) {
+      return combined.replace(/\//g, '\\');
+    }
+
+    return combined;
   }
 
   // ==================== Utilities ====================

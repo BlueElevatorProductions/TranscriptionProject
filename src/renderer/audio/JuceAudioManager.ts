@@ -15,10 +15,16 @@ export interface AudioManagerCallbacks {
   onClipChange: (clipId: string | null) => void;
 }
 
+export interface JuceAudioManagerOptions {
+  callbacks: AudioManagerCallbacks;
+  projectDirectory?: string;
+}
+
 export class JuceAudioManager {
   private state: AudioAppState;
   private sequencer: SimpleClipSequencer;
   private callbacks: AudioManagerCallbacks;
+  private projectDirectory?: string;
   private transport = (window as any).juceTransport as undefined | {
     load: (id: string, path: string) => Promise<{ success: boolean; error?: string }>;
     updateEdl: (id: string, clips: EdlClip[]) => Promise<{ success: boolean; error?: string }>;
@@ -55,9 +61,19 @@ export class JuceAudioManager {
   private readonly seekEpsilonSec = 0.08;   // acceptable difference to consider seek complete
   private readonly maxSeekReissues = 2;     // maximum reseek attempts
 
-  constructor(callbacks: AudioManagerCallbacks) {
+  constructor(options: JuceAudioManagerOptions | AudioManagerCallbacks) {
     this.state = createInitialState();
-    this.callbacks = callbacks;
+
+    // Handle both old callback-only and new options-based constructors
+    if ('callbacks' in options) {
+      this.callbacks = options.callbacks;
+      this.projectDirectory = options.projectDirectory;
+    } else {
+      // Backward compatibility: treat as callbacks directly
+      this.callbacks = options;
+      this.projectDirectory = undefined;
+    }
+
     this.sequencer = new SimpleClipSequencer([]);
     if (!this.transport) {
       throw new Error('JUCE transport is not available in preload');
@@ -802,14 +818,27 @@ export class JuceAudioManager {
     const gapCount = ordered.filter((c: any) => c?.type === 'audio-only').length;
 
     const contiguousTimeline = this.calculateContiguousTimeline(ordered);
-    const edl: EdlClip[] = contiguousTimeline.map(({ clip, newStartTime, newEndTime }, idx) => ({
-      id: clip.id,
-      startSec: newStartTime,
-      endSec: newEndTime,
-      originalStartSec: clip.startTime,
-      originalEndSec: clip.endTime,
-      order: idx,
-    }));
+    const edl: EdlClip[] = contiguousTimeline.map(({ clip, newStartTime, newEndTime }, idx) => {
+      // Build segments from clip words for JUCE backend
+      const segments = clip.words?.map((word, wordIdx) => ({
+        type: 'word' as const,
+        startSec: word.start - clip.startTime, // Relative to clip start
+        endSec: word.end - clip.startTime,     // Relative to clip start
+        text: word.text,
+        originalStartSec: word.start,          // Original audio position
+        originalEndSec: word.end,              // Original audio position
+      })) || [];
+
+      return {
+        id: clip.id,
+        startSec: newStartTime,
+        endSec: newEndTime,
+        originalStartSec: clip.startTime,
+        originalEndSec: clip.endTime,
+        order: idx,
+        segments, // Include segments for JUCE backend
+      };
+    });
 
     // Detect reorder: if any segment's originalStartSec decreases vs previous in EDL order
     let reordered = false;
@@ -828,12 +857,15 @@ export class JuceAudioManager {
       console.log('  Contiguous mapping (first 8):');
       contiguousTimeline.slice(0, 8).forEach(({ clip, newStartTime, newEndTime }, i) => {
         const wordCount = clip.words ? clip.words.length : 0;
-        console.log(`    [${i}] ${clip.id.slice(-8)}: Original(${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}s) → Edited(${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}s) [${wordCount} words]`);
+        const segmentCount = edl[i]?.segments?.length || 0;
+        console.log(`    [${i}] ${clip.id.slice(-8)}: Original(${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}s) → Edited(${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}s) [${wordCount} words, ${segmentCount} segments]`);
       });
-      console.log(`[EDL] 📤 Sending EDL to JUCE: ${edl.length} segments (${gapCount} gaps)`);
+      const totalSegments = edl.reduce((sum, clip) => sum + (clip.segments?.length || 0), 0);
+      console.log(`[EDL] 📤 Sending EDL to JUCE: ${edl.length} clips with ${totalSegments} total segments (${gapCount} gaps)`);
       console.log('[EDL] First 5 EDL entries:');
       edl.slice(0, 5).forEach((segment, i) => {
-        console.log(`  [${i}] ${segment.id.slice(-8)}: ${segment.startSec.toFixed(2)}-${segment.endSec.toFixed(2)}s (orig: ${segment.originalStartSec!.toFixed(2)}-${segment.originalEndSec!.toFixed(2)}s)`);
+        const segCount = segment.segments?.length || 0;
+        console.log(`  [${i}] ${segment.id.slice(-8)}: ${segment.startSec.toFixed(2)}-${segment.endSec.toFixed(2)}s (orig: ${segment.originalStartSec!.toFixed(2)}-${segment.originalEndSec!.toFixed(2)}s) [${segCount} segments]`);
       });
     }
 
@@ -849,6 +881,33 @@ export class JuceAudioManager {
         return decodeURIComponent(u.pathname);
       }
       if (audioUrl.startsWith('/')) return audioUrl; // absolute path
+
+      // Handle relative paths using project directory
+      if (this.projectDirectory && !audioUrl.includes('://')) {
+        // Use Node.js path module via electronAPI
+        const path = (window as any).electronAPI?.path;
+        if (path) {
+          // Get the directory containing the .transcript file
+          const projectDir = path.dirname(this.projectDirectory);
+          // Try multiple candidates for relative path resolution
+          const candidates = [
+            path.join(projectDir, audioUrl), // Direct relative path
+            path.join(projectDir, 'Audio Files', path.basename(audioUrl)), // Common project structure
+            path.join(projectDir, audioUrl.replace(/^Audio Files[\/\\]/, '')) // Remove Audio Files prefix if present
+          ];
+
+          console.log('[JuceAudioManager] Resolving relative path:', {
+            audioUrl,
+            projectDirectory: this.projectDirectory,
+            projectDir,
+            candidates
+          });
+
+          // Return the first candidate - the JUCE client will validate existence
+          return candidates[0];
+        }
+      }
+
       return null;
     } catch {
       return null;

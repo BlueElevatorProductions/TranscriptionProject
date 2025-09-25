@@ -6,8 +6,9 @@
  *
  * Key principles:
  * - NEVER modify original word timestamps
- * - Create explicit spacer segments for gaps ≥1s
- * - Build clips with complete segment coverage
+ * - Create explicit spacer CLIPS for large gaps ≥1s (prevents EDL timeline compression)
+ * - Extend segments for small gaps with proportional original timing (preserves speed)
+ * - Build clips with complete segment coverage including inter-clip silences
  * - Maintain original timing data for debugging/recovery
  */
 
@@ -184,14 +185,31 @@ export class TranscriptionImportService {
       const wordSpeaker = word.speaker || 'Unknown';
 
       // Check if we need to start a new clip
+      const hasLargeGap = currentWords.length > 0 &&
+        (word.start - currentWords[currentWords.length - 1].end) >= SPACER_THRESHOLD_SECONDS;
+
       if (currentSpeaker !== wordSpeaker ||
-          (currentWords.length > 0 && (word.start - currentWords[currentWords.length - 1].end) >= SPACER_THRESHOLD_SECONDS) ||
+          hasLargeGap ||
           this.getWordGroupDuration(currentWords) >= MAX_CLIP_DURATION) {
 
         // Finish current clip if we have words
         if (currentWords.length > 0) {
           const clip = this.createClipFromWords(currentWords, clipStartTime, currentSpeaker!, clips.length);
           clips.push(clip);
+
+          // If there's a large gap, create a spacer clip for it
+          if (hasLargeGap) {
+            const lastWord = currentWords[currentWords.length - 1];
+            const gapDuration = word.start - lastWord.end;
+            const spacerClip = this.createSpacerClip(
+              lastWord.end,        // Start at last word's end
+              word.start,          // End at next word's start
+              gapDuration,
+              clips.length
+            );
+            clips.push(spacerClip);
+            console.log(`🔊 Created spacer clip: ${gapDuration.toFixed(3)}s gap between clips`);
+          }
         }
 
         // Start new clip
@@ -246,7 +264,7 @@ export class TranscriptionImportService {
         const gapDuration = nextWord.start - word.end;
 
         if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
-          // Create spacer segment for significant gap
+          // Create spacer segment for significant gap (≥1s)
           // Use clip-relative timing for both start and end
           const spacerStart = wordEnd; // Start right after current word ends (clip-relative)
           const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
@@ -262,12 +280,25 @@ export class TranscriptionImportService {
           segments.push(spacerSegment);
           currentTime = spacerEnd;
         } else if (gapDuration > 0) {
-          // Small gap - extend current word segment to cover it
-          // Note: We're not modifying the original word timing, just the clip-relative segment
+          // Small gap - extend current word segment with proportional original timing
           const nextWordClipRelativeStart = nextWord.start - clipStartTime;
+          const currentSegment = segments[segments.length - 1] as WordSegment;
+
+          // Calculate proportional scaling to maintain timing ratio
+          const originalDuration = currentSegment.originalEnd - currentSegment.originalStart;
+          const currentEditedDuration = currentSegment.end - currentSegment.start;
+          const newEditedDuration = nextWordClipRelativeStart - currentSegment.start;
+
+          // Scale the original duration proportionally
+          const scaleFactor = newEditedDuration / currentEditedDuration;
+          const newOriginalEnd = currentSegment.originalStart + (originalDuration * scaleFactor);
+
+          console.log(`🔧 Extending segment: gap=${gapDuration.toFixed(3)}s, scale=${scaleFactor.toFixed(3)}, origEnd=${currentSegment.originalEnd.toFixed(3)}->${newOriginalEnd.toFixed(3)}`);
+
           segments[segments.length - 1] = {
-            ...segments[segments.length - 1],
-            end: nextWordClipRelativeStart
+            ...currentSegment,
+            end: nextWordClipRelativeStart,
+            originalEnd: newOriginalEnd
           };
           currentTime = nextWordClipRelativeStart;
         }
@@ -313,6 +344,27 @@ export class TranscriptionImportService {
   private static getWordGroupDuration(words: Word[]): number {
     if (words.length === 0) return 0;
     return words[words.length - 1].end - words[0].start;
+  }
+
+  /**
+   * Create a spacer-only clip for large gaps between words
+   */
+  private static createSpacerClip(startTime: number, endTime: number, duration: number, order: number): Clip {
+    const spacerSegment = createSpacerSegment(0, duration, `${duration.toFixed(1)}s`);
+
+    return {
+      id: this.generateId(),
+      speaker: 'Silence',
+      startTime,
+      endTime,
+      duration,
+      segments: [spacerSegment],
+      type: 'transcribed',
+      createdAt: Date.now(),
+      modifiedAt: Date.now(),
+      order,
+      status: 'active'
+    };
   }
 
   private static calculateAverageConfidence(words: Word[]): number {

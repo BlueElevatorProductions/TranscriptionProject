@@ -66,11 +66,15 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
 
   // Audio playback integration
   console.log('🏠 NewUIShellV2: Initializing audio playback hook...');
-  const { state: audioState, controls: audioControls } = useAudioPlayback(projectState.clips);
+  const { state: audioState, controls: audioControls } = useAudioPlayback(
+    projectState.clips,
+    projectState.currentProjectPath
+  );
   console.log('🏠 NewUIShellV2: Audio playback hook initialized, state:', {
     isReady: audioState.isReady,
     isPlaying: audioState.isPlaying,
-    error: audioState.error
+    error: audioState.error,
+    projectPath: projectState.currentProjectPath
   });
 
   // Demo mode for Listen Mode testing

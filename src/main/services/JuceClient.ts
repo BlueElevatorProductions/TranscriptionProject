@@ -146,8 +146,15 @@ export class JuceClient implements Transport {
   }
 
   private async ensureStarted(): Promise<void> {
-    if (this.child && !this.restarting) return;
+    if (this.child && !this.restarting && this.isProcessHealthy()) return;
     await this.startChild();
+  }
+
+  private isProcessHealthy(): boolean {
+    if (!this.child) return false;
+    if (this.child.killed || this.child.exitCode !== null) return false;
+    if (!this.child.stdin || this.child.stdin.destroyed) return false;
+    return true;
   }
 
   private async startChild(): Promise<void> {
@@ -178,7 +185,14 @@ export class JuceClient implements Transport {
       if (text.trim().length > 0) this.emitError(`[JUCE stderr] ${text.trim()}`);
     });
     this.child.on('error', (err) => {
-      this.emitError(`JUCE process error: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.emitError(`JUCE process error: ${errorMsg}`);
+
+      // Handle specific error cases
+      if (errorMsg.includes('EPIPE')) {
+        console.warn('[JUCE] EPIPE error detected - process likely crashed');
+        this.child = null;
+      }
     });
     this.child.on('exit', (code, signal) => {
       this.child = null;
@@ -264,13 +278,29 @@ export class JuceClient implements Transport {
   }
 
   private send(cmd: JuceCommand) {
-    if (!this.child || !this.child.stdin.writable) {
-      this.emitError('Attempted to send command but JUCE process is not available');
+    if (!this.child) {
+      this.emitError('Attempted to send command but JUCE process is null');
       return;
     }
+
+    // Check if child process is still alive
+    if (this.child.killed || this.child.exitCode !== null) {
+      this.emitError('Attempted to send command but JUCE process has exited');
+      return;
+    }
+
+    // Check if stdin is available and writable
+    if (!this.child.stdin || this.child.stdin.destroyed || !this.child.stdin.writable) {
+      this.emitError('Attempted to send command but JUCE stdin is not writable');
+      return;
+    }
+
     try {
       const payload = JSON.stringify(cmd) + '\n';
-      this.child.stdin.write(payload, 'utf8');
+      const success = this.child.stdin.write(payload, 'utf8');
+      if (!success) {
+        this.emitError('Failed to write to JUCE stdin: buffer full');
+      }
     } catch (e) {
       this.emitError(`Failed to write to JUCE stdin: ${e}`);
     }

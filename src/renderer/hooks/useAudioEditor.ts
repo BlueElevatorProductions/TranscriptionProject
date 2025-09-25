@@ -85,6 +85,7 @@ export interface UseAudioEditorOptions {
   onWordHighlight?: (wordId: string | null) => void;
   onClipChange?: (clipId: string | null) => void;
   onStateChange?: (state: AudioEditorState) => void;
+  projectDirectory?: string;
 }
 
 export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEditorState, AudioEditorActions] => {
@@ -186,14 +187,17 @@ export const useAudioEditor = (options: UseAudioEditorOptions = {}): [AudioEdito
     if (!managerRef.current) {
       if (AUDIO_TRACE) console.log('Creating new JuceAudioManager');
       managerRef.current = new JuceAudioManager({
-        onStateChange: stableOnStateChange,
-        onError: stableOnError,
-        onWordHighlight: stableOnWordHighlight,
-        onClipChange: stableOnClipChange,
+        callbacks: {
+          onStateChange: stableOnStateChange,
+          onError: stableOnError,
+          onWordHighlight: stableOnWordHighlight,
+          onClipChange: stableOnClipChange,
+        },
+        projectDirectory: options.projectDirectory
       }) as any;
     }
     return managerRef.current;
-  }, [stableOnStateChange, stableOnError, stableOnWordHighlight, stableOnClipChange]);
+  }, [stableOnStateChange, stableOnError, stableOnWordHighlight, stableOnClipChange, options.projectDirectory]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -30,11 +30,11 @@ A professional desktop transcription application built with Electron, React, and
 - **API Key Integration**: Proper cloud service integration with encrypted key storage
 - **Audio Playback Fixed**: Complete fix for audio path resolution and playback functionality - audio now working properly
 
-### ⚠️ Audio Playback System - Work in Progress (September 2025 - Latest)
+### ⚠️ Audio Playback Speed Issues - Comprehensive Fix Attempts (September 2025 - Latest)
 
-**Current Status**: Audio playback remains problematic despite multiple comprehensive troubleshooting attempts. This section documents our debugging journey.
+**Current Status**: Audio playback speed remains incorrect despite multiple systematic troubleshooting attempts. Audio plays but at wrong tempo. This section documents our debugging journey.
 
-#### 🔧 **Attempted Fixes and Current Issues**
+#### 🔧 **Audio Speed Fix Attempts - Complete Timeline**
 
 **1. Path Resolution Enhancement (Attempt 1)**:
 - **Implementation**: Added `audio?.path` as first check in path resolution fallback chain
@@ -61,13 +61,121 @@ A professional desktop transcription application built with Electron, React, and
   - Maintained dynamic sample rate updates in prepareToPlay()
 - **Result**: ✅ EPIPE errors eliminated, backend starts without crashes
 
-#### 📊 **Current Operational State**
+**5. Audio Speed Analysis & Segment Fix (Attempt 5 - September 2025)**:
+- **Problem**: Two expert diagnoses identified segment timing mismatches as root cause
+- **Root Cause**: Small gaps (<1s) extended word segments without updating original timestamps
+- **Technical Issue**:
+  - Edited duration: 1.3s (extended to cover 0.8s gap)
+  - Original duration: 0.5s (unchanged)
+  - JUCE backend assumed they matched, causing audio replay/speed issues
+- **Solution**: Create explicit spacer segments for ALL gaps >1ms instead of extending words
+- **Result**: ❌ Created 788 segments for 145s audio, JUCE backend crashed with SIGSEGV
+
+**6. Ratio-Preserving Gap Handling (Attempt 6)**:
+- **Problem**: Too many segments (5.4/second) overwhelmed JUCE backend
+- **Solution**: Reverted to 1s spacer threshold but preserved timing ratios
+- **Technical**: When extending segments for gaps <1s:
+  - `newOriginalEnd = originalStart + (originalDuration × scaleFactor)`
+  - `scaleFactor = newEditedDuration / currentEditedDuration`
+- **Files**: TranscriptionImportService.ts, TranscriptionServiceV2.ts
+- **Result**: ✅ Reasonable segment count, no crashes, but speed still wrong
+
+**7. JUCE Backend Duration Ratio Fix (Attempt 7)**:
+- **Problem**: Backend advanced `editedPosition` by raw sample time, ignoring duration ratios
+- **Root Cause**: Line 280: `editedPosition += (double)samplesToRead / sampleRate`
+- **Solution**: Applied duration ratio to position advancement:
+  ```cpp
+  double durationRatio = editedDuration / originalDuration;
+  editedPosition += originalTimeAdvanced * durationRatio;
+  ```
+- **Files**: native/juce-backend/src/main.cpp
+- **Result**: ❌ **Speed issue persists** - fundamental architectural problem remains
+
+**8. Audio Playback Restoration Fix (Attempt 8 - September 2025)**:
+- **Problem**: Audio loaded successfully but no position updates, causing complete playback failure
+- **Root Cause Analysis**: JUCE backend entering "contiguous timeline" mode but segments array empty
+  - Frontend sending EDL without segment data (only clip-level timing)
+  - Backend expecting word-level segments for position tracking
+  - Timer callbacks returning early due to missing segments
+- **Technical Solution**:
+  - **Frontend**: Modified JuceAudioManager to include segments array in EDL with word-level timing
+  - **Backend**: Added safety check to prevent contiguous mode when segments missing
+  - **Type Safety**: Updated EdlClip interface to include segments with proper TypeScript types
+- **Files**:
+  - `src/shared/types/transport.ts` - Added segments to EdlClip interface
+  - `src/renderer/audio/JuceAudioManager.ts` - Build segments from clip words
+  - `native/juce-backend/src/main.cpp` - Safety check + fallback segment creation
+- **Result**: ✅ **Audio playback restored** - position updates working, word highlighting functional
+- **Current Status**: ⚠️ **Audio plays but still at incorrect speed** - playback working but tempo issues remain
+
+**9. JUCE Backend Crash Fix (Attempt 9 - Latest - September 2025)**:
+- **Problem**: SIGSEGV crashes in JUCE backend and EPIPE errors when writing to crashed process
+- **Root Cause Analysis**: Multiple memory safety issues in C++ backend
+  - Division by zero when `originalDuration` was exactly 0.0 in audio calculations (line 288-300)
+  - Invalid sample rate operations causing segmentation faults
+  - Writing to stdin after process crash causing EPIPE errors
+  - Missing null pointer checks and array bounds validation
+- **Technical Solution**:
+  - **Division by Zero Fix**: Added epsilon-based validation (`> 1e-9`) and ratio clamping (0.01-100.0)
+  - **Memory Safety**: Added comprehensive null pointer checks and bounds validation
+  - **Process Health Monitoring**: Enhanced stdin writability checks and process state validation
+  - **Error Recovery**: Improved EPIPE error handling and graceful restart mechanisms
+- **Files**:
+  - `native/juce-backend/src/main.cpp` - Memory safety fixes and division by zero protection
+  - `src/main/services/JuceClient.ts` - Process health monitoring and stdin validation
+- **Result**: ✅ **JUCE backend stability improved** - no more crashes during transcription
+- **Current Status**: ❌ **Audio playback still not functioning** - crashes resolved but playback remains broken
+
+**10. Audio Path Resolution Fix (Attempt 10 - Latest - September 2025)**:
+- **Problem**: Audio paths not resolving correctly - relative paths failing JUCE backend existence checks
+- **Root Cause Analysis**: Path resolution system using hardcoded developer directories
+  - UI passes relative paths like "Audio Files/ProjectName.wav" to audio system
+  - JuceAudioManagerV2.resolveAudioPath() only searches fixed developer machine paths
+  - When hardcoded paths fail, returns unresolved relative path to JUCE backend
+  - Main process JuceClient.existsSync() fails for invalid relative paths
+  - Result: Audio load requests rejected, playback remains disabled
+- **Technical Solution**:
+  - **Project Directory Integration**: Pass currentProjectPath from ProjectContext to audio managers
+  - **Smart Path Resolution**: Use project directory to resolve relative paths to absolute paths
+  - **Multiple Candidates**: Try various path structures (direct, "Audio Files" subfolder, etc.)
+  - **Backward Compatibility**: Maintain existing fallback paths for migration
+- **Files**:
+  - `src/renderer/audio/JuceAudioManager.ts` - Added projectDirectory support and path resolution
+  - `src/renderer/audio/JuceAudioManagerV2.ts` - Enhanced resolveAudioPath with project-relative resolution
+  - `src/renderer/hooks/useAudioEditor.ts` - Pass projectDirectory option to audio managers
+  - `src/renderer/components/AudioSystemIntegration.tsx` - Get currentProjectPath from context
+- **Result**: ✅ **Path resolution improved** - relative paths now resolve to absolute paths
+- **Current Status**: ❌ **Audio playback still not functioning** - path resolution fixed but deeper issues remain
+
+**11. useAudioPlayback Project Directory Fix (Attempt 11 - Latest - September 2025)**:
+- **Problem**: useAudioPlayback hook not passing project directory to JuceAudioManagerV2
+- **Root Cause Analysis**: Critical missing parameter in playback hook initialization
+  - useAudioEditor correctly passes projectDirectory to JuceAudioManager
+  - useAudioPlayback creates JuceAudioManagerV2 with only callbacks, missing projectDirectory
+  - JuceAudioManagerV2.projectDirectory remains undefined, path resolution falls back to hardcoded paths
+  - JUCE backend refuses to load non-existent resolved paths, playback never becomes ready
+- **Technical Solution**:
+  - **Hook Signature Update**: Added projectDirectory parameter to useAudioPlayback
+  - **Manager Instantiation Fix**: Pass options object with callbacks and projectDirectory
+  - **Component Integration**: NewUIShellV2 passes currentProjectPath from ProjectContextV2
+  - **Proper Re-initialization**: Added projectDirectory to useEffect dependency array with cleanup
+- **Files**:
+  - `src/renderer/hooks/useAudioPlayback.ts` - Added projectDirectory parameter and proper manager initialization
+  - `src/renderer/components/ui/NewUIShellV2.tsx` - Pass currentProjectPath to useAudioPlayback hook
+- **Result**: ✅ **useAudioPlayback now receives project directory** - path resolution should work in playback hook
+- **Current Status**: ❌ **Audio playback still not functioning** - project directory integration complete but playback remains broken
+
+#### 📊 **Current Operational State (September 2025 - Latest)**
 - ✅ Application launches without crashes
-- ✅ JUCE backend initializes successfully
-- ✅ No JavaScript errors or EPIPE failures
-- ✅ Audio transport properly initialized with all expected methods
-- ❌ **Audio playback still non-functional** - root cause not yet identified
-- ❌ No audio heard during play attempts despite clean initialization
+- ✅ JUCE backend builds and initializes successfully
+- ✅ No segmentation faults or EPIPE errors
+- ✅ Audio loading and file access working properly
+- ✅ **Path resolution system improved** - relative paths now resolve to absolute paths
+- ✅ **useAudioPlayback project directory integration** - both audio hooks now receive project context
+- ❌ **Audio playback still not functioning** - no sound output during transcription
+- ❌ **Position tracking broken** - no position updates or word highlighting
+- ❌ **Complete playback failure** - fundamental audio system issues persist beyond path resolution and project integration
+- ✅ **Backend stability maintained** - no crashes, but core audio functionality remains broken
 
 #### 🔍 **Technical Details of Latest Fix**
 
@@ -92,11 +200,25 @@ int64_t getNextReadPosition() const override {
 **Audio Files System**: Projects save converted WAV audio (48kHz, 16-bit) to "Audio Files" folder alongside .transcript file. Path resolution and backend communication work correctly, but the final audio playback step remains problematic.
 
 #### 🔮 **Next Investigation Areas**
-Based on our systematic fixes, the remaining issue likely involves:
-1. **JUCE Audio Device Setup**: Audio device manager initialization or configuration
-2. **File Loading**: WAV file format compatibility or loading errors
-3. **Playback Pipeline**: Transport source or audio source chain issues
-4. **System Audio**: macOS audio permissions or device access problems
+After 8 comprehensive fix attempts, **playback is now functional** but speed issues remain:
+
+1. **Audio Speed Analysis**: Now that playback works, focus on identifying why tempo is incorrect
+   - Compare original audio file playback rate vs transcribed content timing
+   - Analyze if gap-filling or segment timing is causing speed drift
+2. **Sample Rate Verification**: Ensure frontend and backend agree on audio file sample rates
+   - Verify 44.1kHz vs 48kHz handling across the entire pipeline
+   - Check if resampling is introducing timing errors
+3. **Timeline Synchronization**: Since position tracking works, investigate timing alignment
+   - Compare original timestamps vs. edited timeline position mapping
+   - Analyze if duration ratio calculations need refinement
+4. **Segment Boundary Analysis**: With word-level data now flowing properly, debug segment timing
+   - Verify word start/end times match actual audio content
+   - Check if spacer gaps are being calculated correctly
+
+**Commits Available**: All fix attempts committed to `codex/diagnose-audio-conversion-playback-issue` branch:
+- f662c6b1: Initial explicit spacer creation attempt
+- f5fe098: Ratio-preserving gap handling
+- 9f0364d: JUCE backend duration ratio fix
 
 For detailed technical information, see [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md).
 
