@@ -4,7 +4,11 @@ declare global {
   interface Window {
     juceTransport: {
       load: (id: string, path: string) => Promise<{ success: boolean; error?: string }>;
-      updateEdl: (id: string, clips: EdlClip[]) => Promise<{ success: boolean; error?: string }>;
+      updateEdl: (
+        id: string,
+        revision: number,
+        clips: EdlClip[]
+      ) => Promise<{ success: boolean; error?: string; revision?: number; counts?: { words: number; spacers: number; spacersWithOriginal?: number; total: number } }>;
       play: (id: string) => Promise<{ success: boolean; error?: string }>;
       pause: (id: string) => Promise<{ success: boolean; error?: string }>;
       stop: (id: string) => Promise<{ success: boolean; error?: string }>;

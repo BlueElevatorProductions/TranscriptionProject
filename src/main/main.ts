@@ -373,7 +373,51 @@ class App {
       const pendingAppliedById = new Map<string, number>();
       const getRev = (id: string) => edlRevisionById.get(id) ?? 0;
       const bumpRev = (id: string) => { const r = getRev(id) + 1; edlRevisionById.set(id, r); return r; };
-      const writeEdlDebug = (id: string, rev: number, clips: any[]) => {
+      const summarizeSegments = (clips: EdlClip[]) => {
+        const stats = {
+          totalSegments: 0,
+          wordSegments: 0,
+          spacerSegments: 0,
+          spacersWithOriginal: 0,
+          spacerPreview: [] as Array<{
+            clipId: string;
+            clipOrder: number;
+            start: number;
+            end: number;
+            duration: number;
+            hasOriginal: boolean;
+          }>,
+        };
+
+        for (const clip of clips) {
+          if (!clip?.segments) continue;
+          clip.segments.forEach((segment) => {
+            stats.totalSegments += 1;
+            if (segment.type === 'spacer') {
+              stats.spacerSegments += 1;
+              if (typeof segment.originalStartSec === 'number' && typeof segment.originalEndSec === 'number') {
+                stats.spacersWithOriginal += 1;
+              }
+              if (stats.spacerPreview.length < 3) {
+                stats.spacerPreview.push({
+                  clipId: clip.id,
+                  clipOrder: clip.order,
+                  start: Number(segment.startSec.toFixed(3)),
+                  end: Number(segment.endSec.toFixed(3)),
+                  duration: Number((segment.endSec - segment.startSec).toFixed(3)),
+                  hasOriginal: typeof segment.originalStartSec === 'number' && typeof segment.originalEndSec === 'number',
+                });
+              }
+            } else {
+              stats.wordSegments += 1;
+            }
+          });
+        }
+
+        return stats;
+      };
+
+      const writeEdlDebug = (id: string, rev: number, clips: any[], stats: ReturnType<typeof summarizeSegments>) => {
         try {
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
           const base = process.env.EDL_DEBUG_DIR || '/tmp';
@@ -384,7 +428,9 @@ class App {
             timestamp: new Date().toISOString(),
             sessionId: id,
             revision: rev,
-            count: Array.isArray(clips) ? clips.length : 0,
+            clipCount: Array.isArray(clips) ? clips.length : 0,
+            segmentCounts: stats,
+            spacerPreview: stats.spacerPreview,
             edl: clips,
           };
           const json = JSON.stringify(payload, null, 2);
@@ -410,6 +456,20 @@ class App {
       this.juceClient.setEventHandlers({
         onLoaded: forward,
         onState: forward,
+        onEdlApplied: (e) => {
+          const id = (e as any).id as string;
+          if (typeof e.revision === 'number') {
+            edlRevisionById.set(id, e.revision);
+          }
+          pendingAppliedById.delete(id);
+          console.log('[IPC][JUCE] edlApplied event', {
+            id,
+            revision: e.revision,
+            wordCount: (e as any).wordCount,
+            spacerCount: (e as any).spacerCount,
+          });
+          forward(e);
+        },
         onPosition: (e) => {
           const id = (e as any).id as string;
           const rev = getRev(id);
@@ -433,15 +493,60 @@ class App {
         try { await this.juceClient!.load(id, filePath); return { success: true }; }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:updateEdl', async (_e, id: string, clips: EdlClip[]) => {
+      ipcMain.handle('juce:updateEdl', async (_e, id: string, revisionArg: number | undefined, clips: EdlClip[]) => {
         try {
-          await this.juceClient!.updateEdl(id, clips);
-          // Bump revision and mark pending apply; will be emitted on next position tick
-          const rev = bumpRev(id);
+          const prev = getRev(id);
+          let incomingRevision = typeof revisionArg === 'number' && Number.isFinite(revisionArg)
+            ? Math.floor(revisionArg)
+            : undefined;
+          if (incomingRevision !== undefined && incomingRevision <= prev) {
+            const forced = prev + 1;
+            console.warn('[IPC][JUCE] Incoming revision not monotonic, forcing bump', {
+              id,
+              previous: prev,
+              incoming: incomingRevision,
+              forced,
+            });
+            incomingRevision = forced;
+          }
+          const rev = incomingRevision ?? bumpRev(id);
+          edlRevisionById.set(id, rev);
+          const stats = summarizeSegments(clips);
+          const payloadSize = Buffer.byteLength(JSON.stringify({ clips }));
+          console.log('[IPC][JUCE] updateEdl request', {
+            id,
+            revision: rev,
+            clips: clips.length,
+            payloadBytes: payloadSize,
+            words: stats.wordSegments,
+            spacers: stats.spacerSegments,
+            spacersWithOriginal: stats.spacersWithOriginal,
+          });
+          if (stats.spacerSegments === 0) {
+            console.warn('[IPC][JUCE] ⚠️ No spacers detected in renderer payload for revision', rev);
+          }
+
+          const juceResult = await this.juceClient!.updateEdl(id, rev, clips);
+          if (juceResult?.counts) {
+            console.log('[IPC][JUCE] Backend acknowledged counts', {
+              id,
+              revision: juceResult.revision,
+              counts: juceResult.counts,
+            });
+          }
           pendingAppliedById.set(id, rev);
           // Write full, unfiltered EDL to /tmp for troubleshooting
-          writeEdlDebug(id, rev, clips as any);
-          return { success: true, revision: rev };
+          writeEdlDebug(id, rev, clips as any, stats);
+          return {
+            success: true,
+            revision: rev,
+            counts: {
+              words: stats.wordSegments,
+              spacers: stats.spacerSegments,
+              spacersWithOriginal: stats.spacersWithOriginal,
+              total: stats.totalSegments,
+            },
+          };
         } catch (e) {
           return { success: false, error: String(e) };
         }

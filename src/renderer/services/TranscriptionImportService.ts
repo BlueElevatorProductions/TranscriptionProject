@@ -60,6 +60,41 @@ export class TranscriptionImportService {
     const clips = this.createClipsFromWords(allWords, speakers || {});
     console.log(`🎬 Created ${clips.length} clips from speaker groups`);
 
+    let totalWordSegments = 0;
+    let totalSpacerSegments = 0;
+    let firstSpacerExample: { clipOrder: number; clipId: string; start: number; end: number; duration: number } | null = null;
+
+    clips.forEach((clip, index) => {
+      let words = 0;
+      let spacers = 0;
+      for (const segment of clip.segments) {
+        if (segment.type === 'spacer') {
+          spacers += 1;
+          totalSpacerSegments += 1;
+          if (!firstSpacerExample) {
+            firstSpacerExample = {
+              clipOrder: clip.order ?? index,
+              clipId: clip.id,
+              start: Number(segment.start.toFixed(3)),
+              end: Number(segment.end.toFixed(3)),
+              duration: Number((segment.end - segment.start).toFixed(3))
+            };
+          }
+        } else {
+          words += 1;
+          totalWordSegments += 1;
+        }
+      }
+      console.log(`📊 Clip[${index}] ${clip.id.slice(-8)} — ${words} words / ${spacers} spacers`);
+    });
+
+    if (firstSpacerExample) {
+      console.log('🧩 First spacer example:', firstSpacerExample);
+    } else {
+      console.warn('⚠️ No spacer segments were generated during import.');
+    }
+    console.log(`📦 Segment totals after import: ${totalWordSegments} words, ${totalSpacerSegments} spacers`);
+
     // Step 3: Build project data structure
     const projectData: ProjectData = {
       version: '2.0',

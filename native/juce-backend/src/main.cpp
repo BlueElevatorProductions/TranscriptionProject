@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <ctime>
 
 #ifdef USE_JUCE
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -218,7 +219,7 @@ struct Clip {
   size_t segmentCount() const { return segments.size(); }
 };
 
-static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>& clipsOut) {
+static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>& clipsOut, int* revisionOut = nullptr) {
   clipsOut.clear();
 
   auto findClipsArray = [&](size_t& aStart, size_t& aEnd) -> bool {
@@ -295,6 +296,13 @@ static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>
     if (qe == std::string::npos) return {};
     return s.substr(qs + 1, qe - (qs + 1));
   };
+
+  if (revisionOut) {
+    double revValue = extractNumber(json, "\"revision\"");
+    if (revValue == revValue) {
+      *revisionOut = static_cast<int>(revValue);
+    }
+  }
 
   for (const auto& clipJson : itemStrings) {
     Clip clip;
@@ -603,6 +611,9 @@ private:
   std::vector<Segment> segments; // Flattened segments for playback (legacy compatibility)
   bool isContiguousTimeline = false;
   bool contiguousInitialized = false;
+  int currentRevision = 0;
+  size_t lastWordSegments = 0;
+  size_t lastSpacerSegments = 0;
   // Forward declaration for use in earlier methods
   void endPlayback();
   void handleStandardTimelinePlayback();
@@ -757,6 +768,10 @@ public:
     g.playing = true;
     emitState();
     if (!timerIsRunning) { startTimer(33); timerIsRunning = true; }
+    juceDLog(std::string("[JUCE] Playback mode: ") + (isContiguousTimeline ? "contiguous" : "standard") +
+             " timeline, revision=" + std::to_string(currentRevision) +
+             ", words=" + std::to_string(lastWordSegments) +
+             ", spacers=" + std::to_string(lastSpacerSegments));
   }
 
   void pause() {
@@ -828,20 +843,31 @@ public:
     emitPositionFromTransport();
   }
 
-  void updateEdl(std::vector<Clip> newClips) {
+  void updateEdl(std::vector<Clip> newClips, int revision) {
     std::lock_guard<std::mutex> lock(mutex);
     clips = std::move(newClips);
+    currentRevision = revision;
 
     // Count total segments across all clips
     size_t totalSegments = 0;
+    size_t spacerSegments = 0;
+    size_t wordSegments = 0;
     for (const auto& clip : clips) {
       totalSegments += clip.segments.size();
+      for (const auto& segment : clip.segments) {
+        if (segment.type == "spacer") spacerSegments++;
+        else wordSegments++;
+      }
     }
+    lastWordSegments = wordSegments;
+    lastSpacerSegments = spacerSegments;
 
     // Enhanced debug logging - write to file to see what JUCE receives
     std::ofstream debugFile(juceDebugPath(), std::ios::app);
-    debugFile << "[JUCE] updateEdl received " << clips.size() << " clips with "
-              << totalSegments << " total segments at " << std::time(nullptr) << std::endl;
+    debugFile << "[JUCE] updateEdl received revision " << revision
+              << " with " << clips.size() << " clips containing "
+              << totalSegments << " segments (" << wordSegments << " words / "
+              << spacerSegments << " spacers) at " << std::time(nullptr) << std::endl;
     // Log clip and segment details
     debugFile << "[JUCE] Clip details:" << std::endl;
     for (size_t c = 0; c < clips.size(); c++) {
@@ -879,9 +905,9 @@ public:
 
       if (consecutiveMatches >= 2) {
         isContiguousTimeline = true;
-        debugFile << "[JUCE] CONTIGUOUS TIMELINE DETECTED" << std::endl;
+        debugFile << "[JUCE] CONTIGUOUS TIMELINE DETECTED for revision " << revision << std::endl;
       } else {
-        debugFile << "[JUCE] Standard timeline (gap matches: " << consecutiveMatches << ")" << std::endl;
+        debugFile << "[JUCE] Standard timeline (gap matches: " << consecutiveMatches << ") for revision " << revision << std::endl;
       }
     }
 
@@ -986,7 +1012,17 @@ public:
       }
     }
 
+    debugFile << "[JUCE] updateEdl segment breakdown complete for revision " << revision << std::endl;
     debugFile.flush();
+
+    {
+      std::ostringstream evt;
+      evt << "{\"type\":\"edlApplied\",\"id\":\"" << g.id << "\",\"revision\":" << revision
+          << ",\"wordCount\":" << wordSegments
+          << ",\"spacerCount\":" << spacerSegments
+          << ",\"totalSegments\":" << totalSegments << "}";
+      emit(evt.str());
+    }
   }
 
   void hiResTimerCallback() override {
@@ -1333,24 +1369,26 @@ int main() {
       edlFile.close();
 
       std::vector<Clip> clips;
-      if (!parseClipsFromJsonPayload(buffer.str(), clips)) {
+      int revision = 0;
+      if (!parseClipsFromJsonPayload(buffer.str(), clips, &revision)) {
         emit("{\"type\":\"error\",\"message\":\"Invalid EDL file contents\"}");
         continue;
       }
 
-      backend.updateEdl(std::move(clips));
+      backend.updateEdl(std::move(clips), revision);
       std::remove(pathValue.c_str());
       continue;
     }
 
     if (contains("\"type\":\"updateEdl\"")) {
       std::vector<Clip> clips;
-      if (!parseClipsFromJsonPayload(line, clips)) {
+      int revision = 0;
+      if (!parseClipsFromJsonPayload(line, clips, &revision)) {
         emit("{\"type\":\"error\",\"message\":\"Invalid EDL payload\"}");
         continue;
       }
 
-      backend.updateEdl(std::move(clips));
+      backend.updateEdl(std::move(clips), revision);
       continue;
     }
     if (contains("\"type\":\"play\"")) { backend.play(); continue; }

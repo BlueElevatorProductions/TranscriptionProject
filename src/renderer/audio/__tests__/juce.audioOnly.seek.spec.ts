@@ -30,7 +30,7 @@ function setupTransportMock() {
   (global as any).window = (global as any).window || {};
   (global as any).window.juceTransport = {
     load: async () => ({ success: true }),
-    updateEdl: async () => ({ success: true }),
+    updateEdl: async (_id: string, revision: number) => ({ success: true, revision }),
     play: async () => ({ success: true }),
     pause: async () => ({ success: true }),
     stop: async () => ({ success: true }),

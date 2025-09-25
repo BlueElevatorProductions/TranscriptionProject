@@ -105,9 +105,24 @@ export class JuceClient implements Transport {
     });
   }
 
-  async updateEdl(id: TransportId, clips: EdlClip[]): Promise<void> {
+  async updateEdl(id: TransportId, revision: number, clips: EdlClip[]): Promise<{ success: boolean; revision?: number }> {
     await this.ensureStarted();
-    const { command, cleanup } = await this.prepareEdlCommand(id, clips);
+
+    const stats = this.summarizeSegments(clips);
+    console.log('[JUCE] updateEdl() preparing payload', {
+      id,
+      revision,
+      clipCount: clips.length,
+      totalSegments: stats.totalSegments,
+      wordSegments: stats.wordSegments,
+      spacerSegments: stats.spacerSegments,
+      spacersWithOriginal: stats.spacersWithOriginal,
+    });
+    if (stats.spacerSegments === 0) {
+      console.warn('[JUCE] ⚠️ No spacer segments found in updateEdl payload for revision', revision);
+    }
+
+    const { command, cleanup } = await this.prepareEdlCommand(id, revision, clips, stats);
     try {
       await this.send(command);
       if (cleanup) {
@@ -119,6 +134,7 @@ export class JuceClient implements Transport {
           });
         }, 30000);
       }
+      console.log('[JUCE] updateEdl() command dispatched', { id, revision, type: command.type });
     } catch (error) {
       if (cleanup) {
         cleanup().catch(err => {
@@ -129,6 +145,16 @@ export class JuceClient implements Transport {
       }
       throw new Error(`updateEdl failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+    return {
+      success: true,
+      revision,
+      counts: {
+        words: stats.wordSegments,
+        spacers: stats.spacerSegments,
+        spacersWithOriginal: stats.spacersWithOriginal,
+        total: stats.totalSegments,
+      },
+    };
   }
 
   async play(id: TransportId): Promise<void> {
@@ -417,6 +443,9 @@ export class JuceClient implements Transport {
           case 'position':
             this.handlers.onPosition?.(evt);
             break;
+          case 'edlApplied':
+            this.handlers.onEdlApplied?.(evt as any);
+            break;
           case 'ended':
             this.handlers.onEnded?.(evt);
             break;
@@ -540,11 +569,43 @@ export class JuceClient implements Transport {
     return base;
   }
 
-  private async prepareEdlCommand(id: TransportId, clips: EdlClip[]): Promise<{ command: JuceCommand; cleanup?: () => Promise<void> }> {
-    const inlinePayload: JuceCommand = { type: 'updateEdl', id, clips };
-    const payloadSize = Buffer.byteLength(JSON.stringify(inlinePayload));
+  private summarizeSegments(clips: EdlClip[]) {
+    return clips.reduce(
+      (acc, clip) => {
+        if (Array.isArray(clip.segments)) {
+          for (const seg of clip.segments) {
+            acc.totalSegments += 1;
+            if (seg.type === 'spacer') acc.spacerSegments += 1;
+            else acc.wordSegments += 1;
+            if (seg.type === 'spacer' && typeof seg.originalStartSec === 'number' && typeof seg.originalEndSec === 'number') {
+              acc.spacersWithOriginal += 1;
+            }
+          }
+        }
+        return acc;
+      },
+      { totalSegments: 0, wordSegments: 0, spacerSegments: 0, spacersWithOriginal: 0 }
+    );
+  }
+
+  private async prepareEdlCommand(
+    id: TransportId,
+    revision: number,
+    clips: EdlClip[],
+    stats: { totalSegments: number; wordSegments: number; spacerSegments: number; spacersWithOriginal: number }
+  ): Promise<{ command: JuceCommand; cleanup?: () => Promise<void> }> {
+    const inlinePayload: JuceCommand = { type: 'updateEdl', id, revision, clips };
+    const inlinePayloadJson = JSON.stringify(inlinePayload);
+    const payloadSize = Buffer.byteLength(inlinePayloadJson);
 
     if (payloadSize <= this.edlInlineThresholdBytes) {
+      console.log('[JUCE] updateEdl() sending inline payload', {
+        id,
+        revision,
+        payloadBytes: payloadSize,
+        spacers: stats.spacerSegments,
+        spacersWithOriginal: stats.spacersWithOriginal,
+      });
       return { command: inlinePayload };
     }
 
@@ -553,10 +614,20 @@ export class JuceClient implements Transport {
     const fileName = `${safeId}_${Date.now()}_${Math.random().toString(36).slice(2)}.json`;
     const filePath = path.join(dir, fileName);
 
-    const filePayload = { clips };
+    const filePayload = { revision, clips };
     await fsPromises.writeFile(filePath, JSON.stringify(filePayload));
 
-    console.log(`[JUCE] 🗂️ Large EDL (${payloadSize} bytes) written to temp file: ${filePath}`);
+    console.log('[JUCE] 🗂️ Large EDL payload written to temp file', {
+      id,
+      revision,
+      payloadBytes: payloadSize,
+      path: filePath,
+      spacerSegments: stats.spacerSegments,
+      spacersWithOriginal: stats.spacersWithOriginal,
+    });
+    if (stats.spacerSegments === 0) {
+      console.warn('[JUCE] ⚠️ Temp-file payload contains zero spacer segments');
+    }
 
     const cleanup = async () => {
       try {
@@ -568,8 +639,7 @@ export class JuceClient implements Transport {
         }
       }
     };
-
-    const fileCommand: JuceCommand = { type: 'updateEdlFromFile', id, path: filePath };
+    const fileCommand: JuceCommand = { type: 'updateEdlFromFile', id, revision, path: filePath };
     return { command: fileCommand, cleanup };
   }
 

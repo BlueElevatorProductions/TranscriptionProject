@@ -27,7 +27,11 @@ export class JuceAudioManager {
   private projectDirectory?: string;
   private transport = (window as any).juceTransport as undefined | {
     load: (id: string, path: string) => Promise<{ success: boolean; error?: string }>;
-    updateEdl: (id: string, clips: EdlClip[]) => Promise<{ success: boolean; error?: string }>;
+    updateEdl: (
+      id: string,
+      revision: number,
+      clips: EdlClip[]
+    ) => Promise<{ success: boolean; error?: string; revision?: number; counts?: { words: number; spacers: number; total: number } }>;
     play: (id: string) => Promise<{ success: boolean; error?: string }>;
     pause: (id: string) => Promise<{ success: boolean; error?: string }>;
     stop: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -52,6 +56,7 @@ export class JuceAudioManager {
   private edlApplyFallbackTid: number | null = null;
   private lastAcceptedEditedTime: number = 0;
   private lastEdlAppliedAt: number = 0;
+  private edlRevisionCounter: number = 0;
   // Seek-intent latch to survive EDL changes and late events
   private lastSeekIntent: (
     | { kind: 'word'; clipId: string; wordIndex: number; createdAt: number; attempts: number }
@@ -100,6 +105,7 @@ export class JuceAudioManager {
 
     // Initialize sequencer and state first
     this.dispatch({ type: 'INITIALIZE_AUDIO', payload: { audioUrl, clips } });
+    this.edlRevisionCounter = 0;
 
     // Subscribe to transport events
     this.eventHandler = (evt) => this.onTransportEvent(evt);
@@ -553,9 +559,22 @@ export class JuceAudioManager {
         const rev = (evt as any).revision;
         if (typeof rev === 'number') {
           this.lastAppliedRevision = rev;
+          this.edlRevisionCounter = Math.max(this.edlRevisionCounter, rev);
           if ((import.meta as any).env?.VITE_AUDIO_DEBUG === 'true') {
-            console.log('[JuceAudio] EDL applied revision:', rev);
+            console.log('[JuceAudio] EDL applied revision:', rev, {
+              words: (evt as any).wordCount,
+              spacers: (evt as any).spacerCount,
+              totalSegments: (evt as any).totalSegments,
+            });
           }
+        }
+        if ((evt as any).spacerCount !== undefined) {
+          console.log('[JuceAudio] Spacer count reported by JUCE backend:', {
+            revision: rev,
+            words: (evt as any).wordCount,
+            spacers: (evt as any).spacerCount,
+            totalSegments: (evt as any).totalSegments,
+          });
         }
         // Clear EDL applying flag and flush any pending seek
         this.edlApplying = false;
@@ -908,8 +927,56 @@ export class JuceAudioManager {
       });
     }
 
-    const res = await this.transport!.updateEdl(this.sessionId, edl);
+    const revision = ++this.edlRevisionCounter;
+
+    const segmentStats = edl.reduce(
+      (acc, clip) => {
+        const segs = clip.segments || [];
+        acc.total += segs.length;
+        for (const seg of segs) {
+          if (seg.type === 'spacer') acc.spacers += 1;
+          else acc.words += 1;
+          if (seg.type === 'spacer' && acc.preview.length < 3) {
+            acc.preview.push({
+              clipId: clip.id,
+              clipOrder: clip.order,
+              start: Number(seg.startSec.toFixed(3)),
+              end: Number(seg.endSec.toFixed(3)),
+              duration: Number((seg.endSec - seg.startSec).toFixed(3)),
+              originalStart: seg.originalStartSec,
+              originalEnd: seg.originalEndSec,
+              hasOriginal: typeof seg.originalStartSec === 'number' && typeof seg.originalEndSec === 'number',
+            });
+          }
+        }
+        return acc;
+      },
+      { total: 0, words: 0, spacers: 0, preview: [] as Array<Record<string, unknown>> }
+    );
+
+    console.log(
+      `[EDL] 📦 Prepared revision ${revision} with ${segmentStats.total} segments (${segmentStats.words} words / ${segmentStats.spacers} spacers)`
+    );
+    if (segmentStats.spacers === 0) {
+      console.warn('[EDL] ⚠️ No spacer segments detected in outgoing EDL revision', revision);
+    } else {
+      console.log('[EDL] Spacer preview:', segmentStats.preview);
+    }
+
+    const res = await this.transport!.updateEdl(this.sessionId, revision, edl);
     if (!res.success) throw new Error(res.error || 'updateEdl failed');
+    if (res.revision !== undefined && res.revision !== revision) {
+      console.warn('[EDL] ⚠️ Revision mismatch between renderer and main process', {
+        requested: revision,
+        acknowledged: res.revision,
+      });
+    }
+    if (res.counts) {
+      console.log('[EDL] Main process segment echo:', {
+        revision: res.revision ?? revision,
+        ...res.counts,
+      });
+    }
     // Wait for 'edlApplied' (or fallback timer) before clearing edlApplying and flushing seeks
   }
 

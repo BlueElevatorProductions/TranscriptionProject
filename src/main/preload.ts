@@ -274,7 +274,11 @@ declare global {
     electronAPI: ElectronAPI;
     juceTransport: {
       load: (id: string, path: string) => Promise<{ success: boolean; error?: string }>;
-      updateEdl: (id: string, clips: EdlClip[]) => Promise<{ success: boolean; error?: string }>;
+      updateEdl: (
+        id: string,
+        revision: number,
+        clips: EdlClip[]
+      ) => Promise<{ success: boolean; error?: string; revision?: number; counts?: { words: number; spacers: number; total: number } }>;
       play: (id: string) => Promise<{ success: boolean; error?: string }>;
       pause: (id: string) => Promise<{ success: boolean; error?: string }>;
       stop: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -301,7 +305,8 @@ ipcRenderer.on('juce:event', (_event, evt: JuceEvent) => {
 
 contextBridge.exposeInMainWorld('juceTransport', {
   load: (id: string, path: string) => ipcRenderer.invoke('juce:load', id, path),
-  updateEdl: (id: string, clips: EdlClip[]) => ipcRenderer.invoke('juce:updateEdl', id, clips),
+  updateEdl: (id: string, revision: number, clips: EdlClip[]) =>
+    ipcRenderer.invoke('juce:updateEdl', id, revision, clips),
   play: (id: string) => ipcRenderer.invoke('juce:play', id),
   pause: (id: string) => ipcRenderer.invoke('juce:pause', id),
   stop: (id: string) => ipcRenderer.invoke('juce:stop', id),

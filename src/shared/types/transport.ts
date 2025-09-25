@@ -26,8 +26,8 @@ export interface EdlClip {
 // Commands sent to the JUCE backend (JSON lines over stdio)
 export type JuceCommand =
   | { type: 'load'; id: TransportId; path: string }
-  | { type: 'updateEdl'; id: TransportId; clips: EdlClip[] }
-  | { type: 'updateEdlFromFile'; id: TransportId; path: string }
+  | { type: 'updateEdl'; id: TransportId; revision?: number; clips: EdlClip[] }
+  | { type: 'updateEdlFromFile'; id: TransportId; revision?: number; path: string }
   | { type: 'play'; id: TransportId }
   | { type: 'pause'; id: TransportId }
   | { type: 'stop'; id: TransportId }
@@ -42,7 +42,7 @@ export type JuceEvent =
   | { type: 'loaded'; id: TransportId; durationSec: number; sampleRate: number; channels: number }
   | { type: 'state'; id: TransportId; playing: boolean }
   | { type: 'position'; id: TransportId; editedSec: number; originalSec: number; revision?: number }
-  | { type: 'edlApplied'; id: TransportId; revision: number }
+  | { type: 'edlApplied'; id: TransportId; revision: number; wordCount?: number; spacerCount?: number; totalSegments?: number }
   | { type: 'ended'; id: TransportId }
   | { type: 'error'; id?: TransportId; code?: string | number; message: string };
 
@@ -53,11 +53,16 @@ export interface TransportEvents {
   onPosition?: (e: Extract<JuceEvent, { type: 'position' }>) => void;
   onEnded?: (e: Extract<JuceEvent, { type: 'ended' }>) => void;
   onError?: (e: Extract<JuceEvent, { type: 'error' }>) => void;
+  onEdlApplied?: (e: Extract<JuceEvent, { type: 'edlApplied' }>) => void;
 }
 
 export interface Transport {
   load(id: TransportId, path: string): Promise<{success: boolean, error?: string}>;
-  updateEdl(id: TransportId, clips: EdlClip[]): Promise<void>;
+  updateEdl(
+    id: TransportId,
+    revision: number,
+    clips: EdlClip[]
+  ): Promise<{ success: boolean; revision?: number; counts?: { words: number; spacers: number; spacersWithOriginal?: number; total: number } }>;
   play(id: TransportId): Promise<void>;
   pause(id: TransportId): Promise<void>;
   stop(id: TransportId): Promise<void>;
@@ -91,7 +96,13 @@ export function isJuceEvent(obj: any): obj is JuceEvent {
         typeof obj.originalSec === 'number'
       );
     case 'edlApplied':
-      return typeof obj.id === 'string' && typeof obj.revision === 'number';
+      return (
+        typeof obj.id === 'string' &&
+        typeof obj.revision === 'number' &&
+        (obj.wordCount === undefined || typeof obj.wordCount === 'number') &&
+        (obj.spacerCount === undefined || typeof obj.spacerCount === 'number') &&
+        (obj.totalSegments === undefined || typeof obj.totalSegments === 'number')
+      );
     case 'ended':
       return typeof obj.id === 'string';
     case 'error':
