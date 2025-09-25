@@ -782,7 +782,9 @@ export class JuceAudioManager {
     const result = [];
     
     for (const clip of clips) {
-      const duration = clip.endTime - clip.startTime;
+      const duration = Number.isFinite((clip as any).duration)
+        ? (clip as any).duration
+        : clip.endTime - clip.startTime;
       const newStartTime = currentTime;
       const newEndTime = currentTime + duration;
       
@@ -819,15 +821,39 @@ export class JuceAudioManager {
 
     const contiguousTimeline = this.calculateContiguousTimeline(ordered);
     const edl: EdlClip[] = contiguousTimeline.map(({ clip, newStartTime, newEndTime }, idx) => {
-      // Build segments from clip words for JUCE backend
-      const segments = clip.words?.map((word, wordIdx) => ({
-        type: 'word' as const,
-        startSec: word.start - clip.startTime, // Relative to clip start
-        endSec: word.end - clip.startTime,     // Relative to clip start
-        text: word.text,
-        originalStartSec: word.start,          // Original audio position
-        originalEndSec: word.end,              // Original audio position
-      })) || [];
+      const segments = (() => {
+        if (Array.isArray((clip as any).segments) && (clip as any).segments.length > 0) {
+          return (clip as any).segments.map((segment: any) => {
+            if (segment.type === 'word') {
+              const originalStart = segment.originalStart ?? clip.startTime + segment.start;
+              const originalEnd = segment.originalEnd ?? clip.startTime + segment.end;
+              return {
+                type: 'word' as const,
+                startSec: segment.start,
+                endSec: segment.end,
+                text: segment.text,
+                originalStartSec: originalStart,
+                originalEndSec: originalEnd,
+              };
+            }
+            return {
+              type: 'spacer' as const,
+              startSec: segment.start,
+              endSec: segment.end,
+            };
+          });
+        }
+
+        // Legacy fallback for projects that still provide clip.words
+        return (clip as any).words?.map((word: any) => ({
+          type: 'word' as const,
+          startSec: word.start - clip.startTime,
+          endSec: word.end - clip.startTime,
+          text: word.text,
+          originalStartSec: word.start,
+          originalEndSec: word.end,
+        })) || [];
+      })();
 
       return {
         id: clip.id,
