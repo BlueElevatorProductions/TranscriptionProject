@@ -204,23 +204,37 @@ export class EDLBuilderService {
 
     const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
     const edlSegments: EdlSegment[] = [];
-    let lastEnd = 0;
+    let cursor = 0;
 
     for (const segment of sortedSegments) {
       const rawStart = Number(segment.start);
       const rawEnd = Number(segment.end);
 
-      let startSec = Number.isFinite(rawStart) ? rawStart : lastEnd;
+      let startSec = Number.isFinite(rawStart) ? rawStart : cursor;
       let endSec = Number.isFinite(rawEnd) ? rawEnd : startSec;
 
       startSec = clamp(startSec, 0, rawDuration);
-      if (startSec + TOLERANCE < lastEnd) {
-        startSec = lastEnd;
-      }
+      endSec = clamp(endSec, 0, rawDuration);
 
-      endSec = clamp(endSec, startSec, rawDuration);
       if (endSec < startSec) {
         endSec = startSec;
+      }
+
+      if (startSec > cursor + TOLERANCE) {
+        edlSegments.push({
+          type: 'spacer',
+          startSec: cursor,
+          endSec: startSec,
+          originalStartSec: clip.startTime + cursor,
+          originalEndSec: clip.startTime + startSec
+        });
+        cursor = startSec;
+      } else if (startSec < cursor) {
+        startSec = cursor;
+      }
+
+      if (endSec <= cursor + TOLERANCE) {
+        continue;
       }
 
       const fallbackOriginalStart = clip.startTime + startSec;
@@ -240,10 +254,10 @@ export class EDLBuilderService {
         const originalEnd = Number(wordSegment.originalEnd);
 
         let sanitizedOriginalStart = Number.isFinite(originalStart)
-          ? originalStart
+          ? Math.max(originalStart, fallbackOriginalStart)
           : fallbackOriginalStart;
         let sanitizedOriginalEnd = Number.isFinite(originalEnd)
-          ? originalEnd
+          ? Math.max(originalEnd, sanitizedOriginalStart, fallbackOriginalEnd)
           : fallbackOriginalEnd;
 
         if (sanitizedOriginalEnd < sanitizedOriginalStart) {
@@ -258,7 +272,7 @@ export class EDLBuilderService {
       }
 
       edlSegments.push(edlSegment);
-      lastEnd = endSec;
+      cursor = endSec;
     }
 
     const coverage = edlSegments.length > 0
@@ -270,24 +284,17 @@ export class EDLBuilderService {
       normalizedDuration = coverage;
     }
 
-    if (edlSegments.length > 0) {
-      const lastSegment = edlSegments[edlSegments.length - 1];
-
-      if (normalizedDuration > lastSegment.endSec + TOLERANCE) {
-        edlSegments.push({
-          type: 'spacer',
-          startSec: lastSegment.endSec,
-          endSec: normalizedDuration,
-          originalStartSec: clip.startTime + lastSegment.endSec,
-          originalEndSec: clip.startTime + normalizedDuration
-        });
-      } else {
-        const clampedEnd = Math.min(lastSegment.endSec, normalizedDuration);
-        lastSegment.endSec = clampedEnd;
-        if (typeof lastSegment.originalEndSec === 'number') {
-          lastSegment.originalEndSec = clip.startTime + clampedEnd;
-        }
-      }
+    if (cursor + TOLERANCE < normalizedDuration) {
+      edlSegments.push({
+        type: 'spacer',
+        startSec: cursor,
+        endSec: normalizedDuration,
+        originalStartSec: clip.startTime + cursor,
+        originalEndSec: clip.startTime + normalizedDuration
+      });
+      cursor = normalizedDuration;
+    } else if (normalizedDuration < cursor) {
+      normalizedDuration = cursor;
     }
 
     return { segments: edlSegments, duration: normalizedDuration };
