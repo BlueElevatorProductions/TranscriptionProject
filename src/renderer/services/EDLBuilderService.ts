@@ -14,7 +14,6 @@
 
 import {
   Clip,
-  Segment,
   WordSegment
 } from '../../shared/types';
 
@@ -146,8 +145,8 @@ export class EDLBuilderService {
     let contiguousTime = 0;
 
     for (const clip of clips) {
-      // Convert clip segments to EDL segments
-      const edlSegments = this.convertSegmentsToEdl(clip);
+      // Sanitize clip segments and derive normalized duration
+      const { segments: edlSegments, duration: normalizedDuration } = this.sanitizeClipSegments(clip);
 
       // Build segment boundaries for binary search
       const segmentBoundaries = edlSegments.map(seg => seg.startSec);
@@ -155,12 +154,17 @@ export class EDLBuilderService {
         segmentBoundaries.push(edlSegments[edlSegments.length - 1].endSec);
       }
 
+      const originalDuration = clip.endTime - clip.startTime;
+      const originalEndSec = originalDuration > 0
+        ? clip.endTime
+        : clip.startTime + normalizedDuration;
+
       const edlClip: EdlClip = {
         id: clip.id,
         startSec: contiguousTime,
-        endSec: contiguousTime + clip.duration,
+        endSec: contiguousTime + normalizedDuration,
         originalStartSec: clip.startTime,
-        originalEndSec: clip.endTime,
+        originalEndSec,
         type: 'speech',
         speaker: clip.speaker,
         segments: edlSegments,
@@ -168,7 +172,7 @@ export class EDLBuilderService {
       };
 
       edlClips.push(edlClip);
-      contiguousTime += clip.duration;
+      contiguousTime += normalizedDuration;
     }
 
     if (hasReordering) {
@@ -180,13 +184,45 @@ export class EDLBuilderService {
   }
 
   /**
-   * Convert clip segments to EDL format
+   * Sanitize clip segments and derive normalized durations for contiguous mapping
    */
-  private static convertSegmentsToEdl(clip: Clip): EdlSegment[] {
-    return clip.segments.map(segment => {
-      const startSec = Number(segment.start) || 0;
-      const endSecRaw = Number(segment.end);
-      const endSec = Number.isFinite(endSecRaw) ? endSecRaw : startSec;
+  private static sanitizeClipSegments(clip: Clip): { segments: EdlSegment[]; duration: number } {
+    const TOLERANCE = 0.0005;
+    const rawDuration = Number.isFinite(clip.duration)
+      ? Math.max(0, clip.duration)
+      : Math.max(0, clip.endTime - clip.startTime);
+
+    if (!clip.segments.length) {
+      return { segments: [], duration: rawDuration };
+    }
+
+    const sortedSegments = [...clip.segments].sort((a, b) => {
+      const aStart = Number.isFinite(a.start) ? (a.start as number) : 0;
+      const bStart = Number.isFinite(b.start) ? (b.start as number) : 0;
+      return aStart - bStart;
+    });
+
+    const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+    const edlSegments: EdlSegment[] = [];
+    let lastEnd = 0;
+
+    for (const segment of sortedSegments) {
+      const rawStart = Number(segment.start);
+      const rawEnd = Number(segment.end);
+
+      let startSec = Number.isFinite(rawStart) ? rawStart : lastEnd;
+      let endSec = Number.isFinite(rawEnd) ? rawEnd : startSec;
+
+      startSec = clamp(startSec, 0, rawDuration);
+      if (startSec + TOLERANCE < lastEnd) {
+        startSec = lastEnd;
+      }
+
+      endSec = clamp(endSec, startSec, rawDuration);
+      if (endSec < startSec) {
+        endSec = startSec;
+      }
+
       const fallbackOriginalStart = clip.startTime + startSec;
       const fallbackOriginalEnd = clip.startTime + endSec;
 
@@ -199,19 +235,62 @@ export class EDLBuilderService {
       if (segment.type === 'word') {
         const wordSegment = segment as WordSegment;
         edlSegment.text = wordSegment.text;
-        edlSegment.originalStartSec = Number.isFinite(wordSegment.originalStart)
-          ? wordSegment.originalStart
+
+        const originalStart = Number(wordSegment.originalStart);
+        const originalEnd = Number(wordSegment.originalEnd);
+
+        let sanitizedOriginalStart = Number.isFinite(originalStart)
+          ? originalStart
           : fallbackOriginalStart;
-        edlSegment.originalEndSec = Number.isFinite(wordSegment.originalEnd)
-          ? wordSegment.originalEnd
+        let sanitizedOriginalEnd = Number.isFinite(originalEnd)
+          ? originalEnd
           : fallbackOriginalEnd;
+
+        if (sanitizedOriginalEnd < sanitizedOriginalStart) {
+          sanitizedOriginalEnd = sanitizedOriginalStart;
+        }
+
+        edlSegment.originalStartSec = sanitizedOriginalStart;
+        edlSegment.originalEndSec = sanitizedOriginalEnd;
       } else {
         edlSegment.originalStartSec = fallbackOriginalStart;
         edlSegment.originalEndSec = fallbackOriginalEnd;
       }
 
-      return edlSegment;
-    });
+      edlSegments.push(edlSegment);
+      lastEnd = endSec;
+    }
+
+    const coverage = edlSegments.length > 0
+      ? edlSegments[edlSegments.length - 1].endSec
+      : 0;
+
+    let normalizedDuration = rawDuration;
+    if (!Number.isFinite(normalizedDuration) || normalizedDuration <= 0) {
+      normalizedDuration = coverage;
+    }
+
+    if (edlSegments.length > 0) {
+      const lastSegment = edlSegments[edlSegments.length - 1];
+
+      if (normalizedDuration > lastSegment.endSec + TOLERANCE) {
+        edlSegments.push({
+          type: 'spacer',
+          startSec: lastSegment.endSec,
+          endSec: normalizedDuration,
+          originalStartSec: clip.startTime + lastSegment.endSec,
+          originalEndSec: clip.startTime + normalizedDuration
+        });
+      } else {
+        const clampedEnd = Math.min(lastSegment.endSec, normalizedDuration);
+        lastSegment.endSec = clampedEnd;
+        if (typeof lastSegment.originalEndSec === 'number') {
+          lastSegment.originalEndSec = clip.startTime + clampedEnd;
+        }
+      }
+    }
+
+    return { segments: edlSegments, duration: normalizedDuration };
   }
 
   // ==================== Lookup Table ====================
