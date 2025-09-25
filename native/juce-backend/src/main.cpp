@@ -460,16 +460,22 @@ public:
       return;
     }
 
+    juceDLog("[JUCE] Attempting to create reader for file...");
     juce::AudioFormatReader* reader = formatManager.createReaderFor(file);
     if (reader == nullptr) {
       juceDLog("[JUCE] load() failed: could not create reader for file");
+      juceDLog("[JUCE] File path: " + path);
+      juceDLog("[JUCE] File size: " + std::to_string(file.getSize()));
       emit("{\"type\":\"error\",\"message\":\"Failed to open audio file\"}");
       return;
     }
+    juceDLog("[JUCE] Reader created successfully");
     const double sr = reader->sampleRate;
     const double duration = (reader->lengthInSamples > 0 && sr > 0.0) ? (double) reader->lengthInSamples / sr : 0.0;
+    juceDLog("[JUCE] Audio info: " + std::to_string(sr) + "Hz, " + std::to_string(duration) + "s");
     readerSource.reset(new juce::AudioFormatReaderSource(reader, true));
     transportSource.setSource(readerSource.get(), 0, nullptr, sr);
+    juceDLog("[JUCE] Transport source configured successfully");
     g.durationSec = duration;
     // Default EDL: single full-file segment
     segments.clear();
@@ -661,6 +667,28 @@ public:
     }
 
     debugFile << "[JUCE] Created " << segments.size() << " flattened segments for playback" << std::endl;
+
+    // Safety check: Verify we have segments before enabling contiguous mode
+    if (isContiguousTimeline && segments.empty()) {
+      debugFile << "[JUCE] WARNING: Contiguous timeline detected but no segments received" << std::endl;
+      debugFile << "[JUCE] Falling back to standard timeline mode" << std::endl;
+      isContiguousTimeline = false;
+
+      // Create a default full-file segment to prevent playback failure
+      if (g.durationSec > 0) {
+        Segment fullSegment;
+        fullSegment.type = "speech";
+        fullSegment.start = 0.0;
+        fullSegment.end = g.durationSec;
+        fullSegment.dur = g.durationSec;
+        fullSegment.originalStart = 0.0;
+        fullSegment.originalEnd = g.durationSec;
+        segments.push_back(fullSegment);
+        debugFile << "[JUCE] Created fallback full-file segment: 0.0-" << g.durationSec << "s" << std::endl;
+      }
+    }
+
+    debugFile.flush();
   }
 
   void hiResTimerCallback() override {

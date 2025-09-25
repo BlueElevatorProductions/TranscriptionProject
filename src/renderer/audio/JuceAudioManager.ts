@@ -802,14 +802,27 @@ export class JuceAudioManager {
     const gapCount = ordered.filter((c: any) => c?.type === 'audio-only').length;
 
     const contiguousTimeline = this.calculateContiguousTimeline(ordered);
-    const edl: EdlClip[] = contiguousTimeline.map(({ clip, newStartTime, newEndTime }, idx) => ({
-      id: clip.id,
-      startSec: newStartTime,
-      endSec: newEndTime,
-      originalStartSec: clip.startTime,
-      originalEndSec: clip.endTime,
-      order: idx,
-    }));
+    const edl: EdlClip[] = contiguousTimeline.map(({ clip, newStartTime, newEndTime }, idx) => {
+      // Build segments from clip words for JUCE backend
+      const segments = clip.words?.map((word, wordIdx) => ({
+        type: 'word' as const,
+        startSec: word.start - clip.startTime, // Relative to clip start
+        endSec: word.end - clip.startTime,     // Relative to clip start
+        text: word.text,
+        originalStartSec: word.start,          // Original audio position
+        originalEndSec: word.end,              // Original audio position
+      })) || [];
+
+      return {
+        id: clip.id,
+        startSec: newStartTime,
+        endSec: newEndTime,
+        originalStartSec: clip.startTime,
+        originalEndSec: clip.endTime,
+        order: idx,
+        segments, // Include segments for JUCE backend
+      };
+    });
 
     // Detect reorder: if any segment's originalStartSec decreases vs previous in EDL order
     let reordered = false;
@@ -828,12 +841,15 @@ export class JuceAudioManager {
       console.log('  Contiguous mapping (first 8):');
       contiguousTimeline.slice(0, 8).forEach(({ clip, newStartTime, newEndTime }, i) => {
         const wordCount = clip.words ? clip.words.length : 0;
-        console.log(`    [${i}] ${clip.id.slice(-8)}: Original(${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}s) → Edited(${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}s) [${wordCount} words]`);
+        const segmentCount = edl[i]?.segments?.length || 0;
+        console.log(`    [${i}] ${clip.id.slice(-8)}: Original(${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}s) → Edited(${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}s) [${wordCount} words, ${segmentCount} segments]`);
       });
-      console.log(`[EDL] 📤 Sending EDL to JUCE: ${edl.length} segments (${gapCount} gaps)`);
+      const totalSegments = edl.reduce((sum, clip) => sum + (clip.segments?.length || 0), 0);
+      console.log(`[EDL] 📤 Sending EDL to JUCE: ${edl.length} clips with ${totalSegments} total segments (${gapCount} gaps)`);
       console.log('[EDL] First 5 EDL entries:');
       edl.slice(0, 5).forEach((segment, i) => {
-        console.log(`  [${i}] ${segment.id.slice(-8)}: ${segment.startSec.toFixed(2)}-${segment.endSec.toFixed(2)}s (orig: ${segment.originalStartSec!.toFixed(2)}-${segment.originalEndSec!.toFixed(2)}s)`);
+        const segCount = segment.segments?.length || 0;
+        console.log(`  [${i}] ${segment.id.slice(-8)}: ${segment.startSec.toFixed(2)}-${segment.endSec.toFixed(2)}s (orig: ${segment.originalStartSec!.toFixed(2)}-${segment.originalEndSec!.toFixed(2)}s) [${segCount} segments]`);
       });
     }
 
