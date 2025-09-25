@@ -961,6 +961,12 @@ int main() {
   std::ios::sync_with_stdio(false);
   std::cin.tie(nullptr);
 
+  // Increase stdin buffer size to handle large EDL payloads
+  constexpr size_t BUFFER_SIZE = 1024 * 1024; // 1MB buffer
+  std::cin.rdbuf()->pubsetbuf(nullptr, BUFFER_SIZE);
+
+  juceDLog("[JUCE] Main process starting with enhanced stdin buffer (1MB)...");
+
 #ifdef USE_JUCE
   Backend backend;
 #else

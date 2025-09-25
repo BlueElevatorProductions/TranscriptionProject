@@ -36,6 +36,13 @@ export class JuceClient implements Transport {
   private pendingCommands = new Map<string, { resolve: (result: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout }>();
   private currentLoadCommand: { commandKey: string; id: string } | null = null;
 
+  // Command queue and flow control
+  private commandQueue: Array<{ command: JuceCommand; resolve: (result: any) => void; reject: (error: any) => void; retries: number }> = [];
+  private isProcessingQueue = false;
+  private maxRetries = 3;
+  private retryDelay = 100; // ms
+  private waitingForDrain = false;
+
   constructor(opts: JuceClientOptions = {}) {
     this.options = {
       binaryPath: opts.binaryPath || JuceClient.defaultBinaryPath(),
@@ -48,13 +55,24 @@ export class JuceClient implements Transport {
 
   // --- Public Transport API ---
   async load(id: TransportId, filePath: string): Promise<{success: boolean, error?: string}> {
-    // Validate file exists before sending to backend
-    const fs = await import('fs');
-    if (!fs.existsSync(filePath)) {
+    // Add comprehensive diagnostic logging
+    console.log(`[JUCE] load() called with:`, {
+      id,
+      filePath,
+      filePathType: typeof filePath,
+      filePathLength: filePath?.length,
+      isAbsolute: require('path').isAbsolute(filePath),
+      platformSep: require('path').sep
+    });
+
+    // Try to resolve the file path if it doesn't exist directly
+    const resolvedPath = await this.resolveAudioFilePath(filePath);
+    if (!resolvedPath) {
+      console.error(`[JUCE] ❌ Unable to resolve audio file path:`, filePath);
       return { success: false, error: `Audio file not found: ${filePath}` };
     }
 
-    console.log(`[JUCE] Loading audio file: ${filePath}`);
+    console.log(`[JUCE] ✅ Loading audio file: ${resolvedPath}${resolvedPath !== filePath ? ` (resolved from: ${filePath})` : ''}`);
     await this.ensureStarted();
 
     return new Promise((resolve, reject) => {
@@ -70,10 +88,14 @@ export class JuceClient implements Transport {
       this.pendingCommands.set(commandKey, { resolve, reject, timeout });
 
       try {
-        this.send({ type: 'load', id, path: filePath });
-
-        // Store command info for response matching
-        this.currentLoadCommand = { commandKey, id };
+        this.send({ type: 'load', id, path: resolvedPath }).then(() => {
+          // Store command info for response matching
+          this.currentLoadCommand = { commandKey, id };
+        }).catch(error => {
+          this.pendingCommands.delete(commandKey);
+          clearTimeout(timeout);
+          resolve({ success: false, error: error instanceof Error ? error.message : String(error) });
+        });
       } catch (error) {
         this.pendingCommands.delete(commandKey);
         clearTimeout(timeout);
@@ -84,41 +106,77 @@ export class JuceClient implements Transport {
 
   async updateEdl(id: TransportId, clips: EdlClip[]): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'updateEdl', id, clips });
+    try {
+      await this.send({ type: 'updateEdl', id, clips });
+    } catch (error) {
+      throw new Error(`updateEdl failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async play(id: TransportId): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'play', id });
+    try {
+      await this.send({ type: 'play', id });
+    } catch (error) {
+      throw new Error(`play failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   async pause(id: TransportId): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'pause', id });
+    try {
+      await this.send({ type: 'pause', id });
+    } catch (error) {
+      throw new Error(`pause failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   async stop(id: TransportId): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'stop', id });
+    try {
+      await this.send({ type: 'stop', id });
+    } catch (error) {
+      throw new Error(`stop failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   async seek(id: TransportId, timeSec: number): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'seek', id, timeSec });
+    try {
+      await this.send({ type: 'seek', id, timeSec });
+    } catch (error) {
+      throw new Error(`seek failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   async setRate(id: TransportId, rate: number): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'setRate', id, rate });
+    try {
+      await this.send({ type: 'setRate', id, rate });
+    } catch (error) {
+      throw new Error(`setRate failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async setTimeStretch(id: TransportId, ratio: number): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'setTimeStretch', id, ratio });
+    try {
+      await this.send({ type: 'setTimeStretch', id, ratio });
+    } catch (error) {
+      throw new Error(`setTimeStretch failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   async setVolume(id: TransportId, value: number): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'setVolume', id, value });
+    try {
+      await this.send({ type: 'setVolume', id, value });
+    } catch (error) {
+      throw new Error(`setVolume failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   async queryState(id: TransportId): Promise<void> {
     await this.ensureStarted();
-    this.send({ type: 'queryState', id });
+    try {
+      await this.send({ type: 'queryState', id });
+    } catch (error) {
+      throw new Error(`queryState failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async dispose(): Promise<void> {
@@ -143,6 +201,84 @@ export class JuceClient implements Transport {
     const base = (process as any).resourcesPath || path.join(process.cwd(), 'resources');
     const bin = process.platform === 'win32' ? 'juce-backend.exe' : 'juce-backend';
     return path.join(base, 'juce', bin);
+  }
+
+  /**
+   * Resolve audio file path with fallback logic for the main process
+   */
+  private async resolveAudioFilePath(filePath: string): Promise<string | null> {
+    if (!filePath || typeof filePath !== 'string') {
+      return null;
+    }
+
+    const fs = await import('fs');
+
+    // First check if the path exists as provided
+    if (fs.existsSync(filePath)) {
+      console.log(`[JUCE] ✅ Direct path exists:`, filePath);
+      return filePath;
+    }
+
+    console.log(`[JUCE] 🔍 Direct path doesn't exist, trying fallback resolution for:`, filePath);
+
+    // Generate candidate paths for fallback resolution
+    const candidates: string[] = [];
+
+    // If it's a relative path or just a filename, try some common locations
+    if (!path.isAbsolute(filePath)) {
+      const filename = path.basename(filePath);
+      const relativePath = filePath;
+
+      // Try relative to current working directory
+      candidates.push(
+        path.resolve(relativePath),
+        path.resolve('audio', filename),
+        path.resolve('Audio Files', filename),
+        path.resolve('..', 'audio', filename),
+        path.resolve('..', 'Audio Files', filename)
+      );
+
+      // Legacy fallback locations (for existing projects)
+      candidates.push(
+        `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${filename}`,
+        `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${filename}`,
+        `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${filename}`,
+        `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${relativePath}`,
+      );
+    } else {
+      // For absolute paths that don't exist, try some alternative directory structures
+      const filename = path.basename(filePath);
+      const dirname = path.dirname(filePath);
+
+      candidates.push(
+        path.join(dirname, 'Audio Files', filename),
+        path.join(path.dirname(dirname), 'Audio Files', filename),
+        path.join(process.cwd(), 'audio', filename),
+        path.join(process.cwd(), 'Audio Files', filename)
+      );
+    }
+
+    // Remove duplicates and normalize paths
+    const uniqueCandidates = [...new Set(candidates)].map(candidate => path.normalize(candidate));
+
+    console.log(`[JUCE] 🔍 Testing fallback candidates:`, uniqueCandidates);
+
+    // Test each candidate
+    for (const candidate of uniqueCandidates) {
+      try {
+        if (fs.existsSync(candidate)) {
+          console.log(`[JUCE] ✅ Found audio file at:`, candidate);
+          return candidate;
+        } else {
+          console.log(`[JUCE] ❌ Candidate doesn't exist:`, candidate);
+        }
+      } catch (error) {
+        console.warn(`[JUCE] ⚠️ Error checking candidate:`, candidate, error);
+      }
+    }
+
+    console.error(`[JUCE] ❌ No valid audio file found for path:`, filePath);
+    return null;
   }
 
   private async ensureStarted(): Promise<void> {
@@ -277,33 +413,131 @@ export class JuceClient implements Transport {
     }
   }
 
-  private send(cmd: JuceCommand) {
-    if (!this.child) {
-      this.emitError('Attempted to send command but JUCE process is null');
-      return;
-    }
+  private send(cmd: JuceCommand): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      if (!this.child) {
+        this.emitError('Attempted to send command but JUCE process is null');
+        reject(false);
+        return;
+      }
 
-    // Check if child process is still alive
-    if (this.child.killed || this.child.exitCode !== null) {
-      this.emitError('Attempted to send command but JUCE process has exited');
-      return;
-    }
+      // Check if child process is still alive
+      if (this.child.killed || this.child.exitCode !== null) {
+        this.emitError('Attempted to send command but JUCE process has exited');
+        reject(false);
+        return;
+      }
 
-    // Check if stdin is available and writable
-    if (!this.child.stdin || this.child.stdin.destroyed || !this.child.stdin.writable) {
-      this.emitError('Attempted to send command but JUCE stdin is not writable');
+      // Check if stdin is available and writable
+      if (!this.child.stdin || this.child.stdin.destroyed || !this.child.stdin.writable) {
+        this.emitError('Attempted to send command but JUCE stdin is not writable');
+        reject(false);
+        return;
+      }
+
+      // Try immediate send first
+      this.attemptSend(cmd, resolve, reject, 0);
+    });
+  }
+
+  private attemptSend(cmd: JuceCommand, resolve: (result: boolean) => void, reject: (error: any) => void, retries: number) {
+    if (!this.child?.stdin) {
+      reject(new Error('stdin not available'));
       return;
     }
 
     try {
       const payload = JSON.stringify(cmd) + '\n';
       const success = this.child.stdin.write(payload, 'utf8');
-      if (!success) {
-        this.emitError('Failed to write to JUCE stdin: buffer full');
+
+      if (success) {
+        // Write successful
+        console.log(`[JUCE] ✅ Command sent successfully: ${cmd.type}`);
+        resolve(true);
+      } else {
+        // Buffer is full, handle backpressure
+        console.warn(`[JUCE] ⚠️ Buffer full for command: ${cmd.type}, handling backpressure...`);
+        this.handleBackpressure(cmd, resolve, reject, retries);
       }
     } catch (e) {
-      this.emitError(`Failed to write to JUCE stdin: ${e}`);
+      if (retries < this.maxRetries) {
+        console.warn(`[JUCE] ⚠️ Send failed (attempt ${retries + 1}/${this.maxRetries}), retrying: ${e}`);
+        setTimeout(() => {
+          this.attemptSend(cmd, resolve, reject, retries + 1);
+        }, this.retryDelay * Math.pow(2, retries)); // Exponential backoff
+      } else {
+        console.error(`[JUCE] ❌ Send failed after ${this.maxRetries} retries: ${e}`);
+        this.emitError(`Failed to write to JUCE stdin after ${this.maxRetries} retries: ${e}`);
+        reject(e);
+      }
     }
+  }
+
+  private handleBackpressure(cmd: JuceCommand, resolve: (result: boolean) => void, reject: (error: any) => void, retries: number) {
+    if (!this.child?.stdin) {
+      reject(new Error('stdin not available'));
+      return;
+    }
+
+    if (retries >= this.maxRetries) {
+      console.error(`[JUCE] ❌ Buffer full after ${this.maxRetries} retries, giving up`);
+      this.emitError('Failed to write to JUCE stdin: buffer persistently full');
+      reject(new Error('Buffer persistently full'));
+      return;
+    }
+
+    // Queue command for retry when drain fires
+    this.commandQueue.push({ command: cmd, resolve, reject, retries: retries + 1 });
+
+    if (!this.waitingForDrain) {
+      this.waitingForDrain = true;
+      console.log(`[JUCE] 🔄 Waiting for drain event to process ${this.commandQueue.length} queued commands...`);
+
+      // Set up drain listener
+      const onDrain = () => {
+        this.child?.stdin?.off('drain', onDrain);
+        this.waitingForDrain = false;
+        console.log(`[JUCE] ✅ Drain event received, processing ${this.commandQueue.length} queued commands`);
+        this.processCommandQueue();
+      };
+
+      this.child.stdin.once('drain', onDrain);
+
+      // Fallback timeout in case drain never fires
+      setTimeout(() => {
+        if (this.waitingForDrain) {
+          this.child?.stdin?.off('drain', onDrain);
+          this.waitingForDrain = false;
+          console.warn(`[JUCE] ⚠️ Drain timeout, force-processing ${this.commandQueue.length} queued commands`);
+          this.processCommandQueue();
+        }
+      }, 1000);
+    }
+  }
+
+  private processCommandQueue() {
+    if (this.isProcessingQueue || this.commandQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+    console.log(`[JUCE] 🔄 Processing ${this.commandQueue.length} queued commands...`);
+
+    const processNext = () => {
+      if (this.commandQueue.length === 0) {
+        this.isProcessingQueue = false;
+        console.log(`[JUCE] ✅ Queue processing complete`);
+        return;
+      }
+
+      const { command, resolve, reject, retries } = this.commandQueue.shift()!;
+      this.attemptSend(command, resolve, reject, retries);
+
+      // Small delay between commands to prevent overwhelming the buffer again
+      setTimeout(processNext, 10);
+    };
+
+    processNext();
   }
 
   private handleLoadedEvent(evt: JuceEvent) {

@@ -78,8 +78,9 @@ export class JuceAudioManagerV2 {
   // Initialization guards
   private isInitializing: boolean = false;
   private lastFailedPath: string | null = null;
-  private errorCooldown: number = 5000; // 5 second cooldown after errors
+  private errorCooldown: number = 1000; // 1 second cooldown after errors (reduced from 5s)
   private lastErrorTime: number = 0;
+  private bufferErrorCooldown: number = 100; // Very short cooldown for buffer errors (they're transient)
 
   // Track last resolved project directory to resolve relative paths later
   private lastResolvedProjectDir: { base: string; isWindows: boolean } | null = null;
@@ -166,7 +167,7 @@ export class JuceAudioManagerV2 {
       this.lastFailedPath = null;
       this.lastErrorTime = 0;
 
-      console.log('🎵 JUCE audio initialized:', resolvedPath);
+      console.log('🎵 ✅ JUCE audio initialized successfully:', resolvedPath);
 
       // Apply any pending clips that were cached while JUCE was not ready
       if (this.pendingClips && this.pendingClips.length > 0) {
@@ -557,8 +558,25 @@ export class JuceAudioManagerV2 {
 
     console.error('🔥 JUCE Audio Error:', fullMessage);
 
-    // Record error time for cooldown
-    this.lastErrorTime = Date.now();
+    // Check if this is a buffer-related error (transient)
+    const isBufferError = errorMessage.includes('buffer full') ||
+                         errorMessage.includes('stdin') ||
+                         errorMessage.includes('write failed');
+
+    if (isBufferError) {
+      // Use shorter cooldown for buffer errors as they're transient
+      this.lastErrorTime = Date.now();
+      console.warn('🎵 ⚠️ Buffer error detected - using reduced cooldown for fast recovery');
+
+      // Override cooldown for buffer errors
+      setTimeout(() => {
+        console.log('🎵 ✅ Buffer error cooldown expired, ready for retry');
+        this.lastErrorTime = 0;
+      }, this.bufferErrorCooldown);
+    } else {
+      // Regular error cooldown
+      this.lastErrorTime = Date.now();
+    }
 
     this.updateState({ error: fullMessage });
 
@@ -578,6 +596,11 @@ export class JuceAudioManagerV2 {
         return null;
       }
 
+      const checkFileExists = (window as any).electronAPI?.checkFileExists;
+      const pathApi = (window as any).electronAPI?.path;
+
+      console.log('🎵 Resolving audio path:', { audioPath, projectDirectory: this.projectDirectory });
+
       // Handle file:// URLs
       if (audioPath.startsWith('file://')) {
         const url = new URL(audioPath);
@@ -589,28 +612,64 @@ export class JuceAudioManagerV2 {
         }
 
         const normalized = this.normalizePathForPlatform(resolvedPath);
-        this.rememberProjectDir(normalized);
-        return normalized;
+
+        // Validate file exists before returning
+        if (typeof checkFileExists === 'function') {
+          try {
+            const exists = await checkFileExists(normalized);
+            if (exists) {
+              this.rememberProjectDir(normalized);
+              console.log('✅ Resolved file:// URL to existing file:', normalized);
+              return normalized;
+            } else {
+              console.warn('❌ file:// URL resolved to non-existent file:', normalized);
+              return null;
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to validate file:// URL path:', normalized, error);
+            return null;
+          }
+        } else {
+          // Fallback without validation
+          this.rememberProjectDir(normalized);
+          return normalized;
+        }
       }
 
       // Handle absolute paths
       if (this.isAbsolutePath(audioPath)) {
         const normalized = this.normalizePathForPlatform(audioPath);
-        this.rememberProjectDir(normalized);
-        return normalized;
+
+        // Validate file exists before returning
+        if (typeof checkFileExists === 'function') {
+          try {
+            const exists = await checkFileExists(normalized);
+            if (exists) {
+              this.rememberProjectDir(normalized);
+              console.log('✅ Validated absolute path:', normalized);
+              return normalized;
+            } else {
+              console.warn('❌ Absolute path does not exist:', normalized);
+              return null;
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to validate absolute path:', normalized, error);
+            return null;
+          }
+        } else {
+          // Fallback without validation
+          this.rememberProjectDir(normalized);
+          return normalized;
+        }
       }
 
       // Handle relative paths - assume they're in the project directory
-      // For now, we'll try to resolve relative to the current working directory
       if (audioPath && !audioPath.includes('://')) {
-        // This is likely a filename from project data
-        // In a real app, this should be resolved relative to the project's audio directory
-        console.warn('🎵 Received relative audio path, attempting to resolve:', audioPath);
+        console.log('🎵 Processing relative path:', audioPath);
 
         const candidates: string[] = [];
 
         // First try using the projectDirectory if available
-        const pathApi = (window as any).electronAPI?.path;
         if (this.projectDirectory && pathApi) {
           const projectDir = pathApi.dirname(this.projectDirectory);
           const sanitizedRelative = audioPath.replace(/^Audio Files[\/\\]/i, '').replace(/^[./\\]+/, '');
@@ -624,7 +683,7 @@ export class JuceAudioManagerV2 {
 
           candidates.push(...projectCandidates);
 
-          console.log('🎵 JuceAudioManagerV2: Resolving relative path with project directory:', {
+          console.log('🎵 Generated project-based candidates:', {
             audioPath,
             projectDirectory: this.projectDirectory,
             projectDir,
@@ -632,6 +691,7 @@ export class JuceAudioManagerV2 {
           });
         }
 
+        // Add cache-based resolution
         const resolvedFromCache = this.resolveRelativeToProject(audioPath);
         if (resolvedFromCache) {
           candidates.push(resolvedFromCache);
@@ -648,30 +708,38 @@ export class JuceAudioManagerV2 {
         // Always include the original relative path last as a fallback
         candidates.push(audioPath);
 
-        const checkFileExists = (window as any).electronAPI?.checkFileExists;
-        for (const candidate of candidates) {
-          const normalizedCandidate = this.normalizePathForPlatform(candidate);
-          if (typeof checkFileExists === 'function') {
+        console.log('🎵 Testing candidates for existence:', candidates);
+
+        // Validate each candidate and return the first one that exists
+        if (typeof checkFileExists === 'function') {
+          for (const candidate of candidates) {
+            const normalizedCandidate = this.normalizePathForPlatform(candidate);
             try {
               const exists = await checkFileExists(normalizedCandidate);
               if (exists) {
                 this.rememberProjectDir(normalizedCandidate);
+                console.log('✅ Found existing file:', normalizedCandidate);
                 return normalizedCandidate;
+              } else {
+                console.log('❌ Candidate does not exist:', normalizedCandidate);
               }
             } catch (error) {
-              console.warn('🎵 Failed to verify path existence for candidate:', normalizedCandidate, error);
+              console.warn('⚠️ Failed to check candidate:', normalizedCandidate, error);
             }
-          } else {
-            // Without a way to verify existence, use the first candidate
-            this.rememberProjectDir(normalizedCandidate);
-            return normalizedCandidate;
           }
-        }
 
-        if (candidates.length > 0) {
-          const fallback = this.normalizePathForPlatform(candidates[candidates.length - 1]);
-          this.rememberProjectDir(fallback);
-          return fallback;
+          // No valid candidates found
+          console.error('❌ No valid audio file found for path:', audioPath);
+          console.error('❌ Checked candidates:', candidates);
+          return null;
+        } else {
+          // Without checkFileExists API, return the first candidate as fallback
+          console.warn('⚠️ checkFileExists API not available, using first candidate without validation');
+          if (candidates.length > 0) {
+            const fallback = this.normalizePathForPlatform(candidates[0]);
+            this.rememberProjectDir(fallback);
+            return fallback;
+          }
         }
 
         return null;

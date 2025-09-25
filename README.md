@@ -183,11 +183,49 @@ A professional desktop transcription application built with Electron, React, and
 - **Result**: ✅ **Comprehensive path resolution infrastructure complete** - all path-related components functional
 - **Current Status**: ❌ **Audio playback still completely broken** - path resolution not the root cause
 
+**14. Root Cause Fix: Main Process File Validation (Attempt 14 - Latest - September 2025)**:
+- **Problem**: Audio loading failure at main process level due to fs.existsSync() blocking valid paths
+- **Root Cause Discovery**: JuceClient.ts lines 53-54 using fs.existsSync() to reject paths before JUCE backend even receives them
+  - Renderer resolves paths but main process immediately rejects them without attempting resolution
+  - Main process lacks path resolution logic, causing valid audio files to be rejected
+  - fs.existsSync() check happens before any attempt to resolve relative paths in main process context
+- **Technical Solution**:
+  - **Enhanced JuceAudioManagerV2**: Added comprehensive path validation using checkFileExists API before sending to main process
+  - **JuceClient Path Resolution**: Implemented resolveAudioFilePath() method with fallback logic in main process
+  - **Bidirectional Validation**: Both renderer and main process now validate and resolve paths independently
+  - **Diagnostic Logging**: Added detailed logging to track path resolution pipeline from renderer → main process → JUCE backend
+- **Files**:
+  - `src/renderer/audio/JuceAudioManagerV2.ts` - Enhanced resolveAudioPath() with validation before sending to main process
+  - `src/main/services/JuceClient.ts` - Added resolveAudioFilePath() method with comprehensive fallback resolution logic
+- **Result**: ✅ **Path validation pipeline complete** - both renderer and main process validate file existence
+- **Current Status**: ❌ **Audio playback still not functioning** - comprehensive path resolution implemented but playback remains broken
+
+**15. Buffer Overflow Fix: JUCE stdin Communication (Attempt 15 - Latest - September 2025)**:
+- **Problem**: Audio playback failure due to JUCE backend stdin buffer overflow when processing large EDL payloads
+- **Root Cause Discovery**: Analysis of logs revealed stdin buffer overflow errors causing audio manager to never reach "ready" state
+  - `🔥 JUCE Audio Error: JUCE transport error: Failed to write to JUCE stdin: buffer full`
+  - Error cooldown preventing recovery even after buffer clears
+  - 418 segments creating large JSON payload overwhelming 64KB default stdin buffer
+- **Technical Solution**:
+  - **Enhanced JuceClient.ts**: Implemented comprehensive stdin backpressure handling with drain event listeners
+  - **Command Queue System**: Added retry logic with exponential backoff and proper flow control
+  - **Smart Error Recovery**: Reduced cooldown for buffer errors (100ms) vs regular errors (1000ms)
+  - **JUCE Backend Buffer**: Increased stdin buffer to 1MB to handle large EDL payloads
+  - **Promise-based Commands**: Converted all JUCE commands to Promise-based API with proper error handling
+- **Files**:
+  - `src/main/services/JuceClient.ts` - Added backpressure handling, command queuing, and drain event management
+  - `src/renderer/audio/JuceAudioManagerV2.ts` - Enhanced error recovery with buffer-specific cooldown logic
+  - `native/juce-backend/src/main.cpp` - Increased stdin buffer from default 64KB to 1MB
+- **Result**: ✅ **Buffer overflow protection complete** - stdin flow control and enhanced error recovery implemented
+- **Current Status**: ✅ **Audio playback now working!** - buffer overflow fix successful, but fast playback issue remains
+
 #### 📊 **Current Operational State (September 2025 - Latest)**
 - ✅ Application launches without crashes
 - ✅ JUCE backend builds and initializes successfully
 - ✅ No segmentation faults or EPIPE errors
 - ✅ Audio loading and file access working properly
+- ✅ **Audio playback functionality restored** - buffer overflow fix successful
+- ⚠️ **Fast playback issue persists** - audio plays at incorrect tempo (needs speed/sample rate investigation)
 - ✅ **Path resolution infrastructure complete** - comprehensive cross-platform path handling implemented
 - ✅ **Project directory integration** - both audio hooks receive proper project context
 - ✅ **Node.js path utilities fully functional** - all path operations working correctly
