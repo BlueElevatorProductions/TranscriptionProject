@@ -21,6 +21,8 @@ export interface AudioStateV2 {
   currentTime: number;        // Contiguous timeline time
   originalTime: number;       // Original audio file time
   duration: number;
+  sampleRate: number | null;
+  channels: number | null;
 
   // Audio settings
   volume: number;
@@ -102,6 +104,8 @@ export class JuceAudioManagerV2 {
       currentTime: 0,
       originalTime: 0,
       duration: 0,
+      sampleRate: null,
+      channels: null,
       volume: 1.0,
       playbackRate: 1.0,
       currentClipId: null,
@@ -156,6 +160,14 @@ export class JuceAudioManagerV2 {
 
       console.log('🎵 Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath });
       await this.loadFile(this.sessionId, resolvedPath);
+
+      // Reset playback rate to sane default after every load
+      try {
+        await this.transport.setRate(this.sessionId, 1.0);
+        this.updateState({ playbackRate: 1.0 });
+      } catch (error) {
+        console.warn('🎵 Failed to reset playback rate after load:', error);
+      }
 
       this.updateState({
         isLoading: false,
@@ -396,6 +408,8 @@ export class JuceAudioManagerV2 {
           isLoading: false,
           isReady: true,
           duration: typeof event.durationSec === 'number' ? event.durationSec : this.state.duration,
+          sampleRate: typeof (event as any).sampleRate === 'number' ? (event as any).sampleRate : this.state.sampleRate,
+          channels: typeof (event as any).channels === 'number' ? (event as any).channels : this.state.channels,
           error: null
         });
         break;

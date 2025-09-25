@@ -8,9 +8,13 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 
@@ -144,10 +148,17 @@ static void handleLine(const std::string& line) {
     emitPosition();
     return;
   }
-    if (contains("\"type\":\"updateEdl\"")) {
-      // Accept silently in mock handler
-      return;
+  if (contains("\"type\":\"updateEdlFromFile\"")) {
+    const std::string path = extract("path");
+    if (!path.empty()) {
+      std::remove(path.c_str());
     }
+    return;
+  }
+  if (contains("\"type\":\"updateEdl\"")) {
+    // Accept silently in mock handler
+    return;
+  }
   if (contains("\"type\":\"setRate\"") || contains("\"type\":\"setVolume\"")) {
     // Accept silently
     return;
@@ -186,6 +197,156 @@ struct Clip {
   bool hasOriginal() const { return originalStartSec >= 0 && originalEndSec >= 0; }
   size_t segmentCount() const { return segments.size(); }
 };
+
+static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>& clipsOut) {
+  clipsOut.clear();
+
+  auto findClipsArray = [&](size_t& aStart, size_t& aEnd) -> bool {
+    size_t key = json.find("\"clips\"");
+    if (key == std::string::npos) return false;
+    size_t colon = json.find(':', key);
+    if (colon == std::string::npos) return false;
+    size_t lb = json.find('[', colon);
+    if (lb == std::string::npos) return false;
+    int depth = 1;
+    size_t i = lb + 1;
+    while (i < json.size() && depth > 0) {
+      if (json[i] == '[') depth++;
+      else if (json[i] == ']') depth--;
+      i++;
+    }
+    if (depth != 0) return false;
+    aStart = lb + 1;
+    aEnd = i - 1;
+    return true;
+  };
+
+  size_t aStart = 0;
+  size_t aEnd = 0;
+  if (!findClipsArray(aStart, aEnd)) {
+    return false;
+  }
+
+  std::vector<std::string> itemStrings;
+  size_t cursor = aStart;
+  while (cursor < aEnd) {
+    while (cursor < aEnd && (json[cursor] == ' ' || json[cursor] == ',' || json[cursor] == '\n' || json[cursor] == '\r' || json[cursor] == '\t')) cursor++;
+    if (cursor >= aEnd) break;
+    if (json[cursor] != '{') {
+      cursor++;
+      continue;
+    }
+
+    int depth = 1;
+    size_t objStart = cursor;
+    cursor++;
+    while (cursor < aEnd && depth > 0) {
+      if (json[cursor] == '{') depth++;
+      else if (json[cursor] == '}') depth--;
+      cursor++;
+    }
+
+    size_t objEnd = cursor;
+    itemStrings.push_back(json.substr(objStart, objEnd - objStart));
+  }
+
+  auto extractNumber = [&](const std::string& s, const char* key) -> double {
+    size_t p = s.find(key);
+    if (p == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+    size_t c = s.find(':', p);
+    if (c == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
+    size_t e = s.find_first_of(",}\n", c + 1);
+    std::string token = s.substr(c + 1, (e == std::string::npos ? s.size() : e) - (c + 1));
+    try {
+      return std::stod(token);
+    } catch (...) {
+      return std::numeric_limits<double>::quiet_NaN();
+    }
+  };
+
+  auto extractString = [&](const std::string& s, const char* key) -> std::string {
+    size_t p = s.find(key);
+    if (p == std::string::npos) return {};
+    size_t c = s.find(':', p);
+    if (c == std::string::npos) return {};
+    size_t qs = s.find('"', c);
+    if (qs == std::string::npos) return {};
+    size_t qe = s.find('"', qs + 1);
+    if (qe == std::string::npos) return {};
+    return s.substr(qs + 1, qe - (qs + 1));
+  };
+
+  for (const auto& clipJson : itemStrings) {
+    Clip clip;
+    clip.id = extractString(clipJson, "\"id\"");
+    clip.startSec = extractNumber(clipJson, "\"startSec\"");
+    clip.endSec = extractNumber(clipJson, "\"endSec\"");
+    clip.originalStartSec = extractNumber(clipJson, "\"originalStartSec\"");
+    clip.originalEndSec = extractNumber(clipJson, "\"originalEndSec\"");
+    clip.speaker = extractString(clipJson, "\"speaker\"");
+    clip.type = extractString(clipJson, "\"type\"");
+
+    if (!(clip.startSec == clip.startSec) || !(clip.endSec == clip.endSec)) {
+      continue;
+    }
+
+    size_t segStart = clipJson.find("\"segments\"");
+    if (segStart != std::string::npos) {
+      size_t segArrayStart = clipJson.find('[', segStart);
+      if (segArrayStart != std::string::npos) {
+        int segDepth = 1;
+        size_t segCursor = segArrayStart + 1;
+        while (segCursor < clipJson.size() && segDepth > 0) {
+          if (clipJson[segCursor] == '[') segDepth++;
+          else if (clipJson[segCursor] == ']') segDepth--;
+          segCursor++;
+        }
+
+        if (segDepth == 0) {
+          std::string segArrayContent = clipJson.substr(segArrayStart + 1, segCursor - segArrayStart - 2);
+          size_t segPos = 0;
+          while (segPos < segArrayContent.size()) {
+            while (segPos < segArrayContent.size() && (segArrayContent[segPos] == ' ' || segArrayContent[segPos] == ',' || segArrayContent[segPos] == '\n' || segArrayContent[segPos] == '\r' || segArrayContent[segPos] == '\t')) segPos++;
+            if (segPos >= segArrayContent.size()) break;
+            if (segArrayContent[segPos] != '{') {
+              segPos++;
+              continue;
+            }
+
+            int segDepth2 = 1;
+            size_t segObjStart = segPos;
+            segPos++;
+            while (segPos < segArrayContent.size() && segDepth2 > 0) {
+              if (segArrayContent[segPos] == '{') segDepth2++;
+              else if (segArrayContent[segPos] == '}') segDepth2--;
+              segPos++;
+            }
+
+            std::string segJson = segArrayContent.substr(segObjStart, segPos - segObjStart);
+            Segment segment;
+            segment.type = extractString(segJson, "\"type\"");
+            segment.start = extractNumber(segJson, "\"startSec\"");
+            segment.end = extractNumber(segJson, "\"endSec\"");
+            segment.dur = segment.end - segment.start;
+            segment.text = extractString(segJson, "\"text\"");
+            segment.originalStart = extractNumber(segJson, "\"originalStartSec\"");
+            segment.originalEnd = extractNumber(segJson, "\"originalEndSec\"");
+
+            if (segment.start == segment.start && segment.end == segment.end && segment.end > segment.start) {
+              clip.segments.push_back(segment);
+            }
+          }
+        }
+      }
+    }
+
+    if (clip.endSec > clip.startSec) {
+      clipsOut.push_back(clip);
+    }
+  }
+
+  return true;
+}
 
 // Custom AudioSource that handles Edit Decision List (EDL) playback
 class EdlAudioSource : public juce::PositionableAudioSource {
@@ -491,6 +652,8 @@ public:
     transportSource.setSource(readerSource.get(), 0, nullptr, sr);
     juceDLog("[JUCE] Transport source configured successfully");
     g.durationSec = duration;
+    playbackRate = 1.0;
+    resampler.setResamplingRatio(1.0);
     // Default EDL: single full-file segment
     segments.clear();
     if (duration > 0.0) {
@@ -994,147 +1157,41 @@ int main() {
       backend.load(g.id, extract("path"));
       continue;
     }
-    if (contains("\"type\":\"updateEdl\"")) {
-      // Parse clips array robustly by extracting each object substring first
-      auto findClipsArray = [&](size_t& aStart, size_t& aEnd) -> bool {
-        size_t key = line.find("\"clips\"");
-        if (key == std::string::npos) return false;
-        size_t colon = line.find(':', key);
-        if (colon == std::string::npos) return false;
-        size_t lb = line.find('[', colon);
-        if (lb == std::string::npos) return false;
-        int depth = 1; size_t i = lb + 1;
-        while (i < line.size() && depth > 0) {
-          if (line[i] == '[') depth++;
-          else if (line[i] == ']') depth--;
-          i++;
-        }
-        if (depth != 0) return false;
-        aStart = lb + 1; aEnd = i - 1; return true;
-      };
-
-      size_t aStart = 0, aEnd = 0;
-      std::vector<std::string> itemStrings;
-      if (findClipsArray(aStart, aEnd)) {
-        // Extract top-level JSON objects inside the clips array
-        size_t i = aStart;
-        while (i < aEnd) {
-          while (i < aEnd && (line[i] == ' ' || line[i] == ',' || line[i] == '\n' || line[i] == '\r' || line[i] == '\t')) i++;
-          if (i >= aEnd) break;
-          if (line[i] != '{') { i++; continue; }
-          int depth = 1; size_t objStart = i; i++;
-          while (i < aEnd && depth > 0) {
-            if (line[i] == '{') depth++;
-            else if (line[i] == '}') depth--;
-            i++;
-          }
-          size_t objEnd = i; // position after closing brace
-          itemStrings.push_back(line.substr(objStart, objEnd - objStart));
-        }
+    if (contains("\"type\":\"updateEdlFromFile\"")) {
+      std::string pathValue = extract("path");
+      if (pathValue.empty()) {
+        emit("{\"type\":\"error\",\"message\":\"Missing EDL file path\"}");
+        continue;
       }
 
-      // Helper functions for parsing JSON values
-      auto extractNumber = [&](const std::string& s, const char* key) -> double {
-        size_t p = s.find(key);
-        if (p == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
-        size_t c = s.find(':', p);
-        if (c == std::string::npos) return std::numeric_limits<double>::quiet_NaN();
-        size_t e = s.find_first_of(",}\n", c + 1);
-        std::string token = s.substr(c + 1, (e == std::string::npos ? s.size() : e) - (c + 1));
-        try { return std::stod(token); } catch (...) { return std::numeric_limits<double>::quiet_NaN(); }
-      };
+      std::ifstream edlFile(pathValue);
+      if (!edlFile.good()) {
+        emit("{\"type\":\"error\",\"message\":\"Unable to read EDL file\"}");
+        continue;
+      }
 
-      auto extractString = [&](const std::string& s, const char* key) -> std::string {
-        size_t p = s.find(key);
-        if (p == std::string::npos) return {};
-        size_t c = s.find(':', p);
-        if (c == std::string::npos) return {};
-        size_t qs = s.find('"', c);
-        if (qs == std::string::npos) return {};
-        size_t qe = s.find('"', qs + 1);
-        if (qe == std::string::npos) return {};
-        return s.substr(qs + 1, qe - (qs + 1));
-      };
+      std::stringstream buffer;
+      buffer << edlFile.rdbuf();
+      edlFile.close();
 
-      // Parse clips with segments
       std::vector<Clip> clips;
-      for (const auto& clipJson : itemStrings) {
-        Clip clip;
-        clip.id = extractString(clipJson, "\"id\"");
-        clip.startSec = extractNumber(clipJson, "\"startSec\"");
-        clip.endSec = extractNumber(clipJson, "\"endSec\"");
-        clip.originalStartSec = extractNumber(clipJson, "\"originalStartSec\"");
-        clip.originalEndSec = extractNumber(clipJson, "\"originalEndSec\"");
-        clip.speaker = extractString(clipJson, "\"speaker\"");
-        clip.type = extractString(clipJson, "\"type\"");
-
-        // Skip invalid clips
-        if (!(clip.startSec == clip.startSec) || !(clip.endSec == clip.endSec)) continue;
-
-        // Parse segments array within this clip
-        size_t segStart = clipJson.find("\"segments\"");
-        if (segStart != std::string::npos) {
-          size_t segArrayStart = clipJson.find('[', segStart);
-          if (segArrayStart != std::string::npos) {
-            int depth = 1;
-            size_t i = segArrayStart + 1;
-            while (i < clipJson.size() && depth > 0) {
-              if (clipJson[i] == '[') depth++;
-              else if (clipJson[i] == ']') depth--;
-              i++;
-            }
-
-            if (depth == 0) {
-              std::string segArrayContent = clipJson.substr(segArrayStart + 1, i - segArrayStart - 2);
-
-              // Parse individual segment objects
-              size_t segPos = 0;
-              while (segPos < segArrayContent.size()) {
-                while (segPos < segArrayContent.size() &&
-                       (segArrayContent[segPos] == ' ' || segArrayContent[segPos] == ',' ||
-                        segArrayContent[segPos] == '\n' || segArrayContent[segPos] == '\r' ||
-                        segArrayContent[segPos] == '\t')) segPos++;
-                if (segPos >= segArrayContent.size()) break;
-                if (segArrayContent[segPos] != '{') { segPos++; continue; }
-
-                int segDepth = 1;
-                size_t segObjStart = segPos;
-                segPos++;
-                while (segPos < segArrayContent.size() && segDepth > 0) {
-                  if (segArrayContent[segPos] == '{') segDepth++;
-                  else if (segArrayContent[segPos] == '}') segDepth--;
-                  segPos++;
-                }
-
-                std::string segJson = segArrayContent.substr(segObjStart, segPos - segObjStart);
-
-                // Parse segment
-                Segment segment;
-                segment.type = extractString(segJson, "\"type\"");
-                segment.start = extractNumber(segJson, "\"startSec\"");
-                segment.end = extractNumber(segJson, "\"endSec\"");
-                segment.dur = segment.end - segment.start;
-                segment.text = extractString(segJson, "\"text\"");
-                segment.originalStart = extractNumber(segJson, "\"originalStartSec\"");
-                segment.originalEnd = extractNumber(segJson, "\"originalEndSec\"");
-
-                // Add valid segments
-                if (segment.start == segment.start && segment.end == segment.end &&
-                    segment.end > segment.start) {
-                  clip.segments.push_back(segment);
-                }
-              }
-            }
-          }
-        }
-
-        // Add clip if it has valid duration
-        if (clip.endSec > clip.startSec) {
-          clips.push_back(clip);
-        }
+      if (!parseClipsFromJsonPayload(buffer.str(), clips)) {
+        emit("{\"type\":\"error\",\"message\":\"Invalid EDL file contents\"}");
+        continue;
       }
 
-      // Pass clips to backend
+      backend.updateEdl(std::move(clips));
+      std::remove(pathValue.c_str());
+      continue;
+    }
+
+    if (contains("\"type\":\"updateEdl\"")) {
+      std::vector<Clip> clips;
+      if (!parseClipsFromJsonPayload(line, clips)) {
+        emit("{\"type\":\"error\",\"message\":\"Invalid EDL payload\"}");
+        continue;
+      }
+
       backend.updateEdl(std::move(clips));
       continue;
     }

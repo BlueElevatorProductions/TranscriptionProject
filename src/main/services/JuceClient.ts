@@ -1,4 +1,5 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import { promises as fsPromises } from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import {
@@ -10,6 +11,7 @@ import {
   isJuceEvent,
   EdlClip,
 } from '../../shared/types/transport';
+import { app } from 'electron';
 
 interface JuceClientOptions {
   binaryPath?: string;
@@ -42,6 +44,8 @@ export class JuceClient implements Transport {
   private maxRetries = 3;
   private retryDelay = 100; // ms
   private waitingForDrain = false;
+  private readonly edlInlineThresholdBytes = 128 * 1024; // 128KB
+  private edlTempDirectory: string | null = null;
 
   constructor(opts: JuceClientOptions = {}) {
     this.options = {
@@ -106,9 +110,26 @@ export class JuceClient implements Transport {
 
   async updateEdl(id: TransportId, clips: EdlClip[]): Promise<void> {
     await this.ensureStarted();
+    const { command, cleanup } = await this.prepareEdlCommand(id, clips);
     try {
-      await this.send({ type: 'updateEdl', id, clips });
+      await this.send(command);
+      if (cleanup) {
+        setTimeout(() => {
+          cleanup().catch(err => {
+            if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+              console.warn(`[JUCE] ⚠️ Failed to remove temp EDL file:`, err);
+            }
+          });
+        }, 30000);
+      }
     } catch (error) {
+      if (cleanup) {
+        cleanup().catch(err => {
+          if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+            console.warn(`[JUCE] ⚠️ Failed to remove temp EDL file after error:`, err);
+          }
+        });
+      }
       throw new Error(`updateEdl failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -538,6 +559,55 @@ export class JuceClient implements Transport {
     };
 
     processNext();
+  }
+
+  private async ensureEdlTempDir(): Promise<string> {
+    if (this.edlTempDirectory) {
+      return this.edlTempDirectory;
+    }
+
+    const base = path.join(app.getPath('temp'), 'juce-edl-cache');
+    try {
+      await fsPromises.mkdir(base, { recursive: true });
+    } catch (error) {
+      console.warn('[JUCE] ⚠️ Failed to create EDL cache directory:', error);
+    }
+
+    this.edlTempDirectory = base;
+    return base;
+  }
+
+  private async prepareEdlCommand(id: TransportId, clips: EdlClip[]): Promise<{ command: JuceCommand; cleanup?: () => Promise<void> }> {
+    const inlinePayload: JuceCommand = { type: 'updateEdl', id, clips };
+    const payloadSize = Buffer.byteLength(JSON.stringify(inlinePayload));
+
+    if (payloadSize <= this.edlInlineThresholdBytes) {
+      return { command: inlinePayload };
+    }
+
+    const dir = await this.ensureEdlTempDir();
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${safeId}_${Date.now()}_${Math.random().toString(36).slice(2)}.json`;
+    const filePath = path.join(dir, fileName);
+
+    const filePayload = { clips };
+    await fsPromises.writeFile(filePath, JSON.stringify(filePayload));
+
+    console.log(`[JUCE] 🗂️ Large EDL (${payloadSize} bytes) written to temp file: ${filePath}`);
+
+    const cleanup = async () => {
+      try {
+        await fsPromises.unlink(filePath);
+        console.log(`[JUCE] 🧹 Removed temp EDL file: ${filePath}`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+          console.warn(`[JUCE] ⚠️ Failed to remove temp EDL file ${filePath}:`, error);
+        }
+      }
+    };
+
+    const fileCommand: JuceCommand = { type: 'updateEdlFromFile', id, path: filePath };
+    return { command: fileCommand, cleanup };
   }
 
   private handleLoadedEvent(evt: JuceEvent) {

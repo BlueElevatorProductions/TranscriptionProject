@@ -18,6 +18,8 @@ export interface PlaybackState {
   currentTime: number;
   originalTime: number;
   duration: number;
+  sampleRate: number | null;
+  channels: number | null;
 
   // Audio settings
   volume: number;
@@ -86,6 +88,8 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     currentTime: persistedSettings.currentTime || 0,
     originalTime: 0,
     duration: 0,
+    sampleRate: null,
+    channels: null,
     volume: persistedSettings.volume || 1.0,
     playbackRate: persistedSettings.playbackRate || 1.0,
     currentClipId: null,
@@ -181,6 +185,8 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
           currentTime: audioState.currentTime,
           originalTime: audioState.originalTime,
           duration: totalDuration > 0 ? totalDuration : audioState.duration,
+          sampleRate: audioState.sampleRate,
+          channels: audioState.channels,
           volume: audioState.volume,
           playbackRate: audioState.playbackRate,
           currentClipId: clipId,

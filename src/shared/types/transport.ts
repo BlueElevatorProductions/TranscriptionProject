@@ -27,6 +27,7 @@ export interface EdlClip {
 export type JuceCommand =
   | { type: 'load'; id: TransportId; path: string }
   | { type: 'updateEdl'; id: TransportId; clips: EdlClip[] }
+  | { type: 'updateEdlFromFile'; id: TransportId; path: string }
   | { type: 'play'; id: TransportId }
   | { type: 'pause'; id: TransportId }
   | { type: 'stop'; id: TransportId }
@@ -113,6 +114,8 @@ export function isJuceCommand(obj: any): obj is JuceCommand {
           c && typeof c.id === 'string' && typeof c.startSec === 'number' && typeof c.endSec === 'number' && typeof c.order === 'number'
         )
       );
+    case 'updateEdlFromFile':
+      return typeof obj.id === 'string' && typeof obj.path === 'string';
     case 'play':
     case 'pause':
     case 'stop':
