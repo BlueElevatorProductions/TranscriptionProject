@@ -1,12 +1,86 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import * as nodePath from 'path';
 import type { JuceEvent, EdlClip } from '../shared/types/transport';
+import type { TransportLogEntry } from '../shared/logging/transport';
 
 console.log('🔧 PRELOAD SCRIPT LOADING...');
 console.log('🔧 Process info:', {
   platform: process.platform,
   pid: process.pid,
   versions: process.versions
+});
+
+const transportLogListeners = new Set<(entry: TransportLogEntry) => void>();
+
+const defaultTransportLogger = (entry: TransportLogEntry) => {
+  try {
+    const method = typeof console[entry.level] === 'function' ? console[entry.level].bind(console) : console.log.bind(console);
+    const args = Array.isArray(entry.args) && entry.args.length > 0 ? entry.args : [entry.message];
+    method(...args);
+  } catch (error) {
+    console.warn('[IPC][Renderer] failed to render forwarded transport log', {
+      entry,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
+transportLogListeners.add(defaultTransportLogger);
+
+function summarizeForPreview(value: any): any {
+  if (value === null || value === undefined) return value ?? null;
+  const type = typeof value;
+  if (type === 'string' || type === 'number' || type === 'boolean') return value;
+  if (value instanceof Error) {
+    return { name: value.name, message: value.message, stack: value.stack };
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 5).map((item) => summarizeForPreview(item));
+  }
+  if (type === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return Object.keys(value as Record<string, unknown>);
+    }
+  }
+  return String(value);
+}
+
+function summarizeIpcArgs(args: any[]): any[] {
+  return args.map((arg) => summarizeForPreview(arg));
+}
+
+const originalEmit = ipcRenderer.emit.bind(ipcRenderer);
+ipcRenderer.emit = function (channel: string | symbol, ...args: any[]) {
+  if (typeof channel === 'string') {
+    try {
+      const payloadPreview = summarizeIpcArgs(args.slice(1));
+      console.log('[IPC][Renderer] event received', {
+        channel,
+        payload: payloadPreview,
+      });
+    } catch (error) {
+      console.warn('[IPC][Renderer] failed to summarize IPC payload', {
+        channel,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return originalEmit(channel, ...args);
+};
+
+ipcRenderer.on('transport:log', (_event, entry: TransportLogEntry) => {
+  for (const listener of transportLogListeners) {
+    try {
+      listener(entry);
+    } catch (callbackError) {
+      console.warn('[IPC][Renderer] transport log listener error', {
+        error: callbackError instanceof Error ? callbackError.message : String(callbackError),
+      });
+    }
+  }
 });
 
 // Expose protected methods that allow the renderer process to use
@@ -60,6 +134,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onDebugLog: (callback: (message: string) => void) => {
     ipcRenderer.on('debug-log', (event, message) => callback(message));
+  },
+  onTransportLog: (callback: (entry: TransportLogEntry) => void) => {
+    if (typeof callback !== 'function') return;
+    transportLogListeners.add(callback);
   },
   onAudioConversionProgress: (callback: (data: {percent: number; status: string}) => void) => {
     ipcRenderer.on('audio-conversion-progress', (event, data) => callback(data));
@@ -210,6 +288,7 @@ export interface ElectronAPI {
   onTranscriptionProgress: (callback: (job: any) => void) => void;
   onTranscriptionComplete: (callback: (job: any) => void) => void;
   onTranscriptionError: (callback: (job: any) => void) => void;
+  onTransportLog: (callback: (entry: TransportLogEntry) => void) => void;
   removeAllListeners: (channel: string) => void;
   readAudioFile: (filePath: string) => Promise<ArrayBuffer>;
   saveApiKeys: (apiKeys: { [service: string]: string }) => Promise<{success: boolean; error?: string}>;

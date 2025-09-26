@@ -293,7 +293,7 @@ export class JuceAudioManagerV2 {
    * Provide diagnostic information about readiness state for logging.
    */
   public getReadinessDebugInfo(): Record<string, unknown> {
-    return {
+    const info = {
       isReady: this.state.isReady,
       readyStatus: this.state.readyStatus,
       hasTransport: !!this.transport,
@@ -309,6 +309,10 @@ export class JuceAudioManagerV2 {
       sentRevisionCounter: this.sentRevisionCounter,
       blockers: this.describeReadinessBlockers(this.state),
     };
+
+    console.log('[AudioManager][Readiness] debug info requested', info);
+
+    return info;
   }
 
   private describeReadinessBlockers(stateOverride?: AudioStateV2): string[] {

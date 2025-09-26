@@ -18,11 +18,14 @@ import UserPreferencesService from './services/UserPreferences';
 import JuceClient from './services/JuceClient';
 import { ProjectDataStore } from './services/ProjectDataStore';
 import { TranscriptionServiceV2 } from './services/TranscriptionServiceV2';
+import { installTransportLogBridge } from './utils/transportLogBridge';
 import type { JuceEvent, EdlClip } from '../shared/types/transport';
 import type { EditOperation, ProjectData } from '../shared/types';
 
 // Load environment variables from .env file
 dotenv.config();
+
+installTransportLogBridge();
 
 const isDev = () => {
   return process.env.NODE_ENV === 'development' || !app.isPackaged;
