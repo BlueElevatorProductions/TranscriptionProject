@@ -97,9 +97,9 @@ export class EDLBuilderService {
       (acc, clip) => {
         const segs = clip.segments || [];
         for (const seg of segs) {
-          acc.total += 1;
+          acc.totalSegments += 1;
           if (seg.type === 'spacer') {
-            acc.spacers += 1;
+            acc.spacerSegments += 1;
             if (acc.preview.length < 3) {
               acc.preview.push({
                 clipId: clip.id,
@@ -110,21 +110,21 @@ export class EDLBuilderService {
               });
             }
           } else {
-            acc.words += 1;
+            acc.wordSegments += 1;
           }
         }
         return acc;
       },
-      { total: 0, words: 0, spacers: 0, preview: [] as Array<Record<string, unknown>> }
+      { totalSegments: 0, wordSegments: 0, spacerSegments: 0, preview: [] as Array<Record<string, unknown>> }
     );
 
     console.log('[EDLBuilder] Segment breakdown', {
       clips: edlClips.length,
-      totalSegments: segmentStats.total,
-      wordSegments: segmentStats.words,
-      spacerSegments: segmentStats.spacers
+      totalSegments: segmentStats.totalSegments,
+      wordSegments: segmentStats.wordSegments,
+      spacerSegments: segmentStats.spacerSegments
     });
-    if (segmentStats.spacers === 0) {
+    if (segmentStats.spacerSegments === 0) {
       console.warn('[EDLBuilder] ⚠️ No spacer segments detected while building EDL');
     } else {
       console.log('[EDLBuilder] Spacer preview (first 3)', segmentStats.preview);

@@ -371,6 +371,7 @@ class App {
       this.juceClient = new JuceClient();
       const edlRevisionById = new Map<string, number>();
       const pendingAppliedById = new Map<string, number>();
+      const pendingCountsById = new Map<string, { words: number; spacers: number; total: number }>();
       const getRev = (id: string) => edlRevisionById.get(id) ?? 0;
       const bumpRev = (id: string) => { const r = getRev(id) + 1; edlRevisionById.set(id, r); return r; };
       const summarizeSegments = (clips: EdlClip[]) => {
@@ -470,14 +471,21 @@ class App {
             edlRevisionById.set(id, e.revision);
           }
           pendingAppliedById.delete(id);
+          const counts = pendingCountsById.get(id);
+          const eventWithCounts = {
+            ...e,
+            wordCount: (e as any).wordCount ?? counts?.words ?? 0,
+            spacerCount: (e as any).spacerCount ?? counts?.spacers ?? 0,
+          } as JuceEvent;
           console.log('[IPC][JUCE] edlApplied event', {
             id,
-            revision: e.revision,
-            wordCount: (e as any).wordCount,
-            spacerCount: (e as any).spacerCount,
-            mode: (e as any).mode,
+            revision: (eventWithCounts as any).revision,
+            wordCount: (eventWithCounts as any).wordCount,
+            spacerCount: (eventWithCounts as any).spacerCount,
+            mode: (eventWithCounts as any).mode,
           });
-          forward(e);
+          forward(eventWithCounts);
+          pendingCountsById.delete(id);
         },
         onPosition: (e) => {
           const id = (e as any).id as string;
@@ -487,8 +495,16 @@ class App {
             const appliedRev = pendingAppliedById.get(id)!;
             // Ensure our stored rev matches bumped rev
             if (appliedRev === rev) {
-              forward({ type: 'edlApplied', id, revision: appliedRev } as any);
+              const pendingCounts = pendingCountsById.get(id);
+              forward({
+                type: 'edlApplied',
+                id,
+                revision: appliedRev,
+                wordCount: pendingCounts?.words ?? 0,
+                spacerCount: pendingCounts?.spacers ?? 0,
+              } as any);
               pendingAppliedById.delete(id);
+              pendingCountsById.delete(id);
             }
           }
           forward({ ...(e as any), revision: rev } as any);
@@ -521,6 +537,11 @@ class App {
           const rev = incomingRevision ?? bumpRev(id);
           edlRevisionById.set(id, rev);
           const stats = summarizeSegments(clips);
+          pendingCountsById.set(id, {
+            words: stats.wordSegments,
+            spacers: stats.spacerSegments,
+            total: stats.totalSegments,
+          });
           const payloadSize = Buffer.byteLength(JSON.stringify({ clips }));
           console.log('[IPC][JUCE] updateEdl request', {
             id,
@@ -572,6 +593,8 @@ class App {
             },
           };
         } catch (e) {
+          pendingCountsById.delete(id);
+          pendingAppliedById.delete(id);
           return { success: false, error: String(e) };
         }
       });

@@ -57,8 +57,27 @@ export class TranscriptionImportService {
     const allWords = this.extractWordsFromSegments(rawSegments);
     console.log(`📝 Extracted ${allWords.length} words from ${rawSegments.length} segments`);
 
+    const normalizedWords = this.normalizeWordTimestamps(allWords);
+    const timestampsAdjusted =
+      normalizedWords.length === allWords.length &&
+      normalizedWords.some((word, index) => {
+        const original = allWords[index];
+        return (
+          Math.abs(Number(original.start) - word.start) > 1e-6 ||
+          Math.abs(Number(original.end) - word.end) > 1e-6
+        );
+      });
+
+    if (timestampsAdjusted) {
+      const maxEndSec = normalizedWords.length ? Math.max(...normalizedWords.map((w) => w.end)) : 0;
+      console.log('[Import][Spacer] Normalized word timestamps', {
+        detectedUnit: 'seconds',
+        maxEndSec: Number(maxEndSec.toFixed(3)),
+      });
+    }
+
     // Step 2: Group words by speaker and create clips
-    const clips = this.createClipsFromWords(allWords, speakers || {});
+    const clips = this.createClipsFromWords(normalizedWords, speakers || {});
     console.log(`🎬 Created ${clips.length} clips from speaker groups`);
 
     let totalWordSegments = 0;
@@ -203,6 +222,43 @@ export class TranscriptionImportService {
     return words;
   }
 
+  private static normalizeWordTimestamps(words: Word[]): Word[] {
+    if (!words.length) {
+      return words;
+    }
+
+    const numeric = words.map((word) => ({
+      ...word,
+      start: Number(word.start),
+      end: Number(word.end),
+    }));
+
+    const durations = numeric
+      .map((word) => {
+        const duration = Number(word.end) - Number(word.start);
+        return Number.isFinite(duration) ? Math.max(0, duration) : 0;
+      })
+      .filter((value) => value > 0)
+      .sort((a, b) => a - b);
+
+    const median = durations.length ? durations[Math.floor(durations.length / 2)] : 0;
+    const scale = median > 10 ? 0.001 : 1;
+
+    if (scale === 1) {
+      return numeric;
+    }
+
+    console.log('[Import][Spacer] Detected millisecond timestamps; converting to seconds', {
+      medianSampleMs: Number(median.toFixed(2)),
+    });
+
+    return numeric.map((word) => ({
+      ...word,
+      start: Number((word.start * scale).toFixed(6)),
+      end: Number((word.end * scale).toFixed(6)),
+    }));
+  }
+
   // ==================== Clip Creation ====================
 
   /**
@@ -295,7 +351,7 @@ export class TranscriptionImportService {
       if (nextWord) {
         const gapDuration = nextWord.start - word.end;
 
-        console.debug('[Import][Spacer] Gap analysis between words', {
+        console.log('[Import][Spacer] Gap analysis', {
           clipOrder: order,
           speaker,
           currentWord: word.word,
@@ -313,7 +369,7 @@ export class TranscriptionImportService {
           const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
 
           const spacerDuration = spacerEnd - spacerStart;
-          console.log('[Import][Spacer] Spacer created', {
+          console.log('🟦 Spacer created', {
             clipOrder: order,
             speaker,
             gapSec: Number(gapDuration.toFixed(3)),

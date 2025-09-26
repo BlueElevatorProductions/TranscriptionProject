@@ -31,6 +31,7 @@ export interface PlaybackState {
 
   // System state
   isReady: boolean;
+  readyStatus: 'idle' | 'loading' | 'waiting-edl' | 'ready' | 'fallback';
   error: string | null;
 }
 
@@ -95,6 +96,7 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     currentClipId: null,
     currentSegmentIndex: null,
     isReady: false,
+    readyStatus: 'idle',
     error: null
   });
 
@@ -192,6 +194,7 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
           currentClipId: clipId,
           currentSegmentIndex: segmentIndex,
           isReady: audioState.isReady,
+          readyStatus: audioState.readyStatus,
           error: audioState.error
         }));
       },
@@ -208,7 +211,8 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
         setState(prevState => ({
           ...prevState,
           error,
-          isLoading: false
+          isLoading: false,
+          readyStatus: prevState.readyStatus === 'loading' ? 'idle' : prevState.readyStatus
         }));
       }
     };
@@ -340,6 +344,7 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     setState(prevState => ({
       ...prevState,
       isLoading: true,
+      readyStatus: 'loading',
       error: null
     }));
 
@@ -351,7 +356,8 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
       setState(prevState => ({
         ...prevState,
         error: error instanceof Error ? error.message : String(error),
-        isLoading: false
+        isLoading: false,
+        readyStatus: 'idle'
       }));
       throw error;
     }
@@ -390,6 +396,7 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
         currentClipId: null,
         currentSegmentIndex: null,
         isReady: false,
+        readyStatus: 'idle',
         error: null
       });
     }

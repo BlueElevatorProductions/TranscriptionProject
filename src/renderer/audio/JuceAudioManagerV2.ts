@@ -34,6 +34,7 @@ export interface AudioStateV2 {
 
   // System state
   isReady: boolean;
+  readyStatus: 'idle' | 'loading' | 'waiting-edl' | 'ready' | 'fallback';
   error: string | null;
 }
 
@@ -90,6 +91,11 @@ export class JuceAudioManagerV2 {
 
   // Revision tracking for EDL application confirmation
   private edlRevisionCounter: number = 0;
+  private hasLoadedFromJuce: boolean = false;
+  private hasCompletedInitialSync: boolean = false;
+  private awaitingEdlRevision: number | null = null;
+  private readyFallbackTimer: number | null = null;
+  private lastAcknowledgedRevision: number | null = null;
 
   constructor(options: JuceAudioManagerV2Options | AudioCallbacksV2) {
     // Handle both old callback-only and new options-based constructors
@@ -114,6 +120,7 @@ export class JuceAudioManagerV2 {
       currentClipId: null,
       currentSegmentIndex: null,
       isReady: false,
+      readyStatus: 'idle',
       error: null
     };
 
@@ -155,7 +162,8 @@ export class JuceAudioManagerV2 {
       }
 
       this.audioPath = resolvedPath;
-      this.updateState({ isLoading: true, error: null });
+      this.resetInitialSyncState();
+      this.updateState({ isLoading: true, readyStatus: 'loading', isReady: false, error: null });
 
       if (!this.transport) {
         throw new Error('JUCE transport not available');
@@ -175,6 +183,8 @@ export class JuceAudioManagerV2 {
       this.updateState({
         isLoading: false,
         // NOTE: Do NOT set isReady: true here - wait for JUCE 'loaded' event confirmation
+        readyStatus: 'waiting-edl',
+        isReady: false,
         error: null
       });
 
@@ -210,7 +220,7 @@ export class JuceAudioManagerV2 {
    */
   public async updateClips(clips: Clip[]): Promise<void> {
     try {
-      if (!this.transport || !this.state.isReady) {
+      if (!this.transport || !this.hasLoadedFromJuce) {
         console.warn('⚠️ Cannot update clips: JUCE not ready, caching for later application');
         this.pendingClips = [...clips]; // Cache clips for later
         return;
@@ -252,6 +262,16 @@ export class JuceAudioManagerV2 {
       }
 
       this.edlRevisionCounter = acknowledgedRevision;
+      this.lastAcknowledgedRevision = acknowledgedRevision;
+
+      if (this.hasLoadedFromJuce && !this.hasCompletedInitialSync) {
+        console.info('[AudioManager] Awaiting JUCE edlApplied event before enabling transport', {
+          revision: acknowledgedRevision,
+        });
+        this.awaitingEdlRevision = acknowledgedRevision;
+        this.updateState({ readyStatus: 'waiting-edl', isReady: false });
+        this.scheduleReadyFallback(acknowledgedRevision);
+      }
 
       // Update duration from EDL
       this.updateState({
@@ -402,6 +422,11 @@ export class JuceAudioManagerV2 {
     this.currentEDL = null;
     this.lastSeekIntent = null;
     this.pendingClips = null;
+    this.clearReadyFallbackTimer();
+    this.hasLoadedFromJuce = false;
+    this.hasCompletedInitialSync = false;
+    this.awaitingEdlRevision = null;
+    this.lastAcknowledgedRevision = null;
   }
 
   // ==================== Private Methods ====================
@@ -452,6 +477,10 @@ export class JuceAudioManagerV2 {
     switch (event.type) {
       case 'loaded': {
         this.edlRevisionCounter = 0;
+        this.hasLoadedFromJuce = true;
+        this.hasCompletedInitialSync = false;
+        this.awaitingEdlRevision = null;
+        this.clearReadyFallbackTimer();
         console.info('[AudioManager] Reset EDL revision counter after JUCE load');
         console.info('[JUCE] transport loaded', {
           durationSec: event.durationSec,
@@ -460,7 +489,8 @@ export class JuceAudioManagerV2 {
         });
         this.updateState({
           isLoading: false,
-          isReady: true,
+          isReady: false,
+          readyStatus: 'waiting-edl',
           duration: typeof event.durationSec === 'number' ? event.durationSec : this.state.duration,
           sampleRate: typeof (event as any).sampleRate === 'number' ? (event as any).sampleRate : this.state.sampleRate,
           channels: typeof (event as any).channels === 'number' ? (event as any).channels : this.state.channels,
@@ -475,7 +505,8 @@ export class JuceAudioManagerV2 {
         this.updateState({
           isPlaying: !!event.playing,
           isLoading: false,
-          isReady: true,
+          isReady: this.state.isReady,
+          readyStatus: this.state.readyStatus,
           error: null
         });
         break;
@@ -487,17 +518,32 @@ export class JuceAudioManagerV2 {
       }
 
       case 'edlApplied': {
-        const expectedRevision = this.edlRevisionCounter;
+        const revision = typeof event.revision === 'number' && Number.isFinite(event.revision)
+          ? Math.floor(event.revision)
+          : this.edlRevisionCounter;
+        const expectedRevision = this.awaitingEdlRevision ?? this.lastAcknowledgedRevision ?? this.edlRevisionCounter;
         const mode = (event as any).mode;
         console.info(
-          `[AudioManager] EDL applied by JUCE (revision ${event.revision}, expected ${expectedRevision}, mode ${mode ?? 'unknown'})`
+          `[AudioManager] EDL applied by JUCE (revision ${revision}, expected ${expectedRevision}, mode ${mode ?? 'unknown'})`
         );
-        if (event.revision !== expectedRevision) {
+        if (revision !== expectedRevision) {
           console.warn('[AudioManager] ⚠️ EDL revision mismatch!', {
-            received: event.revision,
+            received: revision,
             expected: expectedRevision
           });
         }
+        this.edlRevisionCounter = revision;
+        this.lastAcknowledgedRevision = revision;
+
+        if (!this.hasCompletedInitialSync) {
+          console.info('[AudioManager] Initial EDL apply completed, transport ready');
+          this.markTransportReady('ready', revision);
+        } else if (this.state.readyStatus === 'fallback') {
+          console.info('[AudioManager] Transport fallback resolved by JUCE edlApplied event');
+          this.updateState({ readyStatus: 'ready', isReady: true });
+        }
+
+        this.awaitingEdlRevision = null;
         this.processPendingSeek();
         break;
       }
@@ -512,7 +558,7 @@ export class JuceAudioManagerV2 {
         // Don't set isReady to false if we're currently initializing
         // This prevents re-initialization loops
         if (!this.isInitializing) {
-          this.updateState({ isPlaying: false, isLoading: false, isReady: false });
+          this.updateState({ isPlaying: false, isLoading: false, isReady: false, readyStatus: 'idle' });
         } else {
           this.updateState({ isPlaying: false, isLoading: false });
         }
@@ -631,6 +677,50 @@ export class JuceAudioManagerV2 {
   private updateState(updates: Partial<AudioStateV2>): void {
     this.state = { ...this.state, ...updates };
     this.callbacks.onStateChange(this.state);
+  }
+
+  private resetInitialSyncState(): void {
+    this.hasLoadedFromJuce = false;
+    this.hasCompletedInitialSync = false;
+    this.awaitingEdlRevision = null;
+    this.lastAcknowledgedRevision = null;
+    this.clearReadyFallbackTimer();
+  }
+
+  private scheduleReadyFallback(revision: number): void {
+    if (this.hasCompletedInitialSync) {
+      return;
+    }
+
+    this.clearReadyFallbackTimer();
+    this.readyFallbackTimer = window.setTimeout(() => {
+      console.warn('[AudioManager] ⚠️ No edlApplied event received within 2000ms; enabling playback with caution', {
+        revision,
+      });
+      this.markTransportReady('fallback', revision);
+    }, 2000);
+  }
+
+  private markTransportReady(mode: 'ready' | 'fallback', revision?: number): void {
+    this.clearReadyFallbackTimer();
+    this.hasCompletedInitialSync = true;
+    this.awaitingEdlRevision = null;
+    if (typeof revision === 'number') {
+      this.edlRevisionCounter = revision;
+      this.lastAcknowledgedRevision = revision;
+    }
+    this.updateState({
+      isLoading: false,
+      isReady: true,
+      readyStatus: mode,
+    });
+  }
+
+  private clearReadyFallbackTimer(): void {
+    if (this.readyFallbackTimer !== null) {
+      window.clearTimeout(this.readyFallbackTimer);
+      this.readyFallbackTimer = null;
+    }
   }
 
   private handleError(context: string, error: any): void {

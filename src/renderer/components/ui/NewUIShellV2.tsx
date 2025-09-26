@@ -1107,6 +1107,8 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
         onSkipToClipStart={handleSkipToClipStart}
         onSkipToClipEnd={handleSkipToClipEnd}
         fileName={audioPath || 'No audio loaded'}
+        isTransportReady={audioState.isReady}
+        readyStatus={audioState.readyStatus}
       />
 
       {/* Project Import Dialog */}
