@@ -128,7 +128,15 @@ export function GlassAudioPlayer({
         <div className="flex items-center gap-1">
           <button
             aria-label="Skip to clip start"
-            onClick={onSkipToClipStart}
+            onClick={() => {
+              if (!isTransportReady) {
+                console.log('[UI click] skip-back ignored — transport not ready', {
+                  readyStatus,
+                  isTransportReady,
+                });
+              }
+              onSkipToClipStart();
+            }}
             className={`p-2 rounded-md transition-colors ${controlsDisabledClass} ${isTransportReady ? 'hover:bg-[hsl(var(--glass-hover))]' : ''}`}
             disabled={!isTransportReady}
           >
@@ -136,7 +144,21 @@ export function GlassAudioPlayer({
           </button>
           <button
             aria-label={isPlaying ? "Pause" : "Play"}
-            onClick={onPlayPause}
+            onClick={(event) => {
+              const action = isPlaying ? 'pause' : 'play';
+              console.log('[UI click] transport button', {
+                action,
+                isTransportReady,
+                readyStatus,
+              });
+              if (!isTransportReady) {
+                console.warn('[UI click] transport action blocked — not ready', {
+                  action,
+                  readyStatus,
+                });
+              }
+              onPlayPause();
+            }}
             className={`p-2.5 rounded-md transition-colors ${controlsDisabledClass} ${isTransportReady ? 'hover:bg-[hsl(var(--glass-hover))]' : ''}`}
             disabled={!isTransportReady}
           >
@@ -144,7 +166,15 @@ export function GlassAudioPlayer({
           </button>
           <button
             aria-label="Skip to clip end"
-            onClick={onSkipToClipEnd}
+            onClick={() => {
+              if (!isTransportReady) {
+                console.log('[UI click] skip-forward ignored — transport not ready', {
+                  readyStatus,
+                  isTransportReady,
+                });
+              }
+              onSkipToClipEnd();
+            }}
             className={`p-2 rounded-md transition-colors ${controlsDisabledClass} ${isTransportReady ? 'hover:bg-[hsl(var(--glass-hover))]' : ''}`}
             disabled={!isTransportReady}
           >

@@ -363,6 +363,7 @@ export class TranscriptionImportService {
           threshold: Number(SPACER_THRESHOLD_SECONDS.toFixed(3)),
           clipOrder: order,
           speaker,
+          rawGap: Number.isFinite(gapRaw) ? Number(gapRaw.toFixed(6)) : null,
         });
 
         if (sanitizedGap >= SPACER_THRESHOLD_SECONDS) {
@@ -372,7 +373,7 @@ export class TranscriptionImportService {
           const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
 
           const spacerDuration = spacerEnd - spacerStart;
-          console.info('🟦 Spacer created', {
+          console.log('🟦 Spacer created', {
             prev: word.word,
             next: nextWord.word,
             start: Number(word.end.toFixed(3)),
@@ -396,18 +397,19 @@ export class TranscriptionImportService {
         } else if (sanitizedGap > 0) {
           const spacerStart = wordEnd;
           const spacerEnd = nextWord.start - clipStartTime;
+          const microDuration = spacerEnd - spacerStart;
           const spacerSegment = createSpacerSegment(
             spacerStart,
             spacerEnd,
             `${sanitizedGap.toFixed(2)}s`
           );
 
-          console.info('🟦 Micro-spacer inserted', {
+          console.log('🟦 Micro-spacer inserted', {
             prev: word.word,
             next: nextWord.word,
             start: Number(word.end.toFixed(3)),
             end: Number(nextWord.start.toFixed(3)),
-            duration: Number((spacerEnd - spacerStart).toFixed(3)),
+            duration: Number(microDuration.toFixed(3)),
             clipOrder: order,
             speaker,
             clipRelativeStart: Number(spacerStart.toFixed(3)),

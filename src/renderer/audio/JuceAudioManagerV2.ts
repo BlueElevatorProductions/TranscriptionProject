@@ -455,17 +455,48 @@ export class JuceAudioManagerV2 {
   public async pause(): Promise<void> {
     if (!this.transport) return;
 
+    const generation = this.currentGenerationId;
+    console.log('[CMD] pause', {
+      gen: generation,
+      readyStatus: this.state.readyStatus,
+    });
     try {
-      const result = await this.transport.pause(this.sessionId, this.currentGenerationId);
+      const result = await this.transport.pause(this.sessionId, generation);
       if (!result || result.success) {
         this.updateState({ isPlaying: false });
       } else if (result.error?.includes('stale generation')) {
         console.warn('[AudioManager] Ignoring pause command for superseded generation', {
-          generation: this.currentGenerationId,
+          generation,
         });
       }
     } catch (error) {
       this.handleError('Pause failed', error);
+    }
+  }
+
+  public async stop(): Promise<void> {
+    if (!this.transport?.stop) {
+      console.warn('[CMD] stop skipped — transport does not expose stop()');
+      return;
+    }
+
+    const generation = this.currentGenerationId;
+    console.log('[CMD] stop', {
+      gen: generation,
+      readyStatus: this.state.readyStatus,
+    });
+
+    try {
+      const result = await this.transport.stop(this.sessionId, generation);
+      if (!result || result.success) {
+        this.updateState({ isPlaying: false });
+      } else if (result.error?.includes('stale generation')) {
+        console.warn('[AudioManager] Ignoring stop command for superseded generation', {
+          generation,
+        });
+      }
+    } catch (error) {
+      this.handleError('Stop failed', error);
     }
   }
 

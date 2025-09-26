@@ -309,14 +309,26 @@ contextBridge.exposeInMainWorld('juceTransport', {
   updateEdl: (id: string, revision: number, clips: EdlClip[], generationId?: number) =>
     ipcRenderer.invoke('juce:updateEdl', id, revision, clips, generationId),
   play: (id: string, generationId?: number) => {
-    console.log('[IPC] play', { id, generationId });
+    console.log('[IPC send] play', { id, generationId });
     return ipcRenderer.invoke('juce:play', id, generationId).then((result) => {
-      console.log('[IPC] play ack', { id, generationId, result });
+      console.log('[IPC ack] play', { id, generationId, result });
       return result;
     });
   },
-  pause: (id: string, generationId?: number) => ipcRenderer.invoke('juce:pause', id, generationId),
-  stop: (id: string, generationId?: number) => ipcRenderer.invoke('juce:stop', id, generationId),
+  pause: (id: string, generationId?: number) => {
+    console.log('[IPC send] pause', { id, generationId });
+    return ipcRenderer.invoke('juce:pause', id, generationId).then((result) => {
+      console.log('[IPC ack] pause', { id, generationId, result });
+      return result;
+    });
+  },
+  stop: (id: string, generationId?: number) => {
+    console.log('[IPC send] stop', { id, generationId });
+    return ipcRenderer.invoke('juce:stop', id, generationId).then((result) => {
+      console.log('[IPC ack] stop', { id, generationId, result });
+      return result;
+    });
+  },
   seek: (id: string, timeSec: number, generationId?: number) => ipcRenderer.invoke('juce:seek', id, timeSec, generationId),
   setRate: (id: string, rate: number, generationId?: number) => ipcRenderer.invoke('juce:setRate', id, rate, generationId),
   setTimeStretch: (id: string, ratio: number, generationId?: number) => ipcRenderer.invoke('juce:setTimeStretch', id, ratio, generationId),

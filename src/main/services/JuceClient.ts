@@ -73,8 +73,9 @@ export class JuceClient implements Transport {
       return { success: false, error: `Audio file not found: ${filePath}` };
     }
 
+    let formatInfo: { sampleRate: number; channels: number; audioFormat: number } | null = null;
     try {
-      await this.assertWavFormat(resolvedPath);
+      formatInfo = await this.assertWavFormat(resolvedPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[JUCE] ❌ Audio format validation failed:', message);
@@ -82,6 +83,13 @@ export class JuceClient implements Transport {
     }
 
     console.log(`[JUCE] ✅ Loading audio file: ${resolvedPath}${resolvedPath !== filePath ? ` (resolved from: ${filePath})` : ''}`);
+    if (formatInfo) {
+      console.log('[JUCE] 🔎 WAV format confirmed', {
+        sampleRate: formatInfo.sampleRate,
+        channels: formatInfo.channels,
+        audioFormat: formatInfo.audioFormat,
+      });
+    }
     await this.ensureStarted();
 
     if (this.currentLoadCommand && this.currentLoadCommand.id === id) {
@@ -193,6 +201,7 @@ export class JuceClient implements Transport {
   async pause(id: TransportId, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
+      console.log('[JUCE] → pause', { id, generationId });
       await this.send({ type: 'pause', id, generationId });
     } catch (error) {
       throw new Error(`pause failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -201,6 +210,7 @@ export class JuceClient implements Transport {
   async stop(id: TransportId, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
+      console.log('[JUCE] → stop', { id, generationId });
       await this.send({ type: 'stop', id, generationId });
     } catch (error) {
       throw new Error(`stop failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -403,7 +413,7 @@ export class JuceClient implements Transport {
     return null;
   }
 
-  private async assertWavFormat(resolvedPath: string): Promise<void> {
+  private async assertWavFormat(resolvedPath: string): Promise<{ sampleRate: number; channels: number; audioFormat: number }> {
     if (!resolvedPath) {
       throw new Error('Converted WAV path is empty');
     }
@@ -439,6 +449,8 @@ export class JuceClient implements Transport {
       if (channels !== 2) {
         throw new Error(`Audio must be stereo (2 channels); received ${channels}`);
       }
+
+      return { sampleRate, channels, audioFormat };
     } finally {
       try {
         await handle?.close();

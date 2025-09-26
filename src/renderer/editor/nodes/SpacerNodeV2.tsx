@@ -79,12 +79,18 @@ export class SpacerNodeV2 extends DecoratorNode<React.JSX.Element> {
   constructor(props: SpacerNodeProps, key?: NodeKey) {
     super(key);
 
-    this.__startTime = props.start;
-    this.__endTime = props.end;
-    this.__duration = props.duration;
+    const numericStart = Number.isFinite(props.start) ? props.start : 0;
+    const numericEnd = Number.isFinite(props.end) ? props.end : numericStart;
+    const derivedDuration = Number.isFinite(props.duration)
+      ? Math.max(0, props.duration)
+      : Math.max(0, numericEnd - numericStart);
+
+    this.__startTime = numericStart;
+    this.__endTime = numericEnd < numericStart ? numericStart : numericEnd;
+    this.__duration = derivedDuration;
     this.__label = props.label;
-    this.__clipId = props.clipId;
-    this.__segmentIndex = props.segmentIndex;
+    this.__clipId = props.clipId || 'unknown-clip';
+    this.__segmentIndex = Number.isInteger(props.segmentIndex) ? props.segmentIndex : 0;
     this.__isActive = props.isActive || false;
     this.__isSelectable = props.isSelectable !== false; // Default to true
   }
@@ -166,12 +172,21 @@ export class SpacerNodeV2 extends DecoratorNode<React.JSX.Element> {
     const element = document.createElement('span');
     element.classList.add('lexical-spacer-node');
 
+    console.log('[Lexical][Spacer] createDOM', {
+      clipId: this.__clipId,
+      segmentIndex: this.__segmentIndex,
+      start: this.__startTime,
+      end: this.__endTime,
+      duration: this.__duration,
+      label: this.__label,
+    });
+
     // Add segment-specific attributes
     element.setAttribute('data-clip-id', this.__clipId);
-    element.setAttribute('data-segment-index', this.__segmentIndex.toString());
-    element.setAttribute('data-start-time', this.__startTime.toString());
-    element.setAttribute('data-end-time', this.__endTime.toString());
-    element.setAttribute('data-duration', this.__duration.toString());
+    element.setAttribute('data-segment-index', Number(this.__segmentIndex).toString());
+    element.setAttribute('data-start-time', Number(this.__startTime).toString());
+    element.setAttribute('data-end-time', Number(this.__endTime).toString());
+    element.setAttribute('data-duration', Number(this.__duration).toString());
 
     // Make selectable for keyboard navigation
     if (this.__isSelectable) {
@@ -332,7 +347,26 @@ function SpacerComponent({
 // ==================== Utility Functions ====================
 
 export function $createSpacerNodeV2(props: SpacerNodeProps): SpacerNodeV2 {
-  return new SpacerNodeV2(props);
+  const sanitized: SpacerNodeProps = {
+    start: Number.isFinite(props?.start) ? props.start : 0,
+    end: Number.isFinite(props?.end) ? props.end : Number.isFinite(props?.start) ? props.start : 0,
+    duration: Number.isFinite(props?.duration)
+      ? Math.max(0, props.duration)
+      : Math.max(0, (Number.isFinite(props?.end) ? props.end : 0) - (Number.isFinite(props?.start) ? props.start : 0)),
+    label: props?.label,
+    clipId: props?.clipId || 'unknown-clip',
+    segmentIndex: Number.isInteger(props?.segmentIndex) ? props.segmentIndex : 0,
+    isActive: props?.isActive ?? false,
+    isSelectable: props?.isSelectable ?? true,
+  };
+
+  if (sanitized.duration === 0) {
+    console.warn('[Lexical][Spacer] zero-duration spacer requested', { raw: props, sanitized });
+  } else {
+    console.log('[Lexical][Spacer] create', { raw: props, sanitized });
+  }
+
+  return new SpacerNodeV2(sanitized);
 }
 
 export function $isSpacerNodeV2(node: LexicalNode | null | undefined): node is SpacerNodeV2 {

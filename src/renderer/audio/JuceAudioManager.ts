@@ -133,6 +133,7 @@ export class JuceAudioManager {
   }
 
   async play(): Promise<void> {
+    console.log('[CMD] play', { sessionId: this.sessionId });
     const res = await this.transport!.play(this.sessionId);
     if (!res.success) {
       this.callbacks.onError(res.error || 'play failed');
@@ -140,6 +141,7 @@ export class JuceAudioManager {
   }
 
   pause(): void {
+    console.log('[CMD] pause', { sessionId: this.sessionId });
     this.transport!.pause(this.sessionId).then((res) => {
       if (!res.success) this.callbacks.onError(res.error || 'pause failed');
     });

@@ -135,12 +135,22 @@ export function clipsToEditorStateV2(
           const spacerSegment = segment as SpacerSegment;
 
           // Only render spacers above threshold
-          if (spacerSegment.duration >= spacerThreshold) {
+          const spacerDuration = Number.isFinite(spacerSegment.duration) ? spacerSegment.duration : 0;
+          console.log('[Lexical][Spacer] converter request', {
+            clipId: clip.id,
+            segmentIndex: i,
+            start: absoluteStartTime,
+            end: absoluteEndTime,
+            duration: spacerDuration,
+            label: spacerSegment.label,
+          });
+
+          if (spacerDuration >= spacerThreshold) {
             const spacerNode = $createSpacerNodeV2({
               start: absoluteStartTime,
               end: absoluteEndTime,
-              duration: spacerSegment.duration,
-              label: spacerSegment.label || `${spacerSegment.duration.toFixed(1)}s`,
+              duration: spacerDuration,
+              label: spacerSegment.label || `${spacerDuration.toFixed(1)}s`,
               clipId: clip.id,
               segmentIndex: i,
               isActive

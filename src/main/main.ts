@@ -694,6 +694,8 @@ class App {
               return { success: false, error: 'stale generation' };
             }
           }
+          const generation = generationId ?? generationById.get(id);
+          console.log('[Main] pause → JUCE', { id, generation });
           await this.juceClient!.pause(id, generationId);
           return { success: true };
         }
@@ -708,6 +710,8 @@ class App {
               return { success: false, error: 'stale generation' };
             }
           }
+          const generation = generationId ?? generationById.get(id);
+          console.log('[Main] stop → JUCE', { id, generation });
           await this.juceClient!.stop(id, generationId);
           return { success: true };
         }
