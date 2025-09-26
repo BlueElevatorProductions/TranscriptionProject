@@ -265,13 +265,18 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     const generation = typeof (audioManagerRef.current as any).getCurrentGenerationId === 'function'
       ? (audioManagerRef.current as any).getCurrentGenerationId()
       : null;
-    console.log('[UI] play', {
+    const readinessDetails = typeof (audioManagerRef.current as any).getReadinessDebugInfo === 'function'
+      ? (audioManagerRef.current as any).getReadinessDebugInfo()
+      : undefined;
+    console.log('[UI click] play', {
       gen: generation,
+      isReady: state.isReady,
       readyStatus: state.readyStatus,
-      path: (audioManagerRef.current as any).audioPath || undefined,
+      error: state.error,
+      ...(readinessDetails ?? {}),
     });
     await audioManagerRef.current.play();
-  }, [state.readyStatus]);
+  }, [state.error, state.isReady, state.readyStatus]);
 
   const pause = useCallback(async () => {
     if (!audioManagerRef.current) {
@@ -285,25 +290,42 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
       console.warn('🎵 Cannot toggle playback: Audio manager not initialized');
       throw new Error('Audio manager not initialized');
     }
-    if (!state.isReady) {
-      console.warn('🎵 Cannot toggle playback: Audio not ready');
-      throw new Error('Audio not ready for playback');
-    }
-    console.log('🎵 Toggling playback:', state.isPlaying ? 'pause' : 'play');
+
+    const generation = typeof (audioManagerRef.current as any).getCurrentGenerationId === 'function'
+      ? (audioManagerRef.current as any).getCurrentGenerationId()
+      : null;
+    const readinessDetails = typeof (audioManagerRef.current as any).getReadinessDebugInfo === 'function'
+      ? (audioManagerRef.current as any).getReadinessDebugInfo()
+      : undefined;
+    const action = state.isPlaying ? 'pause' : 'play';
+
+    console.log('[UI click] toggle', {
+      action,
+      gen: generation,
+      isReady: state.isReady,
+      readyStatus: state.readyStatus,
+      error: state.error,
+      ...(readinessDetails ?? {}),
+    });
+
     if (state.isPlaying) {
       await audioManagerRef.current.pause();
-    } else {
-      const generation = typeof (audioManagerRef.current as any).getCurrentGenerationId === 'function'
-        ? (audioManagerRef.current as any).getCurrentGenerationId()
-        : null;
-      console.log('[UI] play', {
+      return;
+    }
+
+    if (!state.isReady) {
+      console.warn('[UI click] play blocked — audio not ready', {
         gen: generation,
         readyStatus: state.readyStatus,
-        path: (audioManagerRef.current as any).audioPath || undefined,
+        error: state.error,
+        ...(readinessDetails ?? {}),
       });
       await audioManagerRef.current.play();
+      throw new Error('Audio not ready for playback');
     }
-  }, [state.isPlaying, state.isReady, state.readyStatus]);
+
+    await audioManagerRef.current.play();
+  }, [state.error, state.isPlaying, state.isReady, state.readyStatus]);
 
   const seek = useCallback(async (time: number, isOriginalTime: boolean = false) => {
     if (!audioManagerRef.current) {

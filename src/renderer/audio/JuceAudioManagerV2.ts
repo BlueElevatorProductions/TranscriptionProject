@@ -290,6 +290,27 @@ export class JuceAudioManagerV2 {
   }
 
   /**
+   * Provide diagnostic information about readiness state for logging.
+   */
+  public getReadinessDebugInfo(): Record<string, unknown> {
+    return {
+      isReady: this.state.isReady,
+      readyStatus: this.state.readyStatus,
+      hasTransport: !!this.transport,
+      audioPath: this.audioPath,
+      currentGenerationId: this.currentGenerationId,
+      inflightLoadGeneration: this.inflightLoadGeneration,
+      inflightLoadPath: this.inflightLoadPath,
+      loadedGenerationId: this.loadedGenerationId,
+      readyGenerationId: this.readyGenerationId,
+      awaitingEdlRevision: this.awaitingEdlRevision,
+      awaitingEdlGeneration: this.awaitingEdlGeneration,
+      expectedRevision: this.expectedRevision,
+      sentRevisionCounter: this.sentRevisionCounter,
+    };
+  }
+
+  /**
    * Update clips with new EDL
    */
   public async updateClips(clips: Clip[]): Promise<void> {
@@ -416,23 +437,41 @@ export class JuceAudioManagerV2 {
    * Play audio
    */
   public async play(): Promise<void> {
+    const generation = this.currentGenerationId;
+    const readinessDetails = this.getReadinessDebugInfo();
+
+    console.log('[CMD] play', {
+      gen: generation,
+      phase: 'request',
+      readyStatus: this.state.readyStatus,
+      isReady: this.state.isReady,
+    });
+
     if (!this.transport) {
-      console.warn('[CMD] play skipped — transport unavailable');
+      console.warn('[CMD] play skipped — transport unavailable', { gen: generation });
+      console.warn('[IPC send] play skipped — transport unavailable', {
+        gen: generation,
+        ...readinessDetails,
+      });
       return;
     }
 
     if (!this.state.isReady) {
       console.warn('[CMD] play blocked — transport not ready', {
-        gen: this.currentGenerationId,
+        gen: generation,
         readyStatus: this.state.readyStatus,
+      });
+      console.warn('[IPC send] play skipped — readiness gate', {
+        gen: generation,
+        ...readinessDetails,
       });
       return;
     }
 
-    const generation = this.currentGenerationId;
-    console.log('[CMD] play', {
+    console.log('[IPC send] play', {
       gen: generation,
-      readyStatus: this.state.readyStatus,
+      sessionId: this.sessionId,
+      audioPath: this.audioPath,
     });
 
     try {
@@ -898,7 +937,30 @@ export class JuceAudioManagerV2 {
   }
 
   private updateState(updates: Partial<AudioStateV2>): void {
-    this.state = { ...this.state, ...updates };
+    const previousState = this.state;
+    const nextState: AudioStateV2 = { ...previousState, ...updates };
+
+    if (updates.isReady !== undefined && updates.isReady !== previousState.isReady) {
+      console.log('[AudioManager] Ready flag changed', {
+        from: previousState.isReady,
+        to: nextState.isReady,
+        readyStatus: nextState.readyStatus,
+        gen: this.currentGenerationId,
+        loadedGenerationId: this.loadedGenerationId,
+        readyGenerationId: this.readyGenerationId,
+      });
+    }
+
+    if (updates.readyStatus !== undefined && updates.readyStatus !== previousState.readyStatus) {
+      console.log('[AudioManager] Ready status changed', {
+        from: previousState.readyStatus,
+        to: nextState.readyStatus,
+        isReady: nextState.isReady,
+        gen: this.currentGenerationId,
+      });
+    }
+
+    this.state = nextState;
     this.callbacks.onStateChange(this.state);
   }
 
