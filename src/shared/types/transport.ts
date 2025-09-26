@@ -42,7 +42,15 @@ export type JuceEvent =
   | { type: 'loaded'; id: TransportId; durationSec: number; sampleRate: number; channels: number }
   | { type: 'state'; id: TransportId; playing: boolean }
   | { type: 'position'; id: TransportId; editedSec: number; originalSec: number; revision?: number }
-  | { type: 'edlApplied'; id: TransportId; revision: number; wordCount?: number; spacerCount?: number; totalSegments?: number }
+  | {
+      type: 'edlApplied';
+      id: TransportId;
+      revision: number;
+      wordCount?: number;
+      spacerCount?: number;
+      totalSegments?: number;
+      mode?: 'contiguous' | 'standard' | string;
+    }
   | { type: 'ended'; id: TransportId }
   | { type: 'error'; id?: TransportId; code?: string | number; message: string };
 
@@ -101,7 +109,8 @@ export function isJuceEvent(obj: any): obj is JuceEvent {
         typeof obj.revision === 'number' &&
         (obj.wordCount === undefined || typeof obj.wordCount === 'number') &&
         (obj.spacerCount === undefined || typeof obj.spacerCount === 'number') &&
-        (obj.totalSegments === undefined || typeof obj.totalSegments === 'number')
+        (obj.totalSegments === undefined || typeof obj.totalSegments === 'number') &&
+        (obj.mode === undefined || typeof obj.mode === 'string')
       );
     case 'ended':
       return typeof obj.id === 'string';

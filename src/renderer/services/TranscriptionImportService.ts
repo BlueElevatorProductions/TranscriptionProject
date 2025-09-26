@@ -272,6 +272,7 @@ export class TranscriptionImportService {
    */
   private static createClipFromWords(words: Word[], clipStartTime: number, speaker: string, order: number): Clip {
     const segments: Segment[] = [];
+    let createdSpacerCount = 0;
     let currentTime = 0; // Clip-relative time
 
     for (let i = 0; i < words.length; i++) {
@@ -304,7 +305,17 @@ export class TranscriptionImportService {
           const spacerStart = wordEnd; // Start right after current word ends (clip-relative)
           const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
 
-          console.log(`🔍 Creating spacer: gap=${gapDuration.toFixed(3)}s, start=${spacerStart.toFixed(3)}, end=${spacerEnd.toFixed(3)}`);
+          const spacerDuration = spacerEnd - spacerStart;
+          console.log('[Import][Spacer] Creating spacer segment', {
+            clipOrder: order,
+            speaker,
+            gapSec: Number(gapDuration.toFixed(3)),
+            startSec: Number(spacerStart.toFixed(3)),
+            endSec: Number(spacerEnd.toFixed(3)),
+            durationSec: Number(spacerDuration.toFixed(3)),
+            absoluteStartSec: Number(word.end.toFixed(3)),
+            absoluteEndSec: Number(nextWord.start.toFixed(3))
+          });
 
           const spacerSegment = createSpacerSegment(
             spacerStart,
@@ -314,6 +325,7 @@ export class TranscriptionImportService {
 
           segments.push(spacerSegment);
           currentTime = spacerEnd;
+          createdSpacerCount += 1;
         } else if (gapDuration > 0) {
           // Small gap - extend current word segment with proportional original timing
           const nextWordClipRelativeStart = nextWord.start - clipStartTime;
@@ -343,6 +355,15 @@ export class TranscriptionImportService {
     const firstWord = words[0];
     const lastWord = words[words.length - 1];
     const clipDuration = currentTime;
+
+    if (createdSpacerCount === 0 && words.length > 0) {
+      console.warn('[Import][Spacer] Clip created no spacer segments', {
+        clipOrder: order,
+        speaker,
+        wordCount: words.length,
+        clipDuration: Number(clipDuration.toFixed(3))
+      });
+    }
 
     // Validate segments with lenient import mode
     const validation = validateSegments(segments, clipDuration, {

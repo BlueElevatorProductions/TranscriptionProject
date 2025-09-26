@@ -93,6 +93,43 @@ export class EDLBuilderService {
     // Build segment lookup table for efficient searches
     const lookupTable = this.buildSegmentLookupTable(edlClips);
 
+    const segmentStats = edlClips.reduce(
+      (acc, clip) => {
+        const segs = clip.segments || [];
+        for (const seg of segs) {
+          acc.total += 1;
+          if (seg.type === 'spacer') {
+            acc.spacers += 1;
+            if (acc.preview.length < 3) {
+              acc.preview.push({
+                clipId: clip.id,
+                clipOrder: clip.order,
+                startSec: Number(seg.startSec.toFixed(3)),
+                endSec: Number(seg.endSec.toFixed(3)),
+                durationSec: Number((seg.endSec - seg.startSec).toFixed(3))
+              });
+            }
+          } else {
+            acc.words += 1;
+          }
+        }
+        return acc;
+      },
+      { total: 0, words: 0, spacers: 0, preview: [] as Array<Record<string, unknown>> }
+    );
+
+    console.log('[EDLBuilder] Segment breakdown', {
+      clips: edlClips.length,
+      totalSegments: segmentStats.total,
+      wordSegments: segmentStats.words,
+      spacerSegments: segmentStats.spacers
+    });
+    if (segmentStats.spacers === 0) {
+      console.warn('[EDLBuilder] ⚠️ No spacer segments detected while building EDL');
+    } else {
+      console.log('[EDLBuilder] Spacer preview (first 3)', segmentStats.preview);
+    }
+
     // Calculate metadata
     const metadata: EdlMetadata = {
       totalDuration: edlClips.length > 0 ?

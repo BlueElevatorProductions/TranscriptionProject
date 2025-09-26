@@ -565,6 +565,7 @@ export class JuceAudioManager {
               words: (evt as any).wordCount,
               spacers: (evt as any).spacerCount,
               totalSegments: (evt as any).totalSegments,
+              mode: (evt as any).mode,
             });
           }
         }
@@ -574,6 +575,7 @@ export class JuceAudioManager {
             words: (evt as any).wordCount,
             spacers: (evt as any).spacerCount,
             totalSegments: (evt as any).totalSegments,
+            mode: (evt as any).mode,
           });
         }
         // Clear EDL applying flag and flush any pending seek

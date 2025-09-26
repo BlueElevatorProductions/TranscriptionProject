@@ -461,7 +461,10 @@ export class JuceAudioManagerV2 {
 
       case 'edlApplied': {
         const expectedRevision = this.edlRevisionCounter;
-        console.info(`[AudioManager] EDL applied by JUCE (revision ${event.revision}, expected ${expectedRevision})`);
+        const mode = (event as any).mode;
+        console.info(
+          `[AudioManager] EDL applied by JUCE (revision ${event.revision}, expected ${expectedRevision}, mode ${mode ?? 'unknown'})`
+        );
         if (event.revision !== expectedRevision) {
           console.warn('[AudioManager] ⚠️ EDL revision mismatch!', {
             received: event.revision,

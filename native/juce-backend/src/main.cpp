@@ -862,6 +862,17 @@ public:
     lastWordSegments = wordSegments;
     lastSpacerSegments = spacerSegments;
 
+    {
+      std::ostringstream oss;
+      oss << "[JUCE] Parsed EDL revision " << revision
+          << ": clips=" << clips.size()
+          << ", words=" << wordSegments
+          << ", spacers=" << spacerSegments
+          << ", total=" << totalSegments
+          << ", mode=" << (isContiguousTimeline ? "contiguous" : "standard");
+      juceDLog(oss.str());
+    }
+
     // Enhanced debug logging - write to file to see what JUCE receives
     std::ofstream debugFile(juceDebugPath(), std::ios::app);
     debugFile << "[JUCE] updateEdl received revision " << revision
@@ -1012,7 +1023,10 @@ public:
       }
     }
 
-    debugFile << "[JUCE] updateEdl segment breakdown complete for revision " << revision << std::endl;
+    const std::string mode = isContiguousTimeline ? "contiguous" : "standard";
+
+    debugFile << "[JUCE] updateEdl segment breakdown complete for revision " << revision
+              << ", mode=" << mode << std::endl;
     debugFile.flush();
 
     {
@@ -1020,7 +1034,8 @@ public:
       evt << "{\"type\":\"edlApplied\",\"id\":\"" << g.id << "\",\"revision\":" << revision
           << ",\"wordCount\":" << wordSegments
           << ",\"spacerCount\":" << spacerSegments
-          << ",\"totalSegments\":" << totalSegments << "}";
+          << ",\"totalSegments\":" << totalSegments
+          << ",\"mode\":\"" << mode << "\"}";
       emit(evt.str());
     }
   }

@@ -386,6 +386,8 @@ class App {
             end: number;
             duration: number;
             hasOriginal: boolean;
+            originalStart?: number;
+            originalEnd?: number;
           }>,
         };
 
@@ -406,6 +408,12 @@ class App {
                   end: Number(segment.endSec.toFixed(3)),
                   duration: Number((segment.endSec - segment.startSec).toFixed(3)),
                   hasOriginal: typeof segment.originalStartSec === 'number' && typeof segment.originalEndSec === 'number',
+                  originalStart: typeof segment.originalStartSec === 'number'
+                    ? Number(segment.originalStartSec.toFixed(3))
+                    : undefined,
+                  originalEnd: typeof segment.originalEndSec === 'number'
+                    ? Number(segment.originalEndSec.toFixed(3))
+                    : undefined,
                 });
               }
             } else {
@@ -467,6 +475,7 @@ class App {
             revision: e.revision,
             wordCount: (e as any).wordCount,
             spacerCount: (e as any).spacerCount,
+            mode: (e as any).mode,
           });
           forward(e);
         },
@@ -521,6 +530,7 @@ class App {
             words: stats.wordSegments,
             spacers: stats.spacerSegments,
             spacersWithOriginal: stats.spacersWithOriginal,
+            spacerPreview: stats.spacerPreview,
           });
           if (stats.spacerSegments === 0) {
             console.warn('[IPC][JUCE] ⚠️ No spacers detected in renderer payload for revision', rev);

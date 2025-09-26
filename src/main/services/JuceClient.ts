@@ -117,6 +117,7 @@ export class JuceClient implements Transport {
       wordSegments: stats.wordSegments,
       spacerSegments: stats.spacerSegments,
       spacersWithOriginal: stats.spacersWithOriginal,
+      spacerPreview: stats.spacerPreview,
     });
     if (stats.spacerSegments === 0) {
       console.warn('[JUCE] ⚠️ No spacer segments found in updateEdl payload for revision', revision);
@@ -580,11 +581,40 @@ export class JuceClient implements Transport {
             if (seg.type === 'spacer' && typeof seg.originalStartSec === 'number' && typeof seg.originalEndSec === 'number') {
               acc.spacersWithOriginal += 1;
             }
+            if (seg.type === 'spacer' && acc.spacerPreview.length < 3) {
+              acc.spacerPreview.push({
+                clipId: clip.id,
+                clipOrder: clip.order,
+                startSec: Number(seg.startSec.toFixed(3)),
+                endSec: Number(seg.endSec.toFixed(3)),
+                durationSec: Number((seg.endSec - seg.startSec).toFixed(3)),
+                originalStartSec: typeof seg.originalStartSec === 'number'
+                  ? Number(seg.originalStartSec.toFixed(3))
+                  : undefined,
+                originalEndSec: typeof seg.originalEndSec === 'number'
+                  ? Number(seg.originalEndSec.toFixed(3))
+                  : undefined,
+              });
+            }
           }
         }
         return acc;
       },
-      { totalSegments: 0, wordSegments: 0, spacerSegments: 0, spacersWithOriginal: 0 }
+      {
+        totalSegments: 0,
+        wordSegments: 0,
+        spacerSegments: 0,
+        spacersWithOriginal: 0,
+        spacerPreview: [] as Array<{
+          clipId: string;
+          clipOrder: number;
+          startSec: number;
+          endSec: number;
+          durationSec: number;
+          originalStartSec?: number;
+          originalEndSec?: number;
+        }>,
+      }
     );
   }
 
@@ -592,7 +622,21 @@ export class JuceClient implements Transport {
     id: TransportId,
     revision: number,
     clips: EdlClip[],
-    stats: { totalSegments: number; wordSegments: number; spacerSegments: number; spacersWithOriginal: number }
+    stats: {
+      totalSegments: number;
+      wordSegments: number;
+      spacerSegments: number;
+      spacersWithOriginal: number;
+      spacerPreview: Array<{
+        clipId: string;
+        clipOrder: number;
+        startSec: number;
+        endSec: number;
+        durationSec: number;
+        originalStartSec?: number;
+        originalEndSec?: number;
+      }>;
+    }
   ): Promise<{ command: JuceCommand; cleanup?: () => Promise<void> }> {
     const inlinePayload: JuceCommand = { type: 'updateEdl', id, revision, clips };
     const inlinePayloadJson = JSON.stringify(inlinePayload);
@@ -605,6 +649,7 @@ export class JuceClient implements Transport {
         payloadBytes: payloadSize,
         spacers: stats.spacerSegments,
         spacersWithOriginal: stats.spacersWithOriginal,
+        spacerPreview: stats.spacerPreview,
       });
       return { command: inlinePayload };
     }
@@ -624,6 +669,7 @@ export class JuceClient implements Transport {
       path: filePath,
       spacerSegments: stats.spacerSegments,
       spacersWithOriginal: stats.spacersWithOriginal,
+      spacerPreview: stats.spacerPreview,
     });
     if (stats.spacerSegments === 0) {
       console.warn('[JUCE] ⚠️ Temp-file payload contains zero spacer segments');
