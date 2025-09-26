@@ -286,6 +286,8 @@ export class TranscriptionServiceV2 {
       return segments;
     }
 
+    console.log(`[TranscriptionServiceV2] Spacer threshold (seconds): ${SPACER_THRESHOLD_SECONDS}`);
+
     let currentTime = 0;
 
     for (const rawSegment of rawResult.segments) {
@@ -303,6 +305,11 @@ export class TranscriptionServiceV2 {
           label: `Gap (${(segmentStart - currentTime).toFixed(1)}s)`
         };
         segments.push(spacerSegment);
+        console.log('[TranscriptionServiceV2][Spacer] Spacer created during raw conversion', {
+          startSec: Number(currentTime.toFixed(3)),
+          endSec: Number(segmentStart.toFixed(3)),
+          durationSec: Number((segmentStart - currentTime).toFixed(3))
+        });
         currentTime = segmentStart;
       }
 
@@ -391,6 +398,11 @@ export class TranscriptionServiceV2 {
             label: `${gap.toFixed(1)}s`
           };
           processedSegments.push(spacerSegment);
+          console.log('[TranscriptionServiceV2][Spacer] Spacer created during post-processing', {
+            startSec: Number(expectedTime.toFixed(3)),
+            endSec: Number(segment.start.toFixed(3)),
+            durationSec: Number(gap.toFixed(3))
+          });
         } else if (gap > 0.001 && processedSegments.length > 0) {
           // Small gap - extend previous segment with proportional original timing
           const lastSegment = processedSegments[processedSegments.length - 1];

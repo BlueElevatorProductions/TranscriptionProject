@@ -6,7 +6,7 @@
  *
  * Key principles:
  * - NEVER modify original word timestamps
- * - Create explicit spacer CLIPS for large gaps ≥1s (prevents EDL timeline compression)
+ * - Create explicit spacer segments for large gaps ≥1s (prevents EDL timeline compression)
  * - Extend segments for small gaps with proportional original timing (preserves speed)
  * - Build clips with complete segment coverage including inter-clip silences
  * - Maintain original timing data for debugging/recovery
@@ -49,6 +49,7 @@ export class TranscriptionImportService {
     console.log('🔄 Starting transcription import with segment-based architecture');
     console.log('🎵 Audio file path:', audioFilePath);
     console.log('🎵 Audio metadata:', audioMetadata);
+    console.log(`[Import] Spacer threshold (seconds): ${SPACER_THRESHOLD_SECONDS}`);
 
     const { segments: rawSegments, speakers, speakerSegments } = transcriptionResult;
 
@@ -219,42 +220,37 @@ export class TranscriptionImportService {
       const word = words[i];
       const wordSpeaker = word.speaker || 'Unknown';
 
-      // Check if we need to start a new clip
-      const hasLargeGap = currentWords.length > 0 &&
-        (word.start - currentWords[currentWords.length - 1].end) >= SPACER_THRESHOLD_SECONDS;
+      const shouldStartNewClip =
+        currentWords.length === 0 ||
+        currentSpeaker !== wordSpeaker ||
+        this.getWordGroupDuration(currentWords) >= MAX_CLIP_DURATION;
 
-      if (currentSpeaker !== wordSpeaker ||
-          hasLargeGap ||
-          this.getWordGroupDuration(currentWords) >= MAX_CLIP_DURATION) {
-
-        // Finish current clip if we have words
+      if (shouldStartNewClip) {
         if (currentWords.length > 0) {
           const clip = this.createClipFromWords(currentWords, clipStartTime, currentSpeaker!, clips.length);
           clips.push(clip);
-
-          // If there's a large gap, create a spacer clip for it
-          if (hasLargeGap) {
-            const lastWord = currentWords[currentWords.length - 1];
-            const gapDuration = word.start - lastWord.end;
-            const spacerClip = this.createSpacerClip(
-              lastWord.end,        // Start at last word's end
-              word.start,          // End at next word's start
-              gapDuration,
-              clips.length
-            );
-            clips.push(spacerClip);
-            console.log(`🔊 Created spacer clip: ${gapDuration.toFixed(3)}s gap between clips`);
-          }
         }
 
-        // Start new clip
         currentSpeaker = wordSpeaker;
         currentWords = [word];
         clipStartTime = word.start;
-      } else {
-        // Continue current clip
-        currentWords.push(word);
+        continue;
       }
+
+      const previousWord = currentWords[currentWords.length - 1];
+      const gapDuration = word.start - previousWord.end;
+
+      if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
+        console.log('[Import][Spacer] Gap detected within clip — spacer will be created', {
+          clipPreviewIndex: clips.length,
+          speaker: currentSpeaker,
+          gapSec: Number(gapDuration.toFixed(3)),
+          previousWordEnd: Number(previousWord.end.toFixed(3)),
+          nextWordStart: Number(word.start.toFixed(3))
+        });
+      }
+
+      currentWords.push(word);
     }
 
     // Finish final clip
@@ -306,7 +302,7 @@ export class TranscriptionImportService {
           const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
 
           const spacerDuration = spacerEnd - spacerStart;
-          console.log('[Import][Spacer] Creating spacer segment', {
+          console.log('[Import][Spacer] Spacer created', {
             clipOrder: order,
             speaker,
             gapSec: Number(gapDuration.toFixed(3)),
@@ -400,27 +396,6 @@ export class TranscriptionImportService {
   private static getWordGroupDuration(words: Word[]): number {
     if (words.length === 0) return 0;
     return words[words.length - 1].end - words[0].start;
-  }
-
-  /**
-   * Create a spacer-only clip for large gaps between words
-   */
-  private static createSpacerClip(startTime: number, endTime: number, duration: number, order: number): Clip {
-    const spacerSegment = createSpacerSegment(0, duration, `${duration.toFixed(1)}s`);
-
-    return {
-      id: this.generateId(),
-      speaker: 'Silence',
-      startTime,
-      endTime,
-      duration,
-      segments: [spacerSegment],
-      type: 'transcribed',
-      createdAt: Date.now(),
-      modifiedAt: Date.now(),
-      order,
-      status: 'active'
-    };
   }
 
   private static calculateAverageConfidence(words: Word[]): number {

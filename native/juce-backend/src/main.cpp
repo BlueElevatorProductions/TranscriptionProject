@@ -1027,6 +1027,13 @@ public:
 
     debugFile << "[JUCE] updateEdl segment breakdown complete for revision " << revision
               << ", mode=" << mode << std::endl;
+    debugFile << "[JUCE] Emitting edlApplied event" << std::endl;
+    debugFile << "        id=" << g.id
+              << ", revision=" << revision
+              << ", words=" << wordSegments
+              << ", spacers=" << spacerSegments
+              << ", totalSegments=" << totalSegments
+              << ", mode=" << mode << std::endl;
     debugFile.flush();
 
     {

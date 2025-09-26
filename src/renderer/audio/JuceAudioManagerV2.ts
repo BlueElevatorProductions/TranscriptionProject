@@ -424,6 +424,17 @@ export class JuceAudioManagerV2 {
   }
 
   private handleJuceEvent(event: JuceEvent): void {
+    const eventSummary = event.type === 'position'
+      ? {
+          type: event.type,
+          editedSec: typeof event.editedSec === 'number' ? Number(event.editedSec.toFixed(3)) : event.editedSec,
+          originalSec: typeof event.originalSec === 'number' ? Number(event.originalSec.toFixed(3)) : event.originalSec,
+          revision: (event as any).revision,
+        }
+      : event;
+
+    console.debug('[JUCE][Renderer] Received event from transport', eventSummary);
+
     switch (event.type) {
       case 'loaded': {
         console.info('[JUCE] transport loaded', {
@@ -495,7 +506,7 @@ export class JuceAudioManagerV2 {
       }
 
       default:
-        // Ignore unknown events
+        console.warn('[JUCE][Renderer] Unhandled JUCE event type', event);
         break;
     }
   }
