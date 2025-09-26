@@ -718,7 +718,14 @@ export class JuceAudioManagerV2 {
   }
 
   private initializeJuceEventHandling(): void {
-    if (!this.transport) return;
+    if (!this.transport) {
+      console.error('[AudioManager] ❌ JUCE transport unavailable during event bridge init');
+      this.logReadinessSnapshot('event-bridge:init-missing-transport');
+      return;
+    }
+
+    console.log('[AudioManager] Registering JUCE transport event bridge');
+    this.logReadinessSnapshot('event-bridge:registered');
 
     this.eventHandler = (event: JuceEvent) => {
       this.handleJuceEvent(event);
@@ -1020,20 +1027,53 @@ export class JuceAudioManagerV2 {
       updates.readyStatus !== undefined ||
       updates.error !== undefined;
 
-    if (!nextState.isReady && readinessFieldsUpdated) {
-      console.log('[AudioManager] Readiness blockers', {
-        readyStatus: nextState.readyStatus,
-        blockers: this.describeReadinessBlockers(nextState),
-        currentGenerationId: this.currentGenerationId,
-        loadedGenerationId: this.loadedGenerationId,
-        readyGenerationId: this.readyGenerationId,
-        awaitingEdlRevision: this.awaitingEdlRevision,
-        awaitingEdlGeneration: this.awaitingEdlGeneration,
+    if (readinessFieldsUpdated) {
+      this.logReadinessSnapshot('state-transition', nextState, {
+        previous: {
+          isReady: previousState.isReady,
+          readyStatus: previousState.readyStatus,
+          blockers: this.describeReadinessBlockers(previousState),
+        },
       });
     }
 
     this.state = nextState;
     this.callbacks.onStateChange(this.state);
+  }
+
+  private logReadinessSnapshot(
+    context: string,
+    stateOverride?: AudioStateV2,
+    extra: Record<string, unknown> = {}
+  ): void {
+    const baseState = stateOverride ?? this.state;
+    const blockers = this.describeReadinessBlockers(baseState);
+    const summary = {
+      isReady: baseState.isReady,
+      readyStatus: baseState.readyStatus,
+      isLoading: baseState.isLoading,
+      error: baseState.error,
+    };
+
+    const diagnostics = {
+      blockers,
+      currentGenerationId: this.currentGenerationId,
+      loadedGenerationId: this.loadedGenerationId,
+      readyGenerationId: this.readyGenerationId,
+      inflightLoadGeneration: this.inflightLoadGeneration,
+      inflightLoadPath: this.inflightLoadPath,
+      awaitingEdlRevision: this.awaitingEdlRevision,
+      awaitingEdlGeneration: this.awaitingEdlGeneration,
+      hasTransport: !!this.transport,
+      audioPath: this.audioPath,
+    };
+
+    console.log('[AudioManager][Readiness] snapshot', {
+      context,
+      state: summary,
+      diagnostics,
+      ...extra,
+    });
   }
 
   private resetInitialSyncState(): void {

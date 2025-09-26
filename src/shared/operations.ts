@@ -121,14 +121,43 @@ export function createSpacerSegment(
   end: number,
   label?: string
 ): SpacerSegment {
-  return {
+  const safeStart = Number.isFinite(start) ? Number(start) : 0;
+  const safeEnd = Number.isFinite(end) ? Number(end) : safeStart;
+  const sanitizedStart = Number(safeStart.toFixed(6));
+  const rawDuration = safeEnd - safeStart;
+  const sanitizedDuration = Number(Math.max(0, rawDuration).toFixed(6));
+  const sanitizedEnd = Number((sanitizedStart + sanitizedDuration).toFixed(6));
+
+  const spacer: SpacerSegment = {
     type: 'spacer',
-    id: `spacer-${start.toFixed(3)}-${Math.random().toString(36).substr(2, 6)}`,
-    start,
-    end,
-    duration: end - start,
+    id: `spacer-${sanitizedStart.toFixed(3)}-${Math.random().toString(36).substr(2, 6)}`,
+    start: sanitizedStart,
+    end: sanitizedEnd,
+    duration: sanitizedDuration,
     label
   };
+
+  const logPayload = {
+    label,
+    raw: {
+      start: safeStart,
+      end: safeEnd,
+      duration: Number(rawDuration.toFixed(6)),
+    },
+    sanitized: {
+      start: sanitizedStart,
+      end: sanitizedEnd,
+      duration: sanitizedDuration,
+    },
+  };
+
+  if (sanitizedDuration === 0) {
+    console.log('[Spacer] zero-duration segment sanitized', logPayload);
+  } else {
+    console.log('[Spacer] segment created', logPayload);
+  }
+
+  return spacer;
 }
 
 /**
