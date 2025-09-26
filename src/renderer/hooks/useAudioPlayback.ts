@@ -262,8 +262,16 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     if (!audioManagerRef.current) {
       throw new Error('Audio manager not initialized');
     }
+    const generation = typeof (audioManagerRef.current as any).getCurrentGenerationId === 'function'
+      ? (audioManagerRef.current as any).getCurrentGenerationId()
+      : null;
+    console.log('[UI] play', {
+      gen: generation,
+      readyStatus: state.readyStatus,
+      path: (audioManagerRef.current as any).audioPath || undefined,
+    });
     await audioManagerRef.current.play();
-  }, []);
+  }, [state.readyStatus]);
 
   const pause = useCallback(async () => {
     if (!audioManagerRef.current) {
@@ -285,9 +293,17 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     if (state.isPlaying) {
       await audioManagerRef.current.pause();
     } else {
+      const generation = typeof (audioManagerRef.current as any).getCurrentGenerationId === 'function'
+        ? (audioManagerRef.current as any).getCurrentGenerationId()
+        : null;
+      console.log('[UI] play', {
+        gen: generation,
+        readyStatus: state.readyStatus,
+        path: (audioManagerRef.current as any).audioPath || undefined,
+      });
       await audioManagerRef.current.play();
     }
-  }, [state.isPlaying, state.isReady]);
+  }, [state.isPlaying, state.isReady, state.readyStatus]);
 
   const seek = useCallback(async (time: number, isOriginalTime: boolean = false) => {
     if (!audioManagerRef.current) {

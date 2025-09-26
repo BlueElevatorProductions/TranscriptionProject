@@ -678,6 +678,8 @@ class App {
               return { success: false, error: 'stale generation' };
             }
           }
+          const generation = generationId ?? generationById.get(id);
+          console.log('[Main] play → JUCE', { id, generation });
           await this.juceClient!.play(id, generationId);
           return { success: true };
         }

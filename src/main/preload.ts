@@ -308,7 +308,13 @@ contextBridge.exposeInMainWorld('juceTransport', {
   load: (id: string, path: string, generationId?: number) => ipcRenderer.invoke('juce:load', id, path, generationId),
   updateEdl: (id: string, revision: number, clips: EdlClip[], generationId?: number) =>
     ipcRenderer.invoke('juce:updateEdl', id, revision, clips, generationId),
-  play: (id: string, generationId?: number) => ipcRenderer.invoke('juce:play', id, generationId),
+  play: (id: string, generationId?: number) => {
+    console.log('[IPC] play', { id, generationId });
+    return ipcRenderer.invoke('juce:play', id, generationId).then((result) => {
+      console.log('[IPC] play ack', { id, generationId, result });
+      return result;
+    });
+  },
   pause: (id: string, generationId?: number) => ipcRenderer.invoke('juce:pause', id, generationId),
   stop: (id: string, generationId?: number) => ipcRenderer.invoke('juce:stop', id, generationId),
   seek: (id: string, timeSec: number, generationId?: number) => ipcRenderer.invoke('juce:seek', id, timeSec, generationId),

@@ -73,6 +73,14 @@ export class JuceClient implements Transport {
       return { success: false, error: `Audio file not found: ${filePath}` };
     }
 
+    try {
+      await this.assertWavFormat(resolvedPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[JUCE] ❌ Audio format validation failed:', message);
+      return { success: false, error: message };
+    }
+
     console.log(`[JUCE] ✅ Loading audio file: ${resolvedPath}${resolvedPath !== filePath ? ` (resolved from: ${filePath})` : ''}`);
     await this.ensureStarted();
 
@@ -176,6 +184,7 @@ export class JuceClient implements Transport {
   async play(id: TransportId, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
+      console.log('[JUCE] → play', { id, generationId });
       await this.send({ type: 'play', id, generationId });
     } catch (error) {
       throw new Error(`play failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -272,73 +281,169 @@ export class JuceClient implements Transport {
     }
 
     const fs = await import('fs');
+    const normalize = (candidate: string) => path.normalize(candidate);
+    const ensureWavVariant = (candidate: string): string[] => {
+      const ext = path.extname(candidate).toLowerCase();
+      if (!ext) return [candidate];
+      if (ext === '.wav') return [candidate];
+      return [candidate, candidate.replace(/\.[^/.]+$/, '.wav')];
+    };
 
-    // First check if the path exists as provided
-    if (fs.existsSync(filePath)) {
-      console.log(`[JUCE] ✅ Direct path exists:`, filePath);
-      return filePath;
+    const evaluateCandidates = (candidates: string[], context: string): string | null => {
+      const unique = [...new Set(candidates.map(normalize))];
+      if (unique.length === 0) {
+        return null;
+      }
+
+      console.log('[JUCE] 🔍 Testing fallback candidates:', unique);
+      const results = unique.map(candidate => {
+        let exists = false;
+        try {
+          exists = fs.existsSync(candidate);
+        } catch (error) {
+          console.warn('[JUCE] ⚠️ Error checking candidate:', candidate, error);
+        }
+        if (exists) {
+          console.log('[JUCE] ✅ Candidate exists:', candidate);
+        } else {
+          console.log('[JUCE] ❌ Candidate missing:', candidate);
+        }
+        return {
+          path: candidate,
+          exists,
+          ext: path.extname(candidate).replace('.', '').toLowerCase() || null,
+        };
+      });
+
+      const wavCandidate = results.find(r => r.exists && r.ext === 'wav');
+      if (wavCandidate) {
+        console.log('[JUCE] ✅ Using converted WAV candidate:', wavCandidate.path);
+        return wavCandidate.path;
+      }
+
+      const existing = results.filter(r => r.exists);
+      if (existing.length > 0) {
+        console.error('[JUCE] ❌ Converted WAV missing for audio path', { context, existing });
+      }
+
+      return null;
+    };
+
+    const normalizedInput = normalize(filePath);
+    const directExt = path.extname(normalizedInput).toLowerCase();
+
+    if (fs.existsSync(normalizedInput)) {
+      if (directExt === '.wav') {
+        console.log('[JUCE] ✅ Direct WAV path exists:', normalizedInput);
+        return normalizedInput;
+      }
+      const wavSibling = normalizedInput.replace(/\.[^/.]+$/, '.wav');
+      if (fs.existsSync(wavSibling)) {
+        console.log('[JUCE] ✅ Using converted WAV sibling:', wavSibling);
+        return wavSibling;
+      }
+      console.error('[JUCE] ❌ Converted WAV missing for provided path', {
+        original: normalizedInput,
+        expected: wavSibling,
+      });
+      return null;
     }
 
-    console.log(`[JUCE] 🔍 Direct path doesn't exist, trying fallback resolution for:`, filePath);
+    console.log('[JUCE] 🔍 Direct path missing, assembling fallback candidates for:', filePath);
 
-    // Generate candidate paths for fallback resolution
     const candidates: string[] = [];
+    const pushCandidate = (candidate?: string | null) => {
+      if (!candidate) return;
+      ensureWavVariant(candidate).forEach(variant => {
+        const normalized = normalize(variant);
+        if (!candidates.includes(normalized)) {
+          candidates.push(normalized);
+        }
+      });
+    };
 
-    // If it's a relative path or just a filename, try some common locations
     if (!path.isAbsolute(filePath)) {
       const filename = path.basename(filePath);
+      const wavFilename = filename.replace(/\.[^/.]+$/, '.wav');
       const relativePath = filePath;
 
-      // Try relative to current working directory
-      candidates.push(
+      [
         path.resolve(relativePath),
         path.resolve('audio', filename),
         path.resolve('Audio Files', filename),
         path.resolve('..', 'audio', filename),
-        path.resolve('..', 'Audio Files', filename)
-      );
+        path.resolve('..', 'Audio Files', filename),
+      ].forEach(pushCandidate);
 
-      // Legacy fallback locations (for existing projects)
-      candidates.push(
-        `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${filename}`,
-        `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${filename}`,
-        `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${filename}`,
+      [
+        `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${wavFilename}`,
+        `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${wavFilename}`,
+        `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${wavFilename}`,
         `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${relativePath}`,
-      );
+      ].forEach(pushCandidate);
     } else {
-      // For absolute paths that don't exist, try some alternative directory structures
       const filename = path.basename(filePath);
+      const wavFilename = filename.replace(/\.[^/.]+$/, '.wav');
       const dirname = path.dirname(filePath);
 
-      candidates.push(
-        path.join(dirname, 'Audio Files', filename),
-        path.join(path.dirname(dirname), 'Audio Files', filename),
-        path.join(process.cwd(), 'audio', filename),
-        path.join(process.cwd(), 'Audio Files', filename)
-      );
+      [
+        path.join(dirname, 'Audio Files', wavFilename),
+        path.join(path.dirname(dirname), 'Audio Files', wavFilename),
+        path.join(process.cwd(), 'audio', wavFilename),
+        path.join(process.cwd(), 'Audio Files', wavFilename),
+      ].forEach(pushCandidate);
     }
 
-    // Remove duplicates and normalize paths
-    const uniqueCandidates = [...new Set(candidates)].map(candidate => path.normalize(candidate));
-
-    console.log(`[JUCE] 🔍 Testing fallback candidates:`, uniqueCandidates);
-
-    // Test each candidate
-    for (const candidate of uniqueCandidates) {
-      try {
-        if (fs.existsSync(candidate)) {
-          console.log(`[JUCE] ✅ Found audio file at:`, candidate);
-          return candidate;
-        } else {
-          console.log(`[JUCE] ❌ Candidate doesn't exist:`, candidate);
-        }
-      } catch (error) {
-        console.warn(`[JUCE] ⚠️ Error checking candidate:`, candidate, error);
-      }
+    const resolved = evaluateCandidates(candidates, filePath);
+    if (resolved) {
+      return resolved;
     }
 
-    console.error(`[JUCE] ❌ No valid audio file found for path:`, filePath);
+    console.error('[JUCE] ❌ No converted WAV could be located for path:', filePath);
     return null;
+  }
+
+  private async assertWavFormat(resolvedPath: string): Promise<void> {
+    if (!resolvedPath) {
+      throw new Error('Converted WAV path is empty');
+    }
+
+    const ext = path.extname(resolvedPath).toLowerCase();
+    if (ext !== '.wav') {
+      throw new Error(`Converted 48k WAV required (received ${ext || 'unknown'})`);
+    }
+
+    let handle: fsPromises.FileHandle | null = null;
+    try {
+      handle = await fsPromises.open(resolvedPath, 'r');
+      const header = Buffer.alloc(44);
+      const { bytesRead } = await handle.read(header, 0, header.length, 0);
+      if (bytesRead < 44) {
+        throw new Error('Audio file header is incomplete; expected WAV header');
+      }
+      const riff = header.toString('ascii', 0, 4);
+      const wave = header.toString('ascii', 8, 12);
+      if (riff !== 'RIFF' || wave !== 'WAVE') {
+        throw new Error('Audio file is not a valid WAV container');
+      }
+      const audioFormat = header.readUInt16LE(20);
+      const channels = header.readUInt16LE(22);
+      const sampleRate = header.readUInt32LE(24);
+
+      if (audioFormat !== 1) {
+        console.warn('[JUCE] ⚠️ WAV audioFormat not PCM (value:', audioFormat, ')');
+      }
+      if (sampleRate !== 48000) {
+        throw new Error(`Audio sample rate must be 48000 Hz (received ${sampleRate})`);
+      }
+      if (channels !== 2) {
+        throw new Error(`Audio must be stereo (2 channels); received ${channels}`);
+      }
+    } finally {
+      try {
+        await handle?.close();
+      } catch {}
+    }
   }
 
   private async ensureStarted(): Promise<void> {
@@ -454,9 +559,21 @@ export class JuceClient implements Transport {
             this.handlers.onLoaded?.(evt);
             break;
           case 'state':
+            console.log('[JUCE] state', {
+              id: evt.id,
+              playing: evt.playing,
+              generationId: (evt as any).generationId,
+            });
             this.handlers.onState?.(evt);
             break;
           case 'position':
+            console.log('[JUCE] position', {
+              id: evt.id,
+              edited: typeof evt.editedSec === 'number' ? Number(evt.editedSec.toFixed(3)) : evt.editedSec,
+              original: typeof evt.originalSec === 'number' ? Number(evt.originalSec.toFixed(3)) : evt.originalSec,
+              revision: (evt as any).revision,
+              generationId: (evt as any).generationId,
+            });
             this.handlers.onPosition?.(evt);
             break;
           case 'edlApplied':

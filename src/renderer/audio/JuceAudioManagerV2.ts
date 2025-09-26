@@ -283,6 +283,13 @@ export class JuceAudioManagerV2 {
   }
 
   /**
+   * Get current session generation identifier for diagnostics
+   */
+  public getCurrentGenerationId(): number {
+    return this.currentGenerationId;
+  }
+
+  /**
    * Update clips with new EDL
    */
   public async updateClips(clips: Clip[]): Promise<void> {
@@ -409,15 +416,32 @@ export class JuceAudioManagerV2 {
    * Play audio
    */
   public async play(): Promise<void> {
-    if (!this.transport || !this.state.isReady) return;
+    if (!this.transport) {
+      console.warn('[CMD] play skipped — transport unavailable');
+      return;
+    }
+
+    if (!this.state.isReady) {
+      console.warn('[CMD] play blocked — transport not ready', {
+        gen: this.currentGenerationId,
+        readyStatus: this.state.readyStatus,
+      });
+      return;
+    }
+
+    const generation = this.currentGenerationId;
+    console.log('[CMD] play', {
+      gen: generation,
+      readyStatus: this.state.readyStatus,
+    });
 
     try {
-      const result = await this.transport.play(this.sessionId, this.currentGenerationId);
+      const result = await this.transport.play(this.sessionId, generation);
       if (!result || result.success) {
         this.updateState({ isPlaying: true, error: null });
       } else if (result.error?.includes('stale generation')) {
         console.warn('[AudioManager] Ignoring play command for superseded generation', {
-          generation: this.currentGenerationId,
+          generation,
         });
       }
     } catch (error) {
@@ -1002,33 +1026,24 @@ export class JuceAudioManagerV2 {
               }
             }
 
-            const wavCandidate = results.find(r => r.exists && r.ext === 'wav');
-            const mp3Candidates = results.filter(r => r.exists && r.ext === 'mp3');
-            const existing = wavCandidate ?? results.find(r => r.exists);
-
-            if (existing) {
-              this.rememberProjectDir(existing.path);
-              if (wavCandidate) {
-                console.log('[AudioPath] chosen = WAV (48k), rejected = MP3 (44.1k)', {
-                  chosen: wavCandidate.path,
-                  rejected: mp3Candidates.map(r => r.path),
-                });
-              } else {
-                console.log('✅ Resolved file:// URL to existing file:', existing.path);
-              }
-              return existing.path;
+            const chosen = this.chooseWavResult(results, audioPath);
+            if (chosen) {
+              return chosen;
             }
 
-            console.warn('❌ file:// URL resolved to non-existent file:', normalized);
             return null;
           } catch (error) {
             console.warn('⚠️ Failed to validate file:// URL path:', normalized, error);
             return null;
           }
         } else {
-          // Fallback without validation
-          this.rememberProjectDir(normalized);
-          return normalized;
+          if (this.getFileExtension(normalized) === 'wav') {
+            this.rememberProjectDir(normalized);
+            console.warn('[AudioPath] ⚠️ checkFileExists unavailable; assuming WAV path is valid', { normalized });
+            return normalized;
+          }
+          console.error('[AudioPath] ❌ Cannot verify converted WAV for file:// URL without checkFileExists', { audioPath, normalized });
+          return null;
         }
       }
 
@@ -1054,33 +1069,24 @@ export class JuceAudioManagerV2 {
               }
             }
 
-            const wavCandidate = results.find(r => r.exists && r.ext === 'wav');
-            const mp3Candidates = results.filter(r => r.exists && r.ext === 'mp3');
-            const existing = wavCandidate ?? results.find(r => r.exists);
-
-            if (existing) {
-              this.rememberProjectDir(existing.path);
-              if (wavCandidate) {
-                console.log('[AudioPath] chosen = WAV (48k), rejected = MP3 (44.1k)', {
-                  chosen: wavCandidate.path,
-                  rejected: mp3Candidates.map(r => r.path),
-                });
-              } else {
-                console.log('✅ Validated absolute path:', existing.path);
-              }
-              return existing.path;
+            const chosen = this.chooseWavResult(results, audioPath);
+            if (chosen) {
+              return chosen;
             }
 
-            console.warn('❌ Absolute path does not exist:', normalized);
             return null;
           } catch (error) {
             console.warn('⚠️ Failed to validate absolute path:', normalized, error);
             return null;
           }
         } else {
-          // Fallback without validation
-          this.rememberProjectDir(normalized);
-          return normalized;
+          if (this.getFileExtension(normalized) === 'wav') {
+            this.rememberProjectDir(normalized);
+            console.warn('[AudioPath] ⚠️ checkFileExists unavailable; assuming absolute WAV path is valid', { normalized });
+            return normalized;
+          }
+          console.error('[AudioPath] ❌ Cannot verify converted WAV for absolute path without checkFileExists', { audioPath, normalized });
+          return null;
         }
       }
 
@@ -1168,33 +1174,21 @@ export class JuceAudioManagerV2 {
             }
           }
 
-          const wavCandidate = results.find(r => r.exists && r.ext === 'wav');
-          const mp3Candidates = results.filter(r => r.exists && r.ext === 'mp3');
-          const chosen = wavCandidate ?? results.find(r => r.exists);
-
+          const chosen = this.chooseWavResult(results, audioPath);
           if (chosen) {
-            this.rememberProjectDir(chosen.path);
-            if (wavCandidate) {
-              console.log('[AudioPath] chosen = WAV (48k), rejected = MP3 (44.1k)', {
-                chosen: wavCandidate.path,
-                rejected: mp3Candidates.map(r => r.path),
-              });
-            } else {
-              console.log('✅ Found existing file:', chosen.path);
-            }
-            return chosen.path;
+            return chosen;
           }
 
-          console.error('❌ No valid audio file found for path:', audioPath);
-          console.error('❌ Checked candidates:', uniqueCandidates);
           return null;
         } else {
-          console.warn('⚠️ checkFileExists API not available, using first candidate without validation');
-          if (candidates.length > 0) {
-            const fallback = this.normalizePathForPlatform(candidates[0]);
+          console.warn('⚠️ checkFileExists API not available, scanning candidates for WAV suffix');
+          const manualWav = candidates.find(candidate => this.getFileExtension(candidate) === 'wav');
+          if (manualWav) {
+            const fallback = this.normalizePathForPlatform(manualWav);
             this.rememberProjectDir(fallback);
             return fallback;
           }
+          console.error('[AudioPath] ❌ Unable to locate converted WAV without filesystem checks', { audioPath, candidates });
         }
 
         return null;
@@ -1210,6 +1204,49 @@ export class JuceAudioManagerV2 {
   private isAbsolutePath(p: string): boolean {
     if (!p) return false;
     return p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p) || /^\/\//.test(p);
+  }
+
+  private chooseWavResult(
+    results: Array<{ path: string; exists: boolean; ext: string | null }>,
+    audioPath: string
+  ): string | null {
+    if (!results.length) {
+      console.error('[AudioPath] ❌ No candidates returned for audio path', { audioPath });
+      return null;
+    }
+
+    const existing = results.filter(r => r.exists);
+    const wavCandidate = existing.find(r => r.ext === 'wav');
+
+    if (wavCandidate) {
+      const rejected = existing.filter(r => r.path !== wavCandidate.path);
+      const rejectedMp3 = rejected.filter(r => r.ext === 'mp3').map(r => r.path);
+      if (rejectedMp3.length > 0) {
+        console.log('[AudioPath] chosen = WAV (48k), rejected = MP3 (44.1k)', {
+          chosen: wavCandidate.path,
+          rejectedMp3,
+          otherRejected: rejected.filter(r => r.ext !== 'mp3').map(r => ({ path: r.path, ext: r.ext })),
+        });
+      } else {
+        console.log('[AudioPath] chosen = WAV (48k)', {
+          chosen: wavCandidate.path,
+          rejected: rejected.map(r => ({ path: r.path, ext: r.ext })),
+        });
+      }
+      this.rememberProjectDir(wavCandidate.path);
+      return wavCandidate.path;
+    }
+
+    if (existing.length > 0) {
+      console.error('[AudioPath] ❌ Converted 48k WAV missing', {
+        audioPath,
+        existing: existing.map(r => ({ path: r.path, ext: r.ext })),
+      });
+    } else {
+      console.error('[AudioPath] ❌ No candidate files exist', { audioPath, candidates: results.map(r => r.path) });
+    }
+
+    return null;
   }
 
   private normalizePathForPlatform(p: string): string {

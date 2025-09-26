@@ -324,7 +324,8 @@ export class TranscriptionImportService {
    */
   private static createClipFromWords(words: Word[], clipStartTime: number, speaker: string, order: number): Clip {
     const segments: Segment[] = [];
-    let createdSpacerCount = 0;
+    let spacerCount = 0;
+    let microSpacerCount = 0;
     let currentTime = 0; // Clip-relative time
 
     for (let i = 0; i < words.length; i++) {
@@ -349,20 +350,22 @@ export class TranscriptionImportService {
 
       // Check for gap to next word
       if (nextWord) {
-        const gapDuration = nextWord.start - word.end;
+        const gapRaw = Number(nextWord.start) - Number(word.end);
+        const gapDuration = Number.isFinite(gapRaw) ? gapRaw : 0;
+        const sanitizedGap = gapDuration > 0 ? gapDuration : 0;
 
-        console.debug('[Import] gap', {
+        console.log('[Import] gap', {
           prev: word.word,
           end: Number(word.end.toFixed(3)),
           next: nextWord.word,
           start: Number(nextWord.start.toFixed(3)),
-          gapSec: Number(gapDuration.toFixed(3)),
+          gapSec: Number(sanitizedGap.toFixed(3)),
           threshold: Number(SPACER_THRESHOLD_SECONDS.toFixed(3)),
           clipOrder: order,
           speaker,
         });
 
-        if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
+        if (sanitizedGap >= SPACER_THRESHOLD_SECONDS) {
           // Create spacer segment for significant gap (≥1s)
           // Use clip-relative timing for both start and end
           const spacerStart = wordEnd; // Start right after current word ends (clip-relative)
@@ -384,34 +387,37 @@ export class TranscriptionImportService {
           const spacerSegment = createSpacerSegment(
             spacerStart,
             spacerEnd,
-            `${gapDuration.toFixed(1)}s`
+            `${sanitizedGap.toFixed(1)}s`
           );
 
           segments.push(spacerSegment);
           currentTime = spacerEnd;
-          createdSpacerCount += 1;
-        } else if (gapDuration > 0) {
-          // Small gap - extend current word segment with proportional original timing
-          const nextWordClipRelativeStart = nextWord.start - clipStartTime;
-          const currentSegment = segments[segments.length - 1] as WordSegment;
+          spacerCount += 1;
+        } else if (sanitizedGap > 0) {
+          const spacerStart = wordEnd;
+          const spacerEnd = nextWord.start - clipStartTime;
+          const spacerSegment = createSpacerSegment(
+            spacerStart,
+            spacerEnd,
+            `${sanitizedGap.toFixed(2)}s`
+          );
 
-          // Calculate proportional scaling to maintain timing ratio
-          const originalDuration = currentSegment.originalEnd - currentSegment.originalStart;
-          const currentEditedDuration = currentSegment.end - currentSegment.start;
-          const newEditedDuration = nextWordClipRelativeStart - currentSegment.start;
+          console.info('🟦 Micro-spacer inserted', {
+            prev: word.word,
+            next: nextWord.word,
+            start: Number(word.end.toFixed(3)),
+            end: Number(nextWord.start.toFixed(3)),
+            duration: Number((spacerEnd - spacerStart).toFixed(3)),
+            clipOrder: order,
+            speaker,
+            clipRelativeStart: Number(spacerStart.toFixed(3)),
+            clipRelativeEnd: Number(spacerEnd.toFixed(3)),
+          });
 
-          // Scale the original duration proportionally
-          const scaleFactor = newEditedDuration / currentEditedDuration;
-          const newOriginalEnd = currentSegment.originalStart + (originalDuration * scaleFactor);
-
-          console.log(`🔧 Extending segment: gap=${gapDuration.toFixed(3)}s, scale=${scaleFactor.toFixed(3)}, origEnd=${currentSegment.originalEnd.toFixed(3)}->${newOriginalEnd.toFixed(3)}`);
-
-          segments[segments.length - 1] = {
-            ...currentSegment,
-            end: nextWordClipRelativeStart,
-            originalEnd: newOriginalEnd
-          };
-          currentTime = nextWordClipRelativeStart;
+          segments.push(spacerSegment);
+          currentTime = spacerEnd;
+          spacerCount += 1;
+          microSpacerCount += 1;
         }
       }
     }
@@ -420,12 +426,19 @@ export class TranscriptionImportService {
     const lastWord = words[words.length - 1];
     const clipDuration = currentTime;
 
-    if (createdSpacerCount === 0 && words.length > 0) {
+    if (spacerCount === 0 && words.length > 0) {
       console.warn('[Import][Spacer] Clip created no spacer segments', {
         clipOrder: order,
         speaker,
         wordCount: words.length,
         clipDuration: Number(clipDuration.toFixed(3))
+      });
+    } else if (microSpacerCount > 0) {
+      console.log('[Import][Spacer] Micro spacer summary', {
+        clipOrder: order,
+        speaker,
+        microSpacerCount,
+        totalSpacerCount: spacerCount,
       });
     }
 
