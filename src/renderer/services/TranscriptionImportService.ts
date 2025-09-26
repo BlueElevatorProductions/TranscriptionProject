@@ -295,6 +295,17 @@ export class TranscriptionImportService {
       if (nextWord) {
         const gapDuration = nextWord.start - word.end;
 
+        console.debug('[Import][Spacer] Gap analysis between words', {
+          clipOrder: order,
+          speaker,
+          currentWord: word.word,
+          nextWord: nextWord.word,
+          previousEndSec: Number(word.end.toFixed(3)),
+          nextStartSec: Number(nextWord.start.toFixed(3)),
+          gapSec: Number(gapDuration.toFixed(3)),
+          thresholdSec: SPACER_THRESHOLD_SECONDS,
+        });
+
         if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
           // Create spacer segment for significant gap (≥1s)
           // Use clip-relative timing for both start and end

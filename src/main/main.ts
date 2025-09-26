@@ -537,19 +537,33 @@ class App {
           }
 
           const juceResult = await this.juceClient!.updateEdl(id, rev, clips);
+          const ackRevision =
+            typeof juceResult?.revision === 'number' && Number.isFinite(juceResult.revision)
+              ? Math.floor(juceResult.revision)
+              : rev;
+
+          if (ackRevision !== rev) {
+            console.warn('[IPC][JUCE] ⚠️ Backend acknowledged different revision than requested', {
+              id,
+              requested: rev,
+              acknowledged: ackRevision,
+            });
+          }
+
           if (juceResult?.counts) {
             console.log('[IPC][JUCE] Backend acknowledged counts', {
               id,
-              revision: juceResult.revision,
+              revision: ackRevision,
               counts: juceResult.counts,
             });
           }
-          pendingAppliedById.set(id, rev);
+          edlRevisionById.set(id, ackRevision);
+          pendingAppliedById.set(id, ackRevision);
           // Write full, unfiltered EDL to /tmp for troubleshooting
-          writeEdlDebug(id, rev, clips as any, stats);
+          writeEdlDebug(id, ackRevision, clips as any, stats);
           return {
             success: true,
-            revision: rev,
+            revision: ackRevision,
             counts: {
               words: stats.wordSegments,
               spacers: stats.spacerSegments,

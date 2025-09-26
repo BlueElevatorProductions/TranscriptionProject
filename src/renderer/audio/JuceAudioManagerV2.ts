@@ -239,6 +239,20 @@ export class JuceAudioManagerV2 {
         throw new Error(result.error || 'Failed to update EDL');
       }
 
+      const acknowledgedRevision =
+        typeof result.revision === 'number' && Number.isFinite(result.revision)
+          ? Math.floor(result.revision)
+          : revision;
+
+      if (acknowledgedRevision !== revision) {
+        console.warn('[AudioManager] ⚠️ Backend acknowledged unexpected revision', {
+          requested: revision,
+          acknowledged: acknowledgedRevision,
+        });
+      }
+
+      this.edlRevisionCounter = acknowledgedRevision;
+
       // Update duration from EDL
       this.updateState({
         duration: this.currentEDL.metadata.totalDuration,
@@ -437,6 +451,8 @@ export class JuceAudioManagerV2 {
 
     switch (event.type) {
       case 'loaded': {
+        this.edlRevisionCounter = 0;
+        console.info('[AudioManager] Reset EDL revision counter after JUCE load');
         console.info('[JUCE] transport loaded', {
           durationSec: event.durationSec,
           sampleRate: (event as any).sampleRate,
