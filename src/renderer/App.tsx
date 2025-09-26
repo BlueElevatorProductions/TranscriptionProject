@@ -87,6 +87,41 @@ const AppContent: React.FC = () => {
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
 
+  // Ensure transport log forwarding is visible in the renderer console
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.onTransportLog) {
+      console.warn('[TransportLog][Renderer] electronAPI.onTransportLog unavailable — forwarded backend logs will be missing');
+      return;
+    }
+
+    const seenSources = new Set<string>();
+    console.log('[TransportLog][Renderer] Attaching transport log monitor');
+
+    const detach = api.onTransportLog((entry: any) => {
+      if (!entry || typeof entry.message !== 'string') {
+        return;
+      }
+
+      const bracketMatch = entry.message.match(/^\[([^\]]+)\]/);
+      const source = entry.source || (bracketMatch ? bracketMatch[1] : undefined);
+
+      if (source && !seenSources.has(source)) {
+        seenSources.add(source);
+        console.log('[TransportLog][Renderer] First forwarded log received', {
+          source,
+          message: entry.message,
+        });
+      }
+    });
+
+    return () => {
+      if (typeof detach === 'function') {
+        detach();
+      }
+    };
+  }, []);
+
   // Initialize app and set up menu listeners
   useEffect(() => {
     const initializeApp = async () => {

@@ -26,6 +26,7 @@ const defaultTransportLogger = (entry: TransportLogEntry) => {
 };
 
 transportLogListeners.add(defaultTransportLogger);
+console.log('[Bridge][Renderer] Default transport log listener registered');
 
 function summarizeForPreview(value: any): any {
   if (value === null || value === undefined) return value ?? null;
@@ -72,6 +73,10 @@ ipcRenderer.emit = function (channel: string | symbol, ...args: any[]) {
 };
 
 ipcRenderer.on('transport:log', (_event, entry: TransportLogEntry) => {
+  if (!entry || typeof entry.message !== 'string') {
+    console.warn('[Bridge][Renderer] Received malformed transport log entry', entry);
+    return;
+  }
   for (const listener of transportLogListeners) {
     try {
       listener(entry);
@@ -136,8 +141,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('debug-log', (event, message) => callback(message));
   },
   onTransportLog: (callback: (entry: TransportLogEntry) => void) => {
-    if (typeof callback !== 'function') return;
+    if (typeof callback !== 'function') {
+      console.warn('[Bridge][Renderer] onTransportLog called without a function callback');
+      return () => {};
+    }
     transportLogListeners.add(callback);
+    console.log('[Bridge][Renderer] Custom transport log listener added', {
+      listenerCount: transportLogListeners.size,
+    });
+    return () => {
+      transportLogListeners.delete(callback);
+      console.log('[Bridge][Renderer] Custom transport log listener removed', {
+        listenerCount: transportLogListeners.size,
+      });
+    };
   },
   onAudioConversionProgress: (callback: (data: {percent: number; status: string}) => void) => {
     ipcRenderer.on('audio-conversion-progress', (event, data) => callback(data));
@@ -288,7 +305,7 @@ export interface ElectronAPI {
   onTranscriptionProgress: (callback: (job: any) => void) => void;
   onTranscriptionComplete: (callback: (job: any) => void) => void;
   onTranscriptionError: (callback: (job: any) => void) => void;
-  onTransportLog: (callback: (entry: TransportLogEntry) => void) => void;
+  onTransportLog: (callback: (entry: TransportLogEntry) => void) => () => void;
   removeAllListeners: (channel: string) => void;
   readAudioFile: (filePath: string) => Promise<ArrayBuffer>;
   saveApiKeys: (apiKeys: { [service: string]: string }) => Promise<{success: boolean; error?: string}>;

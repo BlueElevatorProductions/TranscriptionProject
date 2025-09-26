@@ -8,6 +8,7 @@ type Serializable = string | number | boolean | null | Serializable[] | { [key: 
 const TRANSPORT_TAG_PATTERN = /^\[([^\]]+)\]/;
 const queuedEntries: TransportLogEntry[] = [];
 let bridgeInstalled = false;
+let queueNotified = false;
 
 function toSerializable(value: any, depth: number = 0): Serializable {
   if (value === null || value === undefined) return null;
@@ -51,6 +52,14 @@ function broadcast(entry: TransportLogEntry) {
   const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
   if (windows.length === 0) {
     queuedEntries.push(entry);
+    if (!queueNotified) {
+      queueNotified = true;
+      console.info('[Bridge] No renderer windows detected for transport logs, queuing entry', {
+        queued: queuedEntries.length,
+        message: entry.message,
+        source: entry.source,
+      });
+    }
     return;
   }
 
@@ -63,8 +72,19 @@ function broadcast(entry: TransportLogEntry) {
   }
 }
 
-function flushQueue() {
-  if (!queuedEntries.length) return;
+function flushQueue(reason: string) {
+  if (!queuedEntries.length) {
+    queueNotified = false;
+    return;
+  }
+  console.info('[Bridge] Flushing queued transport logs', {
+    reason,
+    queued: queuedEntries.length,
+    windows: BrowserWindow.getAllWindows()
+      .filter((win) => !win.isDestroyed())
+      .map((win) => win.id),
+  });
+  queueNotified = false;
   const entries = queuedEntries.splice(0, queuedEntries.length);
   for (const entry of entries) {
     broadcast(entry);
@@ -112,7 +132,17 @@ export function installTransportLogBridge(): void {
   interceptConsoleMethod('warn');
   interceptConsoleMethod('error');
 
-  const flush = () => flushQueue();
-  app.on('browser-window-created', flush);
-  app.on('ready', flush);
+  console.info('[Bridge] Transport log bridge installed');
+
+  app.on('browser-window-created', (_event, window) => {
+    console.info('[Bridge] Renderer window created; preparing to flush transport log queue', {
+      windowId: window?.id,
+      queued: queuedEntries.length,
+    });
+    flushQueue('browser-window-created');
+  });
+  app.on('ready', () => {
+    console.info('[Bridge] Electron app ready; awaiting renderer windows for transport logs');
+    flushQueue('app-ready');
+  });
 }

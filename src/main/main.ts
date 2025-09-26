@@ -1925,90 +1925,103 @@ class App {
 
     // Import v2.0 transcription result using TranscriptionImportService
     ipcMain.handle('transcription:importV2', async (_event, segments: any[], speakers: any, audioMetadata: any) => {
+      const segmentCount = Array.isArray(segments) ? segments.length : 0;
+      const speakerCount = speakers && typeof speakers === 'object' ? Object.keys(speakers).length : 0;
+      const incomingPath = audioMetadata?.audioPath || audioMetadata?.originalPath || audioMetadata?.fileName;
+
+      console.log('[Import] Begin transcription import', {
+        segments: segmentCount,
+        speakers: speakerCount,
+        incomingPath,
+        audioMetadata: {
+          fileName: audioMetadata?.fileName,
+          duration: audioMetadata?.duration,
+          format: audioMetadata?.format,
+          size: audioMetadata?.size,
+        },
+      });
+
       try {
-        console.log('📝 Importing v2.0 transcription result using TranscriptionImportService');
-        console.log('🎵 Audio metadata received:', audioMetadata);
-        console.log('📄 Segments received:', segments.length);
-
-        // Import required service
         const { TranscriptionImportService } = await import('../renderer/services/TranscriptionImportService');
-
-        // Create transcription result structure for the import service
         const transcriptionResult = {
-          segments: segments,
+          segments,
           speakers: speakers || {},
-          speakerSegments: [], // Will be built by the import service
-          language: 'en'
+          speakerSegments: [],
+          language: 'en',
         };
 
-        // Create proper audio metadata with path for WAV conversion
-        let audioPath = audioMetadata.audioPath || audioMetadata.originalPath || audioMetadata.fileName;
-
-        // Enhanced path resolution - ensure we have a valid absolute path to source audio
+        let audioPath = incomingPath;
         if (audioPath && !audioPath.startsWith('/')) {
-          // If it's just a filename, try to find it in common locations
           const possiblePaths = [
             `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${audioPath}`,
             `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${audioPath}`,
             `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${audioPath}`,
-            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${audioPath}`
+            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${audioPath}`,
           ];
 
           for (const possiblePath of possiblePaths) {
             if (fs.existsSync(possiblePath)) {
-              console.log('🔍 Found source audio at:', possiblePath);
+              console.log('[Import] Resolved relative audio path candidate', { possiblePath });
               audioPath = possiblePath;
               break;
             }
           }
         }
 
-        // Verify the resolved path exists
         if (audioPath && audioPath !== 'unknown' && !fs.existsSync(audioPath)) {
-          console.warn('⚠️ Source audio file not found at resolved path:', audioPath);
-          console.log('🔍 Available audio files in Working Audio:');
+          console.warn('[Import] ⚠️ Source audio file not found at resolved path', { audioPath });
           const workingAudioDir = '/Users/chrismcleod/Development/ClaudeAccess/Working Audio';
           try {
             const files = fs.readdirSync(workingAudioDir);
-            files.forEach(file => console.log('  -', file));
+            console.log('[Import] Working Audio directory listing', { files });
           } catch (e) {
-            console.log('  Directory not accessible:', e instanceof Error ? e.message : String(e));
+            console.warn('[Import] ⚠️ Working Audio directory not accessible', {
+              error: e instanceof Error ? e.message : String(e),
+            });
           }
         }
 
         const properAudioMetadata = {
           originalFile: audioPath || 'unknown',
-          originalName: audioMetadata.fileName || 'Untitled Audio',
+          originalName: audioMetadata?.fileName || 'Untitled Audio',
           embeddedPath: undefined,
-          path: audioPath, // This is critical for WAV conversion during save
-          duration: audioMetadata.duration || 0,
-          format: audioMetadata.format || 'unknown',
-          size: audioMetadata.size || 0,
-          embedded: false
+          path: audioPath,
+          duration: audioMetadata?.duration || 0,
+          format: audioMetadata?.format || 'unknown',
+          size: audioMetadata?.size || 0,
+          embedded: false,
         };
 
-        console.log('🎵 Processed audio metadata with resolved path:', {
-          original: audioMetadata.audioPath,
+        console.log('[Import] Resolved audio metadata for import', {
+          original: audioMetadata?.audioPath,
           resolved: audioPath,
-          exists: audioPath && audioPath !== 'unknown' ? fs.existsSync(audioPath) : false
+          exists: audioPath && audioPath !== 'unknown' ? fs.existsSync(audioPath) : false,
         });
 
-        // Use TranscriptionImportService to create proper ProjectData with segments
         const projectData = TranscriptionImportService.importTranscription(
           transcriptionResult,
           audioPath,
           properAudioMetadata
         );
 
-        console.log('✅ TranscriptionImportService created project with', projectData.clips.clips.length, 'clips');
+        const clipCount = projectData?.clips?.clips?.length ?? 0;
+        console.log('[Import] Transcription import produced project', {
+          clipCount,
+          segmentCount,
+        });
 
-        // Load into ProjectDataStore
         this.projectDataStore.loadProject(projectData);
+        console.log('[Import] ProjectDataStore loaded imported transcription');
 
         return { success: true };
-
       } catch (error) {
-        console.error('Failed to import v2.0 transcription:', error);
+        console.error('[Import][Error] Failed to import transcription result', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          segments: segmentCount,
+          speakers: speakerCount,
+          incomingPath,
+        });
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     });
