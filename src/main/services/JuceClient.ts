@@ -105,7 +105,7 @@ export class JuceClient implements Transport {
     });
   }
 
-  async updateEdl(id: TransportId, revision: number, clips: EdlClip[]): Promise<{ success: boolean; revision?: number }> {
+  async updateEdl(id: TransportId, revision: number, clips: EdlClip[]): Promise<{ success: boolean; revision?: number; counts?: { words: number; spacers: number; spacersWithOriginal: number; total: number; } }> {
     await this.ensureStarted();
 
     const stats = this.summarizeSegments(clips);

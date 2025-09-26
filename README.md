@@ -219,6 +219,23 @@ A professional desktop transcription application built with Electron, React, and
 - **Result**: ✅ **Buffer overflow protection complete** - stdin flow control and enhanced error recovery implemented
 - **Current Status**: ✅ **Audio playback now working!** - buffer overflow fix successful, but playback speed is still sped up
 
+**16. Race Condition Fix: Audio Load vs Clip Updates (Attempt 16 - Latest - September 2025)**:
+- **Problem**: Race condition between audio loading and clip updates causing "Audio not ready" failures
+- **Root Cause Discovery**: JuceAudioManagerV2 set `isReady: true` immediately after calling load, not after JUCE backend confirmation
+  - `updateClips()` was caching clips when `isReady: false` but cached clips never flushed properly
+  - No revision tracking to confirm EDL application by JUCE backend
+  - Missing comprehensive logging to diagnose load sequence timing
+- **Technical Solution**:
+  - **Fixed Race Condition**: Moved `isReady: true` setting from initialize() to 'loaded' event handler
+  - **Enhanced Logging**: Added detailed logging for load calls, JUCE confirmations, and clip flushing
+  - **Revision Tracking**: Added `edlRevisionCounter` with EDL application confirmation
+  - **Proper Clip Flushing**: Created `flushPendingClips()` method that triggers after JUCE 'loaded' event
+  - **Event-Driven Architecture**: System now truly waits for JUCE backend confirmation before allowing operations
+- **Files**:
+  - `src/renderer/audio/JuceAudioManagerV2.ts` - Race condition fix, revision tracking, enhanced logging, proper event sequencing
+- **Result**: ✅ **Race condition eliminated** - audio load and clip updates now properly sequenced
+- **Current Status**: ✅ **Audio playback confirmed working** - load sequencing fixed, but playback speed still sped up
+
 #### 📊 **Current Operational State (September 2025 - Latest)**
 - ✅ Application launches without crashes
 - ✅ JUCE backend builds and initializes successfully

@@ -88,6 +88,9 @@ export class JuceAudioManagerV2 {
   private lastResolvedProjectDir: { base: string; isWindows: boolean } | null = null;
   private projectDirectory?: string;
 
+  // Revision tracking for EDL application confirmation
+  private edlRevisionCounter: number = 0;
+
   constructor(options: JuceAudioManagerV2Options | AudioCallbacksV2) {
     // Handle both old callback-only and new options-based constructors
     if ('callbacks' in options) {
@@ -158,7 +161,7 @@ export class JuceAudioManagerV2 {
         throw new Error('JUCE transport not available');
       }
 
-      console.log('🎵 Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath });
+      console.info('[AudioManager] Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath });
       await this.loadFile(this.sessionId, resolvedPath);
 
       // Reset playback rate to sane default after every load
@@ -171,7 +174,7 @@ export class JuceAudioManagerV2 {
 
       this.updateState({
         isLoading: false,
-        isReady: true,
+        // NOTE: Do NOT set isReady: true here - wait for JUCE 'loaded' event confirmation
         error: null
       });
 
@@ -179,15 +182,8 @@ export class JuceAudioManagerV2 {
       this.lastFailedPath = null;
       this.lastErrorTime = 0;
 
-      console.log('🎵 ✅ JUCE audio initialized successfully:', resolvedPath);
-
-      // Apply any pending clips that were cached while JUCE was not ready
-      if (this.pendingClips && this.pendingClips.length > 0) {
-        console.log('🎵 Applying pending clips after initialization:', this.pendingClips.length);
-        const clipsToApply = this.pendingClips;
-        this.pendingClips = null; // Clear cache before applying to avoid recursion
-        await this.updateClips(clipsToApply);
-      }
+      // Pending clips will be flushed by the 'loaded' event handler via flushPendingClips()
+      console.log('🎵 ✅ JUCE audio load initiated successfully:', resolvedPath);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -234,7 +230,11 @@ export class JuceAudioManagerV2 {
       // Convert to legacy format for JUCE
       const legacyClips = EDLBuilderService.toLegacyFormat(this.currentEDL);
 
-      const result = await this.transport.updateEdl(this.sessionId, legacyClips);
+      // Increment revision for tracking
+      const revision = ++this.edlRevisionCounter;
+      console.info(`[AudioManager] Sending EDL to JUCE (revision ${revision})`);
+
+      const result = await this.transport.updateEdl(this.sessionId, revision, legacyClips);
       if (!result.success) {
         throw new Error(result.error || 'Failed to update EDL');
       }
@@ -256,6 +256,27 @@ export class JuceAudioManagerV2 {
 
       // Process any pending seek intent
       this.processPendingSeek();
+    }
+  }
+
+  /**
+   * Flush pending clips that were cached while JUCE was not ready
+   */
+  private async flushPendingClips(): Promise<void> {
+    if (!this.pendingClips || this.pendingClips.length === 0) {
+      return;
+    }
+
+    console.info('[AudioManager] flushing cached clips', this.pendingClips.length);
+    const clipsToApply = this.pendingClips;
+    this.pendingClips = null; // Clear cache before applying to avoid recursion
+
+    try {
+      await this.updateClips(clipsToApply);
+    } catch (error) {
+      console.error('[AudioManager] Failed to flush pending clips:', error);
+      // Restore clips if flush failed, so they can be retried later
+      this.pendingClips = clipsToApply;
     }
   }
 
@@ -380,6 +401,7 @@ export class JuceAudioManagerV2 {
     }
 
     try {
+      console.info('[AudioManager] calling juceTransport.load', filePath);
       const result = await this.transport.load(sessionId, filePath);
       if (!result.success) {
         throw new Error(result.error || 'Failed to load audio file');
@@ -404,6 +426,11 @@ export class JuceAudioManagerV2 {
   private handleJuceEvent(event: JuceEvent): void {
     switch (event.type) {
       case 'loaded': {
+        console.info('[JUCE] transport loaded', {
+          durationSec: event.durationSec,
+          sampleRate: (event as any).sampleRate,
+          channels: (event as any).channels
+        });
         this.updateState({
           isLoading: false,
           isReady: true,
@@ -412,6 +439,8 @@ export class JuceAudioManagerV2 {
           channels: typeof (event as any).channels === 'number' ? (event as any).channels : this.state.channels,
           error: null
         });
+        // Now that JUCE is ready, flush any pending clips
+        this.flushPendingClips();
         break;
       }
 
@@ -430,10 +459,18 @@ export class JuceAudioManagerV2 {
         break;
       }
 
-      case 'edlApplied':
-        console.log(`✅ EDL applied by JUCE (revision ${event.revision})`);
+      case 'edlApplied': {
+        const expectedRevision = this.edlRevisionCounter;
+        console.info(`[AudioManager] EDL applied by JUCE (revision ${event.revision}, expected ${expectedRevision})`);
+        if (event.revision !== expectedRevision) {
+          console.warn('[AudioManager] ⚠️ EDL revision mismatch!', {
+            received: event.revision,
+            expected: expectedRevision
+          });
+        }
         this.processPendingSeek();
         break;
+      }
 
       case 'ended':
         this.updateState({ isPlaying: false });
