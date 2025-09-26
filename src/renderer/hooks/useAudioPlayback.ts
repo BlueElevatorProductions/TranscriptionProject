@@ -103,6 +103,7 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
   // JUCE Audio Manager reference
   const audioManagerRef = useRef<JuceAudioManagerV2 | null>(null);
   const clipsRef = useRef<Clip[]>(clips);
+  const inflightLoadRef = useRef<{ path: string; promise: Promise<void> } | null>(null);
 
   // Update clips ref when clips change
   useEffect(() => {
@@ -336,9 +337,18 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     }
   }, []);
 
-  const loadAudio = useCallback(async (audioPath: string) => {
+  const loadAudio = useCallback((audioPath: string) => {
     if (!audioManagerRef.current) {
-      throw new Error('Audio manager not initialized');
+      return Promise.reject(new Error('Audio manager not initialized'));
+    }
+
+    if (!audioPath) {
+      return Promise.resolve();
+    }
+
+    if (inflightLoadRef.current && inflightLoadRef.current.path === audioPath) {
+      console.log('🎵 loadAudio: reusing in-flight load promise for path', audioPath);
+      return inflightLoadRef.current.promise;
     }
 
     setState(prevState => ({
@@ -348,19 +358,35 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
       error: null
     }));
 
-    try {
-      await audioManagerRef.current.initialize(audioPath);
-      console.log('🎵 Audio loaded:', audioPath);
-    } catch (error) {
-      console.error('Failed to load audio:', error);
-      setState(prevState => ({
-        ...prevState,
-        error: error instanceof Error ? error.message : String(error),
-        isLoading: false,
-        readyStatus: 'idle'
-      }));
-      throw error;
-    }
+    const initializePromise = audioManagerRef.current.initialize(audioPath);
+
+    const wrappedPromise = (initializePromise
+      .then(() => {
+        console.log('🎵 Audio loaded:', audioPath);
+      })
+      .catch(error => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('superseded')) {
+          console.info('🎵 loadAudio: load superseded by newer request', { audioPath });
+          return;
+        }
+        console.error('Failed to load audio:', error);
+        setState(prevState => ({
+          ...prevState,
+          error: message,
+          isLoading: false,
+          readyStatus: 'idle'
+        }));
+        throw error;
+      })
+      .finally(() => {
+        if (inflightLoadRef.current?.path === audioPath) {
+          inflightLoadRef.current = null;
+        }
+      })) as Promise<void>;
+
+    inflightLoadRef.current = { path: audioPath, promise: wrappedPromise };
+    return wrappedPromise;
   }, []);
 
   const updateClipsControl = useCallback(async (newClips: Clip[]) => {

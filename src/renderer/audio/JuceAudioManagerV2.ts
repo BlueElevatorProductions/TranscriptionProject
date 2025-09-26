@@ -67,6 +67,8 @@ export class JuceAudioManagerV2 {
   private loadedGenerationId: number | null = null;
   private readyGenerationId: number | null = null;
   private inflightLoadGeneration: number | null = null;
+  private inflightLoadPromise: Promise<void> | null = null;
+  private inflightLoadPath: string | null = null;
 
   // EDL and lookup optimization
   private currentEDL: EdlResult | null = null;
@@ -148,26 +150,56 @@ export class JuceAudioManagerV2 {
       console.warn('🎵 Skipping retry of recently failed path:', audioPath);
       return;
     }
-
-    const previousGeneration = this.currentGenerationId;
-    const newGeneration = ++this.generationCounter;
-    this.currentGenerationId = newGeneration;
-    this.inflightLoadGeneration = newGeneration;
-    if (previousGeneration && previousGeneration !== newGeneration) {
-      console.log('[Load] supersede', { oldGen: previousGeneration, newGen: newGeneration });
-    }
-
-    if (this.isInitializing) {
-      console.warn('🎵 Initialize already in progress, superseding with new generation');
-    }
-
-    this.isInitializing = true;
+    let resolvedPath: string | null = null;
 
     try {
-      const resolvedPath = await this.resolveAudioPath(audioPath);
+      resolvedPath = await this.resolveAudioPath(audioPath);
       if (!resolvedPath) {
         throw new Error(`Unable to resolve audio path: ${audioPath}`);
       }
+
+      if (
+        this.audioPath === resolvedPath &&
+        this.loadedGenerationId === this.currentGenerationId &&
+        this.state.isReady
+      ) {
+        console.log('[AudioManager] Skipping initialize — audio already ready for resolved path', {
+          path: resolvedPath,
+          generation: this.currentGenerationId,
+        });
+        return;
+      }
+
+      if (
+        this.inflightLoadPromise &&
+        this.inflightLoadGeneration !== null &&
+        this.inflightLoadPath === resolvedPath
+      ) {
+        console.log('[AudioManager] Load already in flight for resolved path; reusing pending promise', {
+          path: resolvedPath,
+          generation: this.inflightLoadGeneration,
+        });
+        await this.inflightLoadPromise;
+        return;
+      }
+
+      const previousGeneration = this.currentGenerationId;
+      if (this.inflightLoadGeneration !== null) {
+        this.cancelInflightLoad('supersede', this.inflightLoadGeneration);
+      }
+
+      const newGeneration = ++this.generationCounter;
+      this.currentGenerationId = newGeneration;
+      this.inflightLoadGeneration = newGeneration;
+      if (previousGeneration && previousGeneration !== newGeneration) {
+        console.log('[Load] supersede', { oldGen: previousGeneration, newGen: newGeneration });
+      }
+
+      if (this.isInitializing) {
+        console.warn('🎵 Initialize already in progress, superseding with new generation');
+      }
+
+      this.isInitializing = true;
 
       this.audioPath = resolvedPath;
       this.resetInitialSyncState();
@@ -178,17 +210,36 @@ export class JuceAudioManagerV2 {
       }
 
       const source = this.getFileExtension(resolvedPath) ?? 'unknown';
-      console.info('[AudioManager] Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath, gen: newGeneration });
+      console.info('[AudioManager] Loading audio with resolved path:', {
+        original: audioPath,
+        resolved: resolvedPath,
+        gen: newGeneration,
+      });
       console.log('[Load] start', { gen: newGeneration, path: resolvedPath, source });
 
-      await this.loadFile(this.sessionId, resolvedPath, newGeneration);
+      const loadPromise = this.loadFile(this.sessionId, resolvedPath, newGeneration);
+      const trackedPromise = loadPromise.finally(() => {
+        if (this.inflightLoadGeneration === newGeneration) {
+          this.inflightLoadGeneration = null;
+        }
+        if (this.inflightLoadPromise === trackedPromise) {
+          this.inflightLoadPromise = null;
+          this.inflightLoadPath = null;
+        }
+      });
+      this.inflightLoadPromise = trackedPromise;
+      this.inflightLoadPath = resolvedPath;
+
+      await trackedPromise;
 
       try {
         const result = await this.transport.setRate?.(this.sessionId, 1.0, newGeneration);
         if (!result || result.success) {
           this.updateState({ playbackRate: 1.0 });
         } else if (result.error?.includes('stale generation')) {
-          console.warn('[AudioManager] Ignored stale rate reset for superseded generation', { generation: newGeneration });
+          console.warn('[AudioManager] Ignored stale rate reset for superseded generation', {
+            generation: newGeneration,
+          });
         }
       } catch (error) {
         console.warn('🎵 Failed to reset playback rate after load:', error);
@@ -198,7 +249,7 @@ export class JuceAudioManagerV2 {
         isLoading: false,
         readyStatus: 'waiting-edl',
         isReady: false,
-        error: null
+        error: null,
       });
 
       this.lastFailedPath = null;
@@ -208,6 +259,12 @@ export class JuceAudioManagerV2 {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (errorMessage.includes('superseded')) {
+        console.info('[AudioManager] Load superseded before completion; awaiting newer generation');
+        return;
+      }
+
       this.lastFailedPath = audioPath;
       this.lastErrorTime = Date.now();
 
@@ -215,7 +272,7 @@ export class JuceAudioManagerV2 {
         isLoading: false,
         isReady: false,
         readyStatus: 'idle',
-        error: errorMessage
+        error: errorMessage,
       });
 
       console.error('🔥 Failed to initialize audio:', errorMessage);
@@ -279,6 +336,8 @@ export class JuceAudioManagerV2 {
 
       this.sentRevisionCounter = Math.max(this.sentRevisionCounter, acknowledgedRevision);
       this.expectedRevision = acknowledgedRevision;
+
+      console.log('[Flush] EDL', { gen: generation, revision: acknowledgedRevision });
 
       if (this.loadedGenerationId === generation && this.readyGenerationId !== generation) {
         console.info('[AudioManager] Awaiting JUCE edlApplied event before enabling transport', {
@@ -464,6 +523,9 @@ export class JuceAudioManagerV2 {
    * Dispose of resources
    */
   public dispose(): void {
+    if (this.inflightLoadGeneration !== null) {
+      this.cancelInflightLoad('dispose', this.inflightLoadGeneration);
+    }
     if (this.eventHandler && this.transport) {
       this.transport.offEvent(this.eventHandler);
     }
@@ -794,6 +856,21 @@ export class JuceAudioManagerV2 {
     this.awaitingEdlGeneration = null;
     this.readyFallbackToken = null;
     this.clearReadyFallbackTimer();
+  }
+
+  private cancelInflightLoad(reason: 'supersede' | 'dispose', generation: number): void {
+    if (!generation) {
+      return;
+    }
+    console.log('[Load] cancel in-flight load', { gen: generation, reason });
+    if (this.transport?.stop) {
+      void this.transport.stop(this.sessionId, generation).catch((error: any) => {
+        console.warn('[AudioManager] Failed to cancel in-flight load via stop()', error);
+      });
+    }
+    this.inflightLoadGeneration = null;
+    this.inflightLoadPromise = null;
+    this.inflightLoadPath = null;
   }
 
   private scheduleReadyFallback(generation: number, revision: number): void {
@@ -1223,7 +1300,7 @@ export class JuceAudioManagerV2 {
       return true;
     }
     if (typeof eventGeneration !== 'number') {
-      return true;
+      return false;
     }
     return eventGeneration === this.currentGenerationId;
   }

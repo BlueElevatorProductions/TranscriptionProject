@@ -36,7 +36,7 @@ export class JuceClient implements Transport {
   private readonly emitter = new EventEmitter();
   private handlers: TransportEvents = {};
   private pendingCommands = new Map<string, { resolve: (result: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout }>();
-  private currentLoadCommand: { commandKey: string; id: string } | null = null;
+  private currentLoadCommand: { commandKey: string; id: string; generationId?: number } | null = null;
 
   // Command queue and flow control
   private commandQueue: Array<{ command: JuceCommand; resolve: (result: boolean) => void; reject: (error: any) => void }> = [];
@@ -76,6 +76,21 @@ export class JuceClient implements Transport {
     console.log(`[JUCE] ✅ Loading audio file: ${resolvedPath}${resolvedPath !== filePath ? ` (resolved from: ${filePath})` : ''}`);
     await this.ensureStarted();
 
+    if (this.currentLoadCommand && this.currentLoadCommand.id === id) {
+      const pending = this.pendingCommands.get(this.currentLoadCommand.commandKey);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        this.pendingCommands.delete(this.currentLoadCommand.commandKey);
+        pending.resolve({ success: false, error: 'Load superseded' });
+      }
+      console.log('[Load] supersede', {
+        id,
+        previousGeneration: this.currentLoadCommand.generationId,
+        reason: 'new load request',
+      });
+      this.currentLoadCommand = null;
+    }
+
     return new Promise((resolve, reject) => {
       const commandKey = `load_${id}_${Date.now()}`;
 
@@ -91,7 +106,7 @@ export class JuceClient implements Transport {
       try {
         this.send({ type: 'load', id, path: resolvedPath, generationId }).then(() => {
           // Store command info for response matching
-          this.currentLoadCommand = { commandKey, id };
+          this.currentLoadCommand = { commandKey, id, generationId };
         }).catch(error => {
           this.pendingCommands.delete(commandKey);
           clearTimeout(timeout);
@@ -691,7 +706,20 @@ export class JuceClient implements Transport {
   }
 
   private handleLoadedEvent(evt: JuceEvent) {
-    if (this.currentLoadCommand) {
+    const eventGeneration = (evt as any).generationId;
+    if (this.currentLoadCommand && this.currentLoadCommand.id === evt.id) {
+      if (
+        this.currentLoadCommand.generationId !== undefined &&
+        eventGeneration !== undefined &&
+        eventGeneration !== this.currentLoadCommand.generationId
+      ) {
+        console.warn('[Load] ignoring loaded acknowledgement for superseded generation', {
+          id: evt.id,
+          eventGen: eventGeneration,
+          expectedGen: this.currentLoadCommand.generationId,
+        });
+        return;
+      }
       const pending = this.pendingCommands.get(this.currentLoadCommand.commandKey);
       if (pending) {
         clearTimeout(pending.timeout);
@@ -703,14 +731,31 @@ export class JuceClient implements Transport {
   }
 
   private handleErrorEvent(evt: JuceEvent) {
-    if (this.currentLoadCommand && evt.type === 'error') {
-      const pending = this.pendingCommands.get(this.currentLoadCommand.commandKey);
-      if (pending) {
-        clearTimeout(pending.timeout);
-        this.pendingCommands.delete(this.currentLoadCommand.commandKey);
-        pending.resolve({ success: false, error: evt.message || 'JUCE error' });
-        this.currentLoadCommand = null;
-      }
+    if (!this.currentLoadCommand || evt.type !== 'error') {
+      return;
+    }
+    if (evt.id && evt.id !== this.currentLoadCommand.id) {
+      return;
+    }
+    const eventGeneration = (evt as any).generationId;
+    if (
+      this.currentLoadCommand.generationId !== undefined &&
+      eventGeneration !== undefined &&
+      eventGeneration !== this.currentLoadCommand.generationId
+    ) {
+      console.warn('[Load] ignoring error acknowledgement for superseded generation', {
+        id: evt.id,
+        eventGen: eventGeneration,
+        expectedGen: this.currentLoadCommand.generationId,
+      });
+      return;
+    }
+    const pending = this.pendingCommands.get(this.currentLoadCommand.commandKey);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingCommands.delete(this.currentLoadCommand.commandKey);
+      pending.resolve({ success: false, error: evt.message || 'JUCE error' });
+      this.currentLoadCommand = null;
     }
   }
 

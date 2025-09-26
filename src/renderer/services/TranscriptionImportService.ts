@@ -351,7 +351,7 @@ export class TranscriptionImportService {
       if (nextWord) {
         const gapDuration = nextWord.start - word.end;
 
-        console.log('[Import] gap', {
+        console.debug('[Import] gap', {
           prev: word.word,
           end: Number(word.end.toFixed(3)),
           next: nextWord.word,
@@ -369,7 +369,7 @@ export class TranscriptionImportService {
           const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
 
           const spacerDuration = spacerEnd - spacerStart;
-          console.log('🟦 Spacer created', {
+          console.info('🟦 Spacer created', {
             prev: word.word,
             next: nextWord.word,
             start: Number(word.end.toFixed(3)),
