@@ -307,7 +307,59 @@ export class JuceAudioManagerV2 {
       awaitingEdlGeneration: this.awaitingEdlGeneration,
       expectedRevision: this.expectedRevision,
       sentRevisionCounter: this.sentRevisionCounter,
+      blockers: this.describeReadinessBlockers(this.state),
     };
+  }
+
+  private describeReadinessBlockers(stateOverride?: AudioStateV2): string[] {
+    const reasons: string[] = [];
+    const state = stateOverride ?? this.state;
+
+    if (!this.transport) {
+      reasons.push('transport-unavailable');
+    }
+
+    if (!this.audioPath) {
+      reasons.push('audio-path-missing');
+    }
+
+    if (this.inflightLoadGeneration !== null) {
+      reasons.push('load-inflight');
+    }
+
+    if (this.loadedGenerationId === null || this.loadedGenerationId !== this.currentGenerationId) {
+      reasons.push('generation-not-loaded');
+    }
+
+    if (this.readyGenerationId === null || this.readyGenerationId !== this.currentGenerationId) {
+      reasons.push('generation-not-ready');
+    }
+
+    if (this.awaitingEdlRevision !== null) {
+      reasons.push('awaiting-edl-ack');
+    }
+
+    if (!this.currentEDL) {
+      reasons.push('edl-missing');
+    }
+
+    if (this.isInitializing) {
+      reasons.push('initializing');
+    }
+
+    if (this.readyFallbackTimer !== null) {
+      reasons.push('ready-fallback-wait');
+    }
+
+    if (this.lastErrorTime > 0 && Date.now() - this.lastErrorTime < this.errorCooldown) {
+      reasons.push('error-cooldown');
+    }
+
+    if (!state.isReady) {
+      reasons.push(`ready-status:${state.readyStatus}`);
+    }
+
+    return [...new Set(reasons)];
   }
 
   /**
@@ -439,20 +491,30 @@ export class JuceAudioManagerV2 {
   public async play(): Promise<void> {
     const generation = this.currentGenerationId;
     const readinessDetails = this.getReadinessDebugInfo();
+    const blockers = (readinessDetails.blockers as string[]) ?? [];
+    const canDispatch = !!this.transport && this.state.isReady;
 
     console.log('[CMD] play', {
       gen: generation,
       phase: 'request',
       readyStatus: this.state.readyStatus,
       isReady: this.state.isReady,
+      blockers,
+      diagnostics: readinessDetails,
+    });
+
+    console.log('[IPC send] play', {
+      gen: generation,
+      sessionId: this.sessionId,
+      audioPath: this.audioPath,
+      dispatched: canDispatch,
+      blockers,
+      readyStatus: this.state.readyStatus,
+      diagnostics: readinessDetails,
     });
 
     if (!this.transport) {
-      console.warn('[CMD] play skipped — transport unavailable', { gen: generation });
-      console.warn('[IPC send] play skipped — transport unavailable', {
-        gen: generation,
-        ...readinessDetails,
-      });
+      console.warn('[CMD] play skipped — transport unavailable', { gen: generation, blockers });
       return;
     }
 
@@ -460,19 +522,10 @@ export class JuceAudioManagerV2 {
       console.warn('[CMD] play blocked — transport not ready', {
         gen: generation,
         readyStatus: this.state.readyStatus,
-      });
-      console.warn('[IPC send] play skipped — readiness gate', {
-        gen: generation,
-        ...readinessDetails,
+        blockers,
       });
       return;
     }
-
-    console.log('[IPC send] play', {
-      gen: generation,
-      sessionId: this.sessionId,
-      audioPath: this.audioPath,
-    });
 
     try {
       const result = await this.transport.play(this.sessionId, generation);
@@ -948,6 +1001,7 @@ export class JuceAudioManagerV2 {
         gen: this.currentGenerationId,
         loadedGenerationId: this.loadedGenerationId,
         readyGenerationId: this.readyGenerationId,
+        blockers: this.describeReadinessBlockers(nextState),
       });
     }
 
@@ -957,6 +1011,24 @@ export class JuceAudioManagerV2 {
         to: nextState.readyStatus,
         isReady: nextState.isReady,
         gen: this.currentGenerationId,
+        blockers: this.describeReadinessBlockers(nextState),
+      });
+    }
+
+    const readinessFieldsUpdated =
+      updates.isReady !== undefined ||
+      updates.readyStatus !== undefined ||
+      updates.error !== undefined;
+
+    if (!nextState.isReady && readinessFieldsUpdated) {
+      console.log('[AudioManager] Readiness blockers', {
+        readyStatus: nextState.readyStatus,
+        blockers: this.describeReadinessBlockers(nextState),
+        currentGenerationId: this.currentGenerationId,
+        loadedGenerationId: this.loadedGenerationId,
+        readyGenerationId: this.readyGenerationId,
+        awaitingEdlRevision: this.awaitingEdlRevision,
+        awaitingEdlGeneration: this.awaitingEdlGeneration,
       });
     }
 

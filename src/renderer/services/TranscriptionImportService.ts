@@ -350,9 +350,17 @@ export class TranscriptionImportService {
 
       // Check for gap to next word
       if (nextWord) {
-        const gapRaw = Number(nextWord.start) - Number(word.end);
+        const nextStartAbs = Number(nextWord.start);
+        const currentEndAbs = Number(word.end);
+        const gapRaw = nextStartAbs - currentEndAbs;
         const gapDuration = Number.isFinite(gapRaw) ? gapRaw : 0;
-        const sanitizedGap = gapDuration > 0 ? gapDuration : 0;
+        const sanitizedGap = gapDuration > 0 ? Number(gapDuration.toFixed(6)) : 0;
+        const decision =
+          sanitizedGap >= SPACER_THRESHOLD_SECONDS
+            ? 'spacer'
+            : sanitizedGap > 0
+            ? 'micro-spacer'
+            : 'contiguous';
 
         console.log('[Import] gap', {
           prev: word.word,
@@ -364,15 +372,15 @@ export class TranscriptionImportService {
           clipOrder: order,
           speaker,
           rawGap: Number.isFinite(gapRaw) ? Number(gapRaw.toFixed(6)) : null,
+          decision,
         });
 
         if (sanitizedGap >= SPACER_THRESHOLD_SECONDS) {
           // Create spacer segment for significant gap (≥1s)
           // Use clip-relative timing for both start and end
           const spacerStart = wordEnd; // Start right after current word ends (clip-relative)
-          const spacerEnd = nextWord.start - clipStartTime; // End when next word starts (clip-relative)
-
-          const spacerDuration = spacerEnd - spacerStart;
+          const spacerEnd = spacerStart + sanitizedGap;
+          const spacerDuration = Number((spacerEnd - spacerStart).toFixed(6));
           console.log('🟦 Spacer created', {
             prev: word.word,
             next: nextWord.word,
@@ -396,8 +404,8 @@ export class TranscriptionImportService {
           spacerCount += 1;
         } else if (sanitizedGap > 0) {
           const spacerStart = wordEnd;
-          const spacerEnd = nextWord.start - clipStartTime;
-          const microDuration = spacerEnd - spacerStart;
+          const spacerEnd = spacerStart + sanitizedGap;
+          const microDuration = Number((spacerEnd - spacerStart).toFixed(6));
           const spacerSegment = createSpacerSegment(
             spacerStart,
             spacerEnd,

@@ -37,6 +37,7 @@ export class JuceClient implements Transport {
   private handlers: TransportEvents = {};
   private pendingCommands = new Map<string, { resolve: (result: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout }>();
   private currentLoadCommand: { commandKey: string; id: string; generationId?: number } | null = null;
+  private lastPlayState = new Map<TransportId, boolean>();
 
   // Command queue and flow control
   private commandQueue: Array<{ command: JuceCommand; resolve: (result: boolean) => void; reject: (error: any) => void }> = [];
@@ -88,6 +89,11 @@ export class JuceClient implements Transport {
         sampleRate: formatInfo.sampleRate,
         channels: formatInfo.channels,
         audioFormat: formatInfo.audioFormat,
+      });
+      console.log('[JUCE] Loaded sample metadata', {
+        sampleRate: formatInfo.sampleRate,
+        channels: formatInfo.channels,
+        path: resolvedPath,
       });
     }
     await this.ensureStarted();
@@ -570,7 +576,19 @@ export class JuceClient implements Transport {
             this.handleLoadedEvent(evt);
             this.handlers.onLoaded?.(evt);
             break;
-          case 'state':
+          case 'state': {
+            const isPlaying = !!evt.playing;
+            const previous = this.lastPlayState.get(evt.id) ?? false;
+            this.lastPlayState.set(evt.id, isPlaying);
+
+            if (isPlaying && !previous) {
+              console.log('[JUCE] play started', {
+                id: evt.id,
+                generationId: (evt as any).generationId,
+                revision: (evt as any).revision,
+              });
+            }
+
             console.log('[JUCE] state', {
               id: evt.id,
               playing: evt.playing,
@@ -578,6 +596,7 @@ export class JuceClient implements Transport {
             });
             this.handlers.onState?.(evt);
             break;
+          }
           case 'position':
             console.log('[JUCE] position', {
               id: evt.id,

@@ -671,14 +671,16 @@ class App {
       });
       ipcMain.handle('juce:play', async (_e, id: string, generationId?: number) => {
         try {
+          const currentGen = generationById.get(id);
+          console.log('[Main] play received', { id, requestedGen: generationId, currentGen });
+
           if (typeof generationId === 'number') {
-            const currentGen = generationById.get(id);
             if (currentGen !== undefined && currentGen !== generationId) {
               console.warn('[Guard] ignoring stale play request', { id, eventGen: generationId, currentGen });
               return { success: false, error: 'stale generation' };
             }
           }
-          const generation = generationId ?? generationById.get(id);
+          const generation = generationId ?? currentGen;
           console.log('[Main] play → JUCE', { id, generation });
           await this.juceClient!.play(id, generationId);
           return { success: true };
