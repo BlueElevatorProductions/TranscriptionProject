@@ -62,6 +62,11 @@ export class JuceAudioManagerV2 {
   private callbacks: AudioCallbacksV2;
   private sessionId: string = 'audio-session';
   private audioPath: string | null = null;
+  private generationCounter: number = 0;
+  private currentGenerationId: number = 0;
+  private loadedGenerationId: number | null = null;
+  private readyGenerationId: number | null = null;
+  private inflightLoadGeneration: number | null = null;
 
   // EDL and lookup optimization
   private currentEDL: EdlResult | null = null;
@@ -90,12 +95,12 @@ export class JuceAudioManagerV2 {
   private projectDirectory?: string;
 
   // Revision tracking for EDL application confirmation
-  private edlRevisionCounter: number = 0;
-  private hasLoadedFromJuce: boolean = false;
-  private hasCompletedInitialSync: boolean = false;
+  private sentRevisionCounter: number = 0;
+  private expectedRevision: number = 0;
   private awaitingEdlRevision: number | null = null;
+  private awaitingEdlGeneration: number | null = null;
   private readyFallbackTimer: number | null = null;
-  private lastAcknowledgedRevision: number | null = null;
+  private readyFallbackToken: { generation: number; revision: number | null } | null = null;
 
   constructor(options: JuceAudioManagerV2Options | AudioCallbacksV2) {
     // Handle both old callback-only and new options-based constructors
@@ -133,29 +138,32 @@ export class JuceAudioManagerV2 {
    * Initialize audio with file path
    */
   public async initialize(audioPath: string): Promise<void> {
-    // Prevent multiple concurrent initializations
-    if (this.isInitializing) {
-      console.warn('🎵 Initialize already in progress, ignoring duplicate call');
-      return;
-    }
-
-    // Check error cooldown to prevent rapid retry attempts
     const now = Date.now();
     if (this.lastErrorTime > 0 && now - this.lastErrorTime < this.errorCooldown) {
       console.warn('🎵 Initialize blocked due to error cooldown');
       return;
     }
 
-    // Don't retry the same failed path immediately
     if (this.lastFailedPath === audioPath && now - this.lastErrorTime < this.errorCooldown) {
       console.warn('🎵 Skipping retry of recently failed path:', audioPath);
       return;
     }
 
+    const previousGeneration = this.currentGenerationId;
+    const newGeneration = ++this.generationCounter;
+    this.currentGenerationId = newGeneration;
+    this.inflightLoadGeneration = newGeneration;
+    if (previousGeneration && previousGeneration !== newGeneration) {
+      console.log('[Load] supersede', { oldGen: previousGeneration, newGen: newGeneration });
+    }
+
+    if (this.isInitializing) {
+      console.warn('🎵 Initialize already in progress, superseding with new generation');
+    }
+
     this.isInitializing = true;
 
     try {
-      // Resolve the audio path to an absolute path that JUCE can use
       const resolvedPath = await this.resolveAudioPath(audioPath);
       if (!resolvedPath) {
         throw new Error(`Unable to resolve audio path: ${audioPath}`);
@@ -169,42 +177,44 @@ export class JuceAudioManagerV2 {
         throw new Error('JUCE transport not available');
       }
 
-      console.info('[AudioManager] Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath });
-      await this.loadFile(this.sessionId, resolvedPath);
+      const source = this.getFileExtension(resolvedPath) ?? 'unknown';
+      console.info('[AudioManager] Loading audio with resolved path:', { original: audioPath, resolved: resolvedPath, gen: newGeneration });
+      console.log('[Load] start', { gen: newGeneration, path: resolvedPath, source });
 
-      // Reset playback rate to sane default after every load
+      await this.loadFile(this.sessionId, resolvedPath, newGeneration);
+
       try {
-        await this.transport.setRate(this.sessionId, 1.0);
-        this.updateState({ playbackRate: 1.0 });
+        const result = await this.transport.setRate?.(this.sessionId, 1.0, newGeneration);
+        if (!result || result.success) {
+          this.updateState({ playbackRate: 1.0 });
+        } else if (result.error?.includes('stale generation')) {
+          console.warn('[AudioManager] Ignored stale rate reset for superseded generation', { generation: newGeneration });
+        }
       } catch (error) {
         console.warn('🎵 Failed to reset playback rate after load:', error);
       }
 
       this.updateState({
         isLoading: false,
-        // NOTE: Do NOT set isReady: true here - wait for JUCE 'loaded' event confirmation
         readyStatus: 'waiting-edl',
         isReady: false,
         error: null
       });
 
-      // Clear error tracking on success
       this.lastFailedPath = null;
       this.lastErrorTime = 0;
 
-      // Pending clips will be flushed by the 'loaded' event handler via flushPendingClips()
       console.log('🎵 ✅ JUCE audio load initiated successfully:', resolvedPath);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Track failed path and error time
       this.lastFailedPath = audioPath;
       this.lastErrorTime = Date.now();
 
       this.updateState({
         isLoading: false,
         isReady: false,
+        readyStatus: 'idle',
         error: errorMessage
       });
 
@@ -220,9 +230,10 @@ export class JuceAudioManagerV2 {
    */
   public async updateClips(clips: Clip[]): Promise<void> {
     try {
-      if (!this.transport || !this.hasLoadedFromJuce) {
-        console.warn('⚠️ Cannot update clips: JUCE not ready, caching for later application');
-        this.pendingClips = [...clips]; // Cache clips for later
+      const generation = this.currentGenerationId;
+      if (!this.transport || this.loadedGenerationId !== generation) {
+        console.warn('⚠️ Cannot update clips: JUCE not ready for current generation, caching for later application', { generation });
+        this.pendingClips = [...clips];
         return;
       }
 
@@ -241,12 +252,17 @@ export class JuceAudioManagerV2 {
       const legacyClips = EDLBuilderService.toLegacyFormat(this.currentEDL);
 
       // Increment revision for tracking
-      const revision = ++this.edlRevisionCounter;
-      console.info(`[AudioManager] Sending EDL to JUCE (revision ${revision})`);
+      const revision = ++this.sentRevisionCounter;
+      console.info(`[AudioManager] Sending EDL to JUCE (revision ${revision}, gen ${generation})`);
 
-      const result = await this.transport.updateEdl(this.sessionId, revision, legacyClips);
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update EDL');
+      const result = await this.transport.updateEdl(this.sessionId, revision, legacyClips, generation);
+      if (!result || !result.success) {
+        const message = result?.error || 'Failed to update EDL';
+        if (message.includes('stale generation')) {
+          console.warn('[AudioManager] Ignoring stale updateEdl acknowledgement for superseded generation', { generation, revision });
+          return;
+        }
+        throw new Error(message);
       }
 
       const acknowledgedRevision =
@@ -261,16 +277,18 @@ export class JuceAudioManagerV2 {
         });
       }
 
-      this.edlRevisionCounter = acknowledgedRevision;
-      this.lastAcknowledgedRevision = acknowledgedRevision;
+      this.sentRevisionCounter = Math.max(this.sentRevisionCounter, acknowledgedRevision);
+      this.expectedRevision = acknowledgedRevision;
 
-      if (this.hasLoadedFromJuce && !this.hasCompletedInitialSync) {
+      if (this.loadedGenerationId === generation && this.readyGenerationId !== generation) {
         console.info('[AudioManager] Awaiting JUCE edlApplied event before enabling transport', {
           revision: acknowledgedRevision,
+          generation,
         });
         this.awaitingEdlRevision = acknowledgedRevision;
+        this.awaitingEdlGeneration = generation;
         this.updateState({ readyStatus: 'waiting-edl', isReady: false });
-        this.scheduleReadyFallback(acknowledgedRevision);
+        this.scheduleReadyFallback(generation, acknowledgedRevision);
       }
 
       // Update duration from EDL
@@ -283,6 +301,12 @@ export class JuceAudioManagerV2 {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('stale generation')) {
+        console.warn('[AudioManager] Ignoring stale updateClips error for superseded generation', {
+          generation: this.currentGenerationId,
+        });
+        return;
+      }
       this.updateState({ error: errorMessage });
       this.callbacks.onError(errorMessage);
     } finally {
@@ -301,7 +325,15 @@ export class JuceAudioManagerV2 {
       return;
     }
 
-    console.info('[AudioManager] flushing cached clips', this.pendingClips.length);
+    if (this.loadedGenerationId !== this.currentGenerationId) {
+      console.log('[EDL] flushPending skipped due to generation mismatch', {
+        currentGen: this.currentGenerationId,
+        loadedGen: this.loadedGenerationId,
+      });
+      return;
+    }
+
+    console.log('[EDL] flushPending', { gen: this.currentGenerationId, clipCount: this.pendingClips.length });
     const clipsToApply = this.pendingClips;
     this.pendingClips = null; // Clear cache before applying to avoid recursion
 
@@ -321,9 +353,13 @@ export class JuceAudioManagerV2 {
     if (!this.transport || !this.state.isReady) return;
 
     try {
-      const result = await this.transport.play(this.sessionId);
-      if (result.success) {
+      const result = await this.transport.play(this.sessionId, this.currentGenerationId);
+      if (!result || result.success) {
         this.updateState({ isPlaying: true, error: null });
+      } else if (result.error?.includes('stale generation')) {
+        console.warn('[AudioManager] Ignoring play command for superseded generation', {
+          generation: this.currentGenerationId,
+        });
       }
     } catch (error) {
       this.handleError('Play failed', error);
@@ -337,9 +373,13 @@ export class JuceAudioManagerV2 {
     if (!this.transport) return;
 
     try {
-      const result = await this.transport.pause(this.sessionId);
-      if (result.success) {
+      const result = await this.transport.pause(this.sessionId, this.currentGenerationId);
+      if (!result || result.success) {
         this.updateState({ isPlaying: false });
+      } else if (result.error?.includes('stale generation')) {
+        console.warn('[AudioManager] Ignoring pause command for superseded generation', {
+          generation: this.currentGenerationId,
+        });
       }
     } catch (error) {
       this.handleError('Pause failed', error);
@@ -380,9 +420,13 @@ export class JuceAudioManagerV2 {
     if (!this.transport) return;
 
     try {
-      const result = await this.transport.setVolume(this.sessionId, volume);
-      if (result.success) {
+      const result = await this.transport.setVolume(this.sessionId, volume, this.currentGenerationId);
+      if (!result || result.success) {
         this.updateState({ volume });
+      } else if (result?.error?.includes('stale generation')) {
+        console.warn('[AudioManager] Ignoring volume change for superseded generation', {
+          generation: this.currentGenerationId,
+        });
       }
     } catch (error) {
       this.handleError('Set volume failed', error);
@@ -396,9 +440,13 @@ export class JuceAudioManagerV2 {
     if (!this.transport) return;
 
     try {
-      const result = await this.transport.setRate(this.sessionId, rate);
-      if (result.success) {
+      const result = await this.transport.setRate(this.sessionId, rate, this.currentGenerationId);
+      if (!result || result.success) {
         this.updateState({ playbackRate: rate });
+      } else if (result?.error?.includes('stale generation')) {
+        console.warn('[AudioManager] Ignoring playback rate change for superseded generation', {
+          generation: this.currentGenerationId,
+        });
       }
     } catch (error) {
       this.handleError('Set playback rate failed', error);
@@ -419,14 +467,22 @@ export class JuceAudioManagerV2 {
     if (this.eventHandler && this.transport) {
       this.transport.offEvent(this.eventHandler);
     }
+    if (this.transport?.removeAllListeners) {
+      try {
+        this.transport.removeAllListeners();
+      } catch (error) {
+        console.warn('[AudioManager] Failed to remove JUCE listeners during dispose', error);
+      }
+    }
     this.currentEDL = null;
     this.lastSeekIntent = null;
     this.pendingClips = null;
     this.clearReadyFallbackTimer();
-    this.hasLoadedFromJuce = false;
-    this.hasCompletedInitialSync = false;
+    this.loadedGenerationId = null;
+    this.readyGenerationId = null;
     this.awaitingEdlRevision = null;
-    this.lastAcknowledgedRevision = null;
+    this.awaitingEdlGeneration = null;
+    this.readyFallbackToken = null;
   }
 
   // ==================== Private Methods ====================
@@ -434,14 +490,14 @@ export class JuceAudioManagerV2 {
   /**
    * Load audio file into JUCE backend
    */
-  private async loadFile(sessionId: string, filePath: string): Promise<void> {
+  private async loadFile(sessionId: string, filePath: string, generationId: number): Promise<void> {
     if (!this.transport) {
       throw new Error('JUCE transport not available');
     }
 
     try {
-      console.info('[AudioManager] calling juceTransport.load', filePath);
-      const result = await this.transport.load(sessionId, filePath);
+      console.info('[AudioManager] calling juceTransport.load', { filePath, generationId });
+      const result = await this.transport.load(sessionId, filePath, generationId);
       if (!result.success) {
         throw new Error(result.error || 'Failed to load audio file');
       }
@@ -463,40 +519,81 @@ export class JuceAudioManagerV2 {
   }
 
   private handleJuceEvent(event: JuceEvent): void {
+    const eventGeneration = typeof (event as any).generationId === 'number'
+      ? (event as any).generationId
+      : undefined;
+
     const eventSummary = event.type === 'position'
       ? {
           type: event.type,
           editedSec: typeof event.editedSec === 'number' ? Number(event.editedSec.toFixed(3)) : event.editedSec,
           originalSec: typeof event.originalSec === 'number' ? Number(event.originalSec.toFixed(3)) : event.originalSec,
           revision: (event as any).revision,
+          generationId: eventGeneration,
         }
-      : event;
+      : {
+          type: event.type,
+          revision: (event as any).revision,
+          wordCount: (event as any).wordCount,
+          spacerCount: (event as any).spacerCount,
+          generationId: eventGeneration,
+        };
 
-    console.debug('[JUCE][Renderer] Received event from transport', eventSummary);
+    console.log('[Event] from JUCE', {
+      type: event.type,
+      gen: eventGeneration,
+      currentGen: this.currentGenerationId,
+      revision: (event as any).revision,
+    });
+
+    if (!this.isEventGenerationCurrent(eventGeneration)) {
+      console.warn('[Guard] ignoring stale event', {
+        type: event.type,
+        eventGen: eventGeneration,
+        currentGen: this.currentGenerationId,
+      });
+      return;
+    }
 
     switch (event.type) {
       case 'loaded': {
-        this.edlRevisionCounter = 0;
-        this.hasLoadedFromJuce = true;
-        this.hasCompletedInitialSync = false;
+        const sampleRate = (event as any).sampleRate;
+        const channels = (event as any).channels;
+        if (sampleRate !== 48000 || channels !== 2) {
+          console.warn('[AudioManager] ⚠️ Sample format mismatch on load', {
+            generation: this.currentGenerationId,
+            sampleRate,
+            channels,
+            expectedSampleRate: 48000,
+            expectedChannels: 2,
+          });
+        } else {
+          console.log('[AudioManager] ✅ Sample format confirmed 48k stereo', { generation: this.currentGenerationId });
+        }
+        this.loadedGenerationId = eventGeneration ?? this.currentGenerationId;
+        this.inflightLoadGeneration = null;
+        this.sentRevisionCounter = 0;
+        this.expectedRevision = 0;
         this.awaitingEdlRevision = null;
+        this.awaitingEdlGeneration = null;
+        this.readyGenerationId = null;
+        this.readyFallbackToken = null;
         this.clearReadyFallbackTimer();
-        console.info('[AudioManager] Reset EDL revision counter after JUCE load');
+        console.info('[AudioManager] Reset EDL revision counter after JUCE load', { generation: this.loadedGenerationId });
         console.info('[JUCE] transport loaded', {
           durationSec: event.durationSec,
-          sampleRate: (event as any).sampleRate,
-          channels: (event as any).channels
+          sampleRate,
+          channels,
         });
         this.updateState({
           isLoading: false,
           isReady: false,
           readyStatus: 'waiting-edl',
           duration: typeof event.durationSec === 'number' ? event.durationSec : this.state.duration,
-          sampleRate: typeof (event as any).sampleRate === 'number' ? (event as any).sampleRate : this.state.sampleRate,
-          channels: typeof (event as any).channels === 'number' ? (event as any).channels : this.state.channels,
-          error: null
+          sampleRate: typeof sampleRate === 'number' ? sampleRate : this.state.sampleRate,
+          channels: typeof channels === 'number' ? channels : this.state.channels,
+          error: null,
         });
-        // Now that JUCE is ready, flush any pending clips
         this.flushPendingClips();
         break;
       }
@@ -507,7 +604,7 @@ export class JuceAudioManagerV2 {
           isLoading: false,
           isReady: this.state.isReady,
           readyStatus: this.state.readyStatus,
-          error: null
+          error: null,
         });
         break;
       }
@@ -520,55 +617,57 @@ export class JuceAudioManagerV2 {
       case 'edlApplied': {
         const revision = typeof event.revision === 'number' && Number.isFinite(event.revision)
           ? Math.floor(event.revision)
-          : this.edlRevisionCounter;
-        const expectedRevision = this.awaitingEdlRevision ?? this.lastAcknowledgedRevision ?? this.edlRevisionCounter;
-        const mode = (event as any).mode;
-        console.info(
-          `[AudioManager] EDL applied by JUCE (revision ${revision}, expected ${expectedRevision}, mode ${mode ?? 'unknown'})`
-        );
-        if (revision !== expectedRevision) {
-          console.warn('[AudioManager] ⚠️ EDL revision mismatch!', {
-            received: revision,
-            expected: expectedRevision
-          });
-        }
-        this.edlRevisionCounter = revision;
-        this.lastAcknowledgedRevision = revision;
-
-        if (!this.hasCompletedInitialSync) {
-          console.info('[AudioManager] Initial EDL apply completed, transport ready');
-          this.markTransportReady('ready', revision);
-        } else if (this.state.readyStatus === 'fallback') {
-          console.info('[AudioManager] Transport fallback resolved by JUCE edlApplied event');
-          this.updateState({ readyStatus: 'ready', isReady: true });
+          : this.sentRevisionCounter;
+        console.info('[AudioManager] EDL applied by JUCE', {
+          revision,
+          expected: this.expectedRevision,
+          generation: this.currentGenerationId,
+          mode: (event as any).mode,
+          wordCount: (event as any).wordCount,
+          spacerCount: (event as any).spacerCount,
+        });
+        this.sentRevisionCounter = Math.max(this.sentRevisionCounter, revision);
+        if (this.readyGenerationId !== this.currentGenerationId) {
+          this.expectedRevision = revision;
+          this.markTransportReady('ready', revision, this.currentGenerationId);
+        } else {
+          if (revision !== this.expectedRevision) {
+            console.warn('[AudioManager] ⚠️ EDL revision mismatch!', {
+              received: revision,
+              expected: this.expectedRevision,
+            });
+            this.expectedRevision = Math.max(this.expectedRevision, revision);
+          }
+          if (this.state.readyStatus === 'fallback') {
+            console.info('[AudioManager] Transport fallback resolved by JUCE edlApplied event');
+            this.updateState({ readyStatus: 'ready', isReady: true });
+          }
         }
 
         this.awaitingEdlRevision = null;
+        this.awaitingEdlGeneration = null;
         this.processPendingSeek();
         break;
       }
 
-      case 'ended':
+      case 'ended': {
         this.updateState({ isPlaying: false });
         break;
+      }
 
       case 'error': {
         const details = event.code != null ? `${event.message} (code: ${event.code})` : event.message;
-
-        // Don't set isReady to false if we're currently initializing
-        // This prevents re-initialization loops
         if (!this.isInitializing) {
           this.updateState({ isPlaying: false, isLoading: false, isReady: false, readyStatus: 'idle' });
         } else {
           this.updateState({ isPlaying: false, isLoading: false });
         }
-
         this.handleError('JUCE transport error', details);
         break;
       }
 
       default:
-        console.warn('[JUCE][Renderer] Unhandled JUCE event type', event);
+        console.warn('[JUCE][Renderer] Unhandled JUCE event type', eventSummary);
         break;
     }
   }
@@ -653,9 +752,16 @@ export class JuceAudioManagerV2 {
 
     console.log(`🎯 Seeking to ${seekTime.toFixed(2)}s`);
 
-    const result = await this.transport.seek(this.sessionId, seekTime);
-    if (!result.success) {
-      throw new Error(result.error || 'Seek failed');
+    const result = await this.transport.seek(this.sessionId, seekTime, this.currentGenerationId);
+    if (!result || !result.success) {
+      if (result?.error?.includes('stale generation')) {
+        console.warn('[AudioManager] Ignoring seek command for superseded generation', {
+          generation: this.currentGenerationId,
+          target: Number(seekTime.toFixed(3)),
+        });
+        return;
+      }
+      throw new Error(result?.error || 'Seek failed');
     }
   }
 
@@ -680,34 +786,50 @@ export class JuceAudioManagerV2 {
   }
 
   private resetInitialSyncState(): void {
-    this.hasLoadedFromJuce = false;
-    this.hasCompletedInitialSync = false;
+    this.loadedGenerationId = null;
+    this.readyGenerationId = null;
+    this.sentRevisionCounter = 0;
+    this.expectedRevision = 0;
     this.awaitingEdlRevision = null;
-    this.lastAcknowledgedRevision = null;
+    this.awaitingEdlGeneration = null;
+    this.readyFallbackToken = null;
     this.clearReadyFallbackTimer();
   }
 
-  private scheduleReadyFallback(revision: number): void {
-    if (this.hasCompletedInitialSync) {
+  private scheduleReadyFallback(generation: number, revision: number): void {
+    if (this.readyGenerationId === generation) {
       return;
     }
 
     this.clearReadyFallbackTimer();
+    this.readyFallbackToken = { generation, revision };
     this.readyFallbackTimer = window.setTimeout(() => {
+      if (this.currentGenerationId !== generation || this.readyGenerationId === generation) {
+        return;
+      }
       console.warn('[AudioManager] ⚠️ No edlApplied event received within 2000ms; enabling playback with caution', {
         revision,
+        generation,
       });
-      this.markTransportReady('fallback', revision);
+      this.markTransportReady('fallback', revision, generation);
     }, 2000);
   }
 
-  private markTransportReady(mode: 'ready' | 'fallback', revision?: number): void {
+  private markTransportReady(mode: 'ready' | 'fallback', revision: number | null, generation: number): void {
     this.clearReadyFallbackTimer();
-    this.hasCompletedInitialSync = true;
+    if (this.currentGenerationId !== generation) {
+      console.warn('[AudioManager] Ignoring markTransportReady for superseded generation', {
+        requestedGen: generation,
+        currentGen: this.currentGenerationId,
+      });
+      return;
+    }
+    this.readyGenerationId = generation;
     this.awaitingEdlRevision = null;
+    this.awaitingEdlGeneration = null;
     if (typeof revision === 'number') {
-      this.edlRevisionCounter = revision;
-      this.lastAcknowledgedRevision = revision;
+      this.sentRevisionCounter = Math.max(this.sentRevisionCounter, revision);
+      this.expectedRevision = Math.max(this.expectedRevision, revision);
     }
     this.updateState({
       isLoading: false,
@@ -721,6 +843,7 @@ export class JuceAudioManagerV2 {
       window.clearTimeout(this.readyFallbackTimer);
       this.readyFallbackTimer = null;
     }
+    this.readyFallbackToken = null;
   }
 
   private handleError(context: string, error: any): void {
@@ -783,19 +906,44 @@ export class JuceAudioManagerV2 {
         }
 
         const normalized = this.normalizePathForPlatform(resolvedPath);
+        const ext = this.getFileExtension(normalized);
+        const wavAlternative = ext && ext !== 'wav'
+          ? this.normalizePathForPlatform(resolvedPath.replace(/\.[^/.]+$/, '.wav'))
+          : null;
 
         // Validate file exists before returning
         if (typeof checkFileExists === 'function') {
           try {
-            const exists = await checkFileExists(normalized);
-            if (exists) {
-              this.rememberProjectDir(normalized);
-              console.log('✅ Resolved file:// URL to existing file:', normalized);
-              return normalized;
-            } else {
-              console.warn('❌ file:// URL resolved to non-existent file:', normalized);
-              return null;
+            const candidates = [wavAlternative, normalized].filter(Boolean) as string[];
+            const results: Array<{ path: string; exists: boolean; ext: string | null }> = [];
+            for (const candidate of candidates) {
+              try {
+                const exists = await checkFileExists(candidate);
+                results.push({ path: candidate, exists, ext: this.getFileExtension(candidate) });
+              } catch (error) {
+                console.warn('⚠️ Failed to validate file:// URL candidate:', candidate, error);
+              }
             }
+
+            const wavCandidate = results.find(r => r.exists && r.ext === 'wav');
+            const mp3Candidates = results.filter(r => r.exists && r.ext === 'mp3');
+            const existing = wavCandidate ?? results.find(r => r.exists);
+
+            if (existing) {
+              this.rememberProjectDir(existing.path);
+              if (wavCandidate) {
+                console.log('[AudioPath] chosen = WAV (48k), rejected = MP3 (44.1k)', {
+                  chosen: wavCandidate.path,
+                  rejected: mp3Candidates.map(r => r.path),
+                });
+              } else {
+                console.log('✅ Resolved file:// URL to existing file:', existing.path);
+              }
+              return existing.path;
+            }
+
+            console.warn('❌ file:// URL resolved to non-existent file:', normalized);
+            return null;
           } catch (error) {
             console.warn('⚠️ Failed to validate file:// URL path:', normalized, error);
             return null;
@@ -810,19 +958,44 @@ export class JuceAudioManagerV2 {
       // Handle absolute paths
       if (this.isAbsolutePath(audioPath)) {
         const normalized = this.normalizePathForPlatform(audioPath);
+        const ext = this.getFileExtension(normalized);
+        const wavAlternative = ext && ext !== 'wav'
+          ? this.normalizePathForPlatform(audioPath.replace(/\.[^/.]+$/, '.wav'))
+          : null;
 
         // Validate file exists before returning
         if (typeof checkFileExists === 'function') {
           try {
-            const exists = await checkFileExists(normalized);
-            if (exists) {
-              this.rememberProjectDir(normalized);
-              console.log('✅ Validated absolute path:', normalized);
-              return normalized;
-            } else {
-              console.warn('❌ Absolute path does not exist:', normalized);
-              return null;
+            const candidates = [wavAlternative, normalized].filter(Boolean) as string[];
+            const results: Array<{ path: string; exists: boolean; ext: string | null }> = [];
+            for (const candidate of candidates) {
+              try {
+                const exists = await checkFileExists(candidate);
+                results.push({ path: candidate, exists, ext: this.getFileExtension(candidate) });
+              } catch (error) {
+                console.warn('⚠️ Failed to validate absolute path candidate:', candidate, error);
+              }
             }
+
+            const wavCandidate = results.find(r => r.exists && r.ext === 'wav');
+            const mp3Candidates = results.filter(r => r.exists && r.ext === 'mp3');
+            const existing = wavCandidate ?? results.find(r => r.exists);
+
+            if (existing) {
+              this.rememberProjectDir(existing.path);
+              if (wavCandidate) {
+                console.log('[AudioPath] chosen = WAV (48k), rejected = MP3 (44.1k)', {
+                  chosen: wavCandidate.path,
+                  rejected: mp3Candidates.map(r => r.path),
+                });
+              } else {
+                console.log('✅ Validated absolute path:', existing.path);
+              }
+              return existing.path;
+            }
+
+            console.warn('❌ Absolute path does not exist:', normalized);
+            return null;
           } catch (error) {
             console.warn('⚠️ Failed to validate absolute path:', normalized, error);
             return null;
@@ -839,72 +1012,106 @@ export class JuceAudioManagerV2 {
         console.log('🎵 Processing relative path:', audioPath);
 
         const candidates: string[] = [];
+        const pushCandidate = (candidate?: string | null) => {
+          if (candidate && !candidates.includes(candidate)) {
+            candidates.push(candidate);
+          }
+        };
 
-        // First try using the projectDirectory if available
+        const ext = this.getFileExtension(audioPath);
+        const wavVariant = ext && ext !== 'wav'
+          ? audioPath.replace(/\.[^/.]+$/, '.wav')
+          : null;
+
         if (this.projectDirectory && pathApi) {
           const projectDir = pathApi.dirname(this.projectDirectory);
           const sanitizedRelative = audioPath.replace(/^Audio Files[\/\\]/i, '').replace(/^[./\\]+/, '');
           const audioFileName = pathApi.basename(audioPath);
+          const wavFileName = wavVariant ? pathApi.basename(wavVariant) : null;
 
           const projectCandidates = [
             pathApi.join(projectDir, audioPath),
             pathApi.join(projectDir, sanitizedRelative),
-            pathApi.join(projectDir, 'Audio Files', audioFileName)
-          ].map(candidate => pathApi.normalize(candidate));
+            pathApi.join(projectDir, 'Audio Files', audioFileName),
+          ];
+          projectCandidates.forEach(candidate => pushCandidate(pathApi.normalize(candidate)));
 
-          candidates.push(...projectCandidates);
+          if (wavVariant && wavFileName) {
+            const wavProjectCandidates = [
+              pathApi.join(projectDir, wavVariant),
+              pathApi.join(projectDir, sanitizedRelative.replace(audioFileName, wavFileName)),
+              pathApi.join(projectDir, 'Audio Files', wavFileName),
+            ];
+            wavProjectCandidates.forEach(candidate => pushCandidate(pathApi.normalize(candidate)));
+          }
 
           console.log('🎵 Generated project-based candidates:', {
             audioPath,
             projectDirectory: this.projectDirectory,
             projectDir,
-            projectCandidates
+            projectCandidates,
           });
         }
 
-        // Add cache-based resolution
         const resolvedFromCache = this.resolveRelativeToProject(audioPath);
         if (resolvedFromCache) {
-          candidates.push(resolvedFromCache);
+          pushCandidate(resolvedFromCache);
+        }
+        if (wavVariant) {
+          const wavFromCache = this.resolveRelativeToProject(wavVariant);
+          if (wavFromCache) {
+            pushCandidate(wavFromCache);
+          }
         }
 
         // Legacy fallback locations (maintained for compatibility during migration)
-        candidates.push(
+        [
           `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${audioPath}`,
           `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${audioPath}`,
           `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${audioPath}`,
           `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${audioPath}`,
-        );
+        ].forEach(candidate => pushCandidate(candidate));
 
-        // Always include the original relative path last as a fallback
-        candidates.push(audioPath);
+        if (wavVariant) {
+          pushCandidate(wavVariant);
+        }
+        pushCandidate(audioPath);
 
         console.log('🎵 Testing candidates for existence:', candidates);
 
-        // Validate each candidate and return the first one that exists
         if (typeof checkFileExists === 'function') {
-          for (const candidate of candidates) {
-            const normalizedCandidate = this.normalizePathForPlatform(candidate);
+          const uniqueCandidates = Array.from(new Set(candidates.map(candidate => this.normalizePathForPlatform(candidate))));
+          const results: Array<{ path: string; exists: boolean; ext: string | null }> = [];
+          for (const candidate of uniqueCandidates) {
             try {
-              const exists = await checkFileExists(normalizedCandidate);
-              if (exists) {
-                this.rememberProjectDir(normalizedCandidate);
-                console.log('✅ Found existing file:', normalizedCandidate);
-                return normalizedCandidate;
-              } else {
-                console.log('❌ Candidate does not exist:', normalizedCandidate);
-              }
+              const exists = await checkFileExists(candidate);
+              results.push({ path: candidate, exists, ext: this.getFileExtension(candidate) });
             } catch (error) {
-              console.warn('⚠️ Failed to check candidate:', normalizedCandidate, error);
+              console.warn('⚠️ Failed to check candidate:', candidate, error);
             }
           }
 
-          // No valid candidates found
+          const wavCandidate = results.find(r => r.exists && r.ext === 'wav');
+          const mp3Candidates = results.filter(r => r.exists && r.ext === 'mp3');
+          const chosen = wavCandidate ?? results.find(r => r.exists);
+
+          if (chosen) {
+            this.rememberProjectDir(chosen.path);
+            if (wavCandidate) {
+              console.log('[AudioPath] chosen = WAV (48k), rejected = MP3 (44.1k)', {
+                chosen: wavCandidate.path,
+                rejected: mp3Candidates.map(r => r.path),
+              });
+            } else {
+              console.log('✅ Found existing file:', chosen.path);
+            }
+            return chosen.path;
+          }
+
           console.error('❌ No valid audio file found for path:', audioPath);
-          console.error('❌ Checked candidates:', candidates);
+          console.error('❌ Checked candidates:', uniqueCandidates);
           return null;
         } else {
-          // Without checkFileExists API, return the first candidate as fallback
           console.warn('⚠️ checkFileExists API not available, using first candidate without validation');
           if (candidates.length > 0) {
             const fallback = this.normalizePathForPlatform(candidates[0]);
@@ -1009,5 +1216,23 @@ export class JuceAudioManagerV2 {
   public getEDLSummary(): string {
     if (!this.currentEDL) return 'No EDL loaded';
     return EDLBuilderService.getEDLSummary(this.currentEDL);
+  }
+
+  private isEventGenerationCurrent(eventGeneration?: number | null): boolean {
+    if (this.currentGenerationId === 0) {
+      return true;
+    }
+    if (typeof eventGeneration !== 'number') {
+      return true;
+    }
+    return eventGeneration === this.currentGenerationId;
+  }
+
+  private getFileExtension(filePath: string): string | null {
+    if (!filePath) {
+      return null;
+    }
+    const match = /\.([a-z0-9]+)$/i.exec(filePath);
+    return match ? match[1].toLowerCase() : null;
   }
 }

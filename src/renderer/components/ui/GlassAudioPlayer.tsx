@@ -52,7 +52,7 @@ export function GlassAudioPlayer({
     loading: 'Loading audio…',
     'waiting-edl': 'Syncing playback engine…',
     ready: '',
-    fallback: '⚠️ Playback enabled after sync timeout'
+    fallback: 'EDL ack pending; edits may lag'
   };
   const showOverlay = !isTransportReady && (readyStatus === 'idle' || readyStatus === 'loading' || readyStatus === 'waiting-edl');
   const overlayMessage = statusMessages[readyStatus] || 'Preparing audio…';

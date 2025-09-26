@@ -24,35 +24,44 @@ export interface EdlClip {
 }
 
 // Commands sent to the JUCE backend (JSON lines over stdio)
+type JuceCommandBase = {
+  id: TransportId;
+  generationId?: number;
+};
+
 export type JuceCommand =
-  | { type: 'load'; id: TransportId; path: string }
-  | { type: 'updateEdl'; id: TransportId; revision?: number; clips: EdlClip[] }
-  | { type: 'updateEdlFromFile'; id: TransportId; revision?: number; path: string }
-  | { type: 'play'; id: TransportId }
-  | { type: 'pause'; id: TransportId }
-  | { type: 'stop'; id: TransportId }
-  | { type: 'seek'; id: TransportId; timeSec: number } // edited timeline time
-  | { type: 'setRate'; id: TransportId; rate: number } // Legacy: changes both speed and pitch
-  | { type: 'setTimeStretch'; id: TransportId; ratio: number } // New: changes speed while preserving pitch
-  | { type: 'setVolume'; id: TransportId; value: number }
-  | { type: 'queryState'; id: TransportId };
+  | ({ type: 'load'; path: string } & JuceCommandBase)
+  | ({ type: 'updateEdl'; revision?: number; clips: EdlClip[] } & JuceCommandBase)
+  | ({ type: 'updateEdlFromFile'; revision?: number; path: string } & JuceCommandBase)
+  | ({ type: 'play' } & JuceCommandBase)
+  | ({ type: 'pause' } & JuceCommandBase)
+  | ({ type: 'stop' } & JuceCommandBase)
+  | ({ type: 'seek'; timeSec: number } & JuceCommandBase) // edited timeline time
+  | ({ type: 'setRate'; rate: number } & JuceCommandBase) // Legacy: changes both speed and pitch
+  | ({ type: 'setTimeStretch'; ratio: number } & JuceCommandBase) // New: changes speed while preserving pitch
+  | ({ type: 'setVolume'; value: number } & JuceCommandBase)
+  | ({ type: 'queryState' } & JuceCommandBase);
 
 // Events emitted by the JUCE backend
+type JuceEventBase = {
+  id: TransportId;
+  generationId?: number;
+};
+
 export type JuceEvent =
-  | { type: 'loaded'; id: TransportId; durationSec: number; sampleRate: number; channels: number }
-  | { type: 'state'; id: TransportId; playing: boolean }
-  | { type: 'position'; id: TransportId; editedSec: number; originalSec: number; revision?: number }
-  | {
-      type: 'edlApplied';
-      id: TransportId;
-      revision: number;
-      wordCount?: number;
-      spacerCount?: number;
-      totalSegments?: number;
-      mode?: 'contiguous' | 'standard' | string;
-    }
-  | { type: 'ended'; id: TransportId }
-  | { type: 'error'; id?: TransportId; code?: string | number; message: string };
+  | ({ type: 'loaded'; durationSec: number; sampleRate: number; channels: number } & JuceEventBase)
+  | ({ type: 'state'; playing: boolean } & JuceEventBase)
+  | ({ type: 'position'; editedSec: number; originalSec: number; revision?: number } & JuceEventBase)
+  | ({
+        type: 'edlApplied';
+        revision: number;
+        wordCount?: number;
+        spacerCount?: number;
+        totalSegments?: number;
+        mode?: 'contiguous' | 'standard' | string;
+      } & JuceEventBase)
+  | ({ type: 'ended' } & JuceEventBase)
+  | { type: 'error'; id?: TransportId; code?: string | number; message: string; generationId?: number };
 
 // Renderer-facing transport interface (to be bridged via preload)
 export interface TransportEvents {
@@ -65,20 +74,21 @@ export interface TransportEvents {
 }
 
 export interface Transport {
-  load(id: TransportId, path: string): Promise<{success: boolean, error?: string}>;
+  load(id: TransportId, path: string, generationId?: number): Promise<{success: boolean, error?: string}>;
   updateEdl(
     id: TransportId,
     revision: number,
-    clips: EdlClip[]
+    clips: EdlClip[],
+    generationId?: number
   ): Promise<{ success: boolean; revision?: number; counts?: { words: number; spacers: number; spacersWithOriginal?: number; total: number } }>;
-  play(id: TransportId): Promise<void>;
-  pause(id: TransportId): Promise<void>;
-  stop(id: TransportId): Promise<void>;
-  seek(id: TransportId, timeSec: number): Promise<void>;
-  setRate(id: TransportId, rate: number): Promise<void>; // Legacy: changes both speed and pitch
-  setTimeStretch(id: TransportId, ratio: number): Promise<void>; // New: changes speed while preserving pitch
-  setVolume(id: TransportId, value: number): Promise<void>;
-  queryState(id: TransportId): Promise<void>;
+  play(id: TransportId, generationId?: number): Promise<void>;
+  pause(id: TransportId, generationId?: number): Promise<void>;
+  stop(id: TransportId, generationId?: number): Promise<void>;
+  seek(id: TransportId, timeSec: number, generationId?: number): Promise<void>;
+  setRate(id: TransportId, rate: number, generationId?: number): Promise<void>; // Legacy: changes both speed and pitch
+  setTimeStretch(id: TransportId, ratio: number, generationId?: number): Promise<void>; // New: changes speed while preserving pitch
+  setVolume(id: TransportId, value: number, generationId?: number): Promise<void>;
+  queryState(id: TransportId, generationId?: number): Promise<void>;
   dispose(): Promise<void>;
   // event subscription - concrete implementations may offer EventEmitter as well
   setEventHandlers(handlers: TransportEvents): void;

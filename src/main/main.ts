@@ -372,8 +372,10 @@ class App {
       const edlRevisionById = new Map<string, number>();
       const pendingAppliedById = new Map<string, number>();
       const pendingCountsById = new Map<string, { words: number; spacers: number; total: number }>();
+      const generationById = new Map<string, number>();
       const getRev = (id: string) => edlRevisionById.get(id) ?? 0;
       const bumpRev = (id: string) => { const r = getRev(id) + 1; edlRevisionById.set(id, r); return r; };
+      const getGeneration = (id: string) => generationById.get(id);
       const summarizeSegments = (clips: EdlClip[]) => {
         const stats = {
           totalSegments: 0,
@@ -450,14 +452,46 @@ class App {
         }
       };
       // Forward JUCE events to renderer(s)
+      const attachGeneration = <E extends JuceEvent>(evt: E): E | null => {
+        const id = (evt as any).id as string | undefined;
+        if (!id) {
+          return evt;
+        }
+        const currentGen = generationById.get(id);
+        if (currentGen === undefined) {
+          return evt;
+        }
+        const payloadGen = (evt as any).generationId;
+        if (typeof payloadGen === 'number') {
+          if (payloadGen !== currentGen) {
+            console.warn('[Guard] ignoring stale event', {
+              id,
+              type: (evt as any).type,
+              eventGen: payloadGen,
+              currentGen,
+            });
+            return null;
+          }
+          return evt;
+        }
+        return { ...(evt as any), generationId: currentGen } as E;
+      };
+
+      const emitToWindows = (evt: JuceEvent) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('juce:event', evt);
+          }
+        }
+      };
+
       const forward = (evt: JuceEvent) => {
         try {
-          // send to all windows to avoid tight coupling
-          for (const win of BrowserWindow.getAllWindows()) {
-            if (!win.isDestroyed()) {
-              win.webContents.send('juce:event', evt);
-            }
+          const enriched = attachGeneration(evt);
+          if (!enriched) {
+            return;
           }
+          emitToWindows(enriched);
         } catch (e) {
           console.error('Failed forwarding JUCE event:', e);
         }
@@ -477,14 +511,20 @@ class App {
             wordCount: (e as any).wordCount ?? counts?.words ?? 0,
             spacerCount: (e as any).spacerCount ?? counts?.spacers ?? 0,
           } as JuceEvent;
+          const enrichedEvent = attachGeneration(eventWithCounts);
+          if (!enrichedEvent) {
+            pendingCountsById.delete(id);
+            return;
+          }
           console.log('[IPC][JUCE] edlApplied event', {
             id,
             revision: (eventWithCounts as any).revision,
             wordCount: (eventWithCounts as any).wordCount,
             spacerCount: (eventWithCounts as any).spacerCount,
             mode: (eventWithCounts as any).mode,
+            generation: (enrichedEvent as any).generationId,
           });
-          forward(eventWithCounts);
+          emitToWindows(enrichedEvent);
           pendingCountsById.delete(id);
         },
         onPosition: (e) => {
@@ -496,30 +536,60 @@ class App {
             // Ensure our stored rev matches bumped rev
             if (appliedRev === rev) {
               const pendingCounts = pendingCountsById.get(id);
-              forward({
+              const synthetic = attachGeneration({
                 type: 'edlApplied',
                 id,
                 revision: appliedRev,
                 wordCount: pendingCounts?.words ?? 0,
                 spacerCount: pendingCounts?.spacers ?? 0,
               } as any);
+              if (synthetic) {
+                emitToWindows(synthetic);
+              }
               pendingAppliedById.delete(id);
               pendingCountsById.delete(id);
             }
           }
-          forward({ ...(e as any), revision: rev } as any);
+          const enrichedPosition = attachGeneration({ ...(e as any), revision: rev } as any);
+          if (enrichedPosition) {
+            emitToWindows(enrichedPosition);
+          }
         },
         onEnded: forward,
         onError: forward,
       });
 
       // IPC command handlers
-      ipcMain.handle('juce:load', async (_e, id: string, filePath: string) => {
-        try { await this.juceClient!.load(id, filePath); return { success: true }; }
-        catch (e) { return { success: false, error: String(e) }; }
-      });
-      ipcMain.handle('juce:updateEdl', async (_e, id: string, revisionArg: number | undefined, clips: EdlClip[]) => {
+      ipcMain.handle('juce:load', async (_e, id: string, filePath: string, generationId?: number) => {
         try {
+          const ext = (path.extname(filePath || '') || '').replace('.', '').toLowerCase() || 'unknown';
+          if (typeof generationId === 'number') {
+            const prevGen = generationById.get(id);
+            if (prevGen !== undefined && prevGen !== generationId) {
+              console.log('[Load] supersede', { id, oldGen: prevGen, newGen: generationId });
+            }
+            generationById.set(id, generationId);
+            pendingAppliedById.delete(id);
+            pendingCountsById.delete(id);
+            edlRevisionById.set(id, 0);
+          }
+          console.log('[Load] start', { id, gen: generationId, path: filePath, source: ext });
+          const result = await this.juceClient!.load(id, filePath, generationId);
+          return result;
+        }
+        catch (e) {
+          return { success: false, error: String(e) };
+        }
+      });
+      ipcMain.handle('juce:updateEdl', async (_e, id: string, revisionArg: number | undefined, clips: EdlClip[], generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale updateEdl request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
           const prev = getRev(id);
           let incomingRevision = typeof revisionArg === 'number' && Number.isFinite(revisionArg)
             ? Math.floor(revisionArg)
@@ -552,12 +622,13 @@ class App {
             spacers: stats.spacerSegments,
             spacersWithOriginal: stats.spacersWithOriginal,
             spacerPreview: stats.spacerPreview,
+            generation: generationId ?? generationById.get(id),
           });
           if (stats.spacerSegments === 0) {
             console.warn('[IPC][JUCE] ⚠️ No spacers detected in renderer payload for revision', rev);
           }
 
-          const juceResult = await this.juceClient!.updateEdl(id, rev, clips);
+          const juceResult = await this.juceClient!.updateEdl(id, rev, clips, generationId);
           const ackRevision =
             typeof juceResult?.revision === 'number' && Number.isFinite(juceResult.revision)
               ? Math.floor(juceResult.revision)
@@ -598,41 +669,127 @@ class App {
           return { success: false, error: String(e) };
         }
       });
-      ipcMain.handle('juce:play', async (_e, id: string) => {
-        try { await this.juceClient!.play(id); return { success: true }; }
+      ipcMain.handle('juce:play', async (_e, id: string, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale play request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.play(id, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:pause', async (_e, id: string) => {
-        try { await this.juceClient!.pause(id); return { success: true }; }
+      ipcMain.handle('juce:pause', async (_e, id: string, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale pause request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.pause(id, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:stop', async (_e, id: string) => {
-        try { await this.juceClient!.stop(id); return { success: true }; }
+      ipcMain.handle('juce:stop', async (_e, id: string, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale stop request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.stop(id, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:seek', async (_e, id: string, timeSec: number) => {
-        try { await this.juceClient!.seek(id, timeSec); return { success: true }; }
+      ipcMain.handle('juce:seek', async (_e, id: string, timeSec: number, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale seek request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.seek(id, timeSec, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:setRate', async (_e, id: string, rate: number) => {
-        try { await this.juceClient!.setRate(id, rate); return { success: true }; }
+      ipcMain.handle('juce:setRate', async (_e, id: string, rate: number, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale setRate request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.setRate(id, rate, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:setTimeStretch', async (_e, id: string, ratio: number) => {
-        try { await this.juceClient!.setTimeStretch(id, ratio); return { success: true }; }
+      ipcMain.handle('juce:setTimeStretch', async (_e, id: string, ratio: number, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale setTimeStretch request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.setTimeStretch(id, ratio, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:setVolume', async (_e, id: string, value: number) => {
-        try { await this.juceClient!.setVolume(id, value); return { success: true }; }
+      ipcMain.handle('juce:setVolume', async (_e, id: string, value: number, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale setVolume request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.setVolume(id, value, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
-      ipcMain.handle('juce:queryState', async (_e, id: string) => {
-        try { await this.juceClient!.queryState(id); return { success: true }; }
+      ipcMain.handle('juce:queryState', async (_e, id: string, generationId?: number) => {
+        try {
+          if (typeof generationId === 'number') {
+            const currentGen = generationById.get(id);
+            if (currentGen !== undefined && currentGen !== generationId) {
+              console.warn('[Guard] ignoring stale queryState request', { id, eventGen: generationId, currentGen });
+              return { success: false, error: 'stale generation' };
+            }
+          }
+          await this.juceClient!.queryState(id, generationId);
+          return { success: true };
+        }
         catch (e) { return { success: false, error: String(e) }; }
       });
       ipcMain.handle('juce:dispose', async () => {
         try { await this.juceClient?.dispose(); return { success: true }; }
         catch (e) { return { success: false, error: String(e) }; }
+        finally {
+          edlRevisionById.clear();
+          pendingCountsById.clear();
+          pendingAppliedById.clear();
+          generationById.clear();
+        }
       });
     } catch (e) {
       console.error('Failed to initialize JUCE transport:', e);

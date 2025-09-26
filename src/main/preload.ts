@@ -273,20 +273,21 @@ declare global {
   interface Window {
     electronAPI: ElectronAPI;
     juceTransport: {
-      load: (id: string, path: string) => Promise<{ success: boolean; error?: string }>;
+      load: (id: string, path: string, generationId?: number) => Promise<{ success: boolean; error?: string }>;
       updateEdl: (
         id: string,
         revision: number,
-        clips: EdlClip[]
+        clips: EdlClip[],
+        generationId?: number
       ) => Promise<{ success: boolean; error?: string; revision?: number; counts?: { words: number; spacers: number; total: number } }>;
-      play: (id: string) => Promise<{ success: boolean; error?: string }>;
-      pause: (id: string) => Promise<{ success: boolean; error?: string }>;
-      stop: (id: string) => Promise<{ success: boolean; error?: string }>;
-      seek: (id: string, timeSec: number) => Promise<{ success: boolean; error?: string }>;
-      setRate: (id: string, rate: number) => Promise<{ success: boolean; error?: string }>;
-      setTimeStretch: (id: string, ratio: number) => Promise<{ success: boolean; error?: string }>;
-      setVolume: (id: string, value: number) => Promise<{ success: boolean; error?: string }>;
-      queryState: (id: string) => Promise<{ success: boolean; error?: string }>;
+      play: (id: string, generationId?: number) => Promise<{ success: boolean; error?: string }>;
+      pause: (id: string, generationId?: number) => Promise<{ success: boolean; error?: string }>;
+      stop: (id: string, generationId?: number) => Promise<{ success: boolean; error?: string }>;
+      seek: (id: string, timeSec: number, generationId?: number) => Promise<{ success: boolean; error?: string }>;
+      setRate: (id: string, rate: number, generationId?: number) => Promise<{ success: boolean; error?: string }>;
+      setTimeStretch: (id: string, ratio: number, generationId?: number) => Promise<{ success: boolean; error?: string }>;
+      setVolume: (id: string, value: number, generationId?: number) => Promise<{ success: boolean; error?: string }>;
+      queryState: (id: string, generationId?: number) => Promise<{ success: boolean; error?: string }>;
       dispose: () => Promise<{ success: boolean; error?: string }>;
       onEvent: (cb: (evt: JuceEvent) => void) => void;
       offEvent: (cb: (evt: JuceEvent) => void) => void;
@@ -304,17 +305,17 @@ ipcRenderer.on('juce:event', (_event, evt: JuceEvent) => {
 });
 
 contextBridge.exposeInMainWorld('juceTransport', {
-  load: (id: string, path: string) => ipcRenderer.invoke('juce:load', id, path),
-  updateEdl: (id: string, revision: number, clips: EdlClip[]) =>
-    ipcRenderer.invoke('juce:updateEdl', id, revision, clips),
-  play: (id: string) => ipcRenderer.invoke('juce:play', id),
-  pause: (id: string) => ipcRenderer.invoke('juce:pause', id),
-  stop: (id: string) => ipcRenderer.invoke('juce:stop', id),
-  seek: (id: string, timeSec: number) => ipcRenderer.invoke('juce:seek', id, timeSec),
-  setRate: (id: string, rate: number) => ipcRenderer.invoke('juce:setRate', id, rate),
-  setTimeStretch: (id: string, ratio: number) => ipcRenderer.invoke('juce:setTimeStretch', id, ratio),
-  setVolume: (id: string, value: number) => ipcRenderer.invoke('juce:setVolume', id, value),
-  queryState: (id: string) => ipcRenderer.invoke('juce:queryState', id),
+  load: (id: string, path: string, generationId?: number) => ipcRenderer.invoke('juce:load', id, path, generationId),
+  updateEdl: (id: string, revision: number, clips: EdlClip[], generationId?: number) =>
+    ipcRenderer.invoke('juce:updateEdl', id, revision, clips, generationId),
+  play: (id: string, generationId?: number) => ipcRenderer.invoke('juce:play', id, generationId),
+  pause: (id: string, generationId?: number) => ipcRenderer.invoke('juce:pause', id, generationId),
+  stop: (id: string, generationId?: number) => ipcRenderer.invoke('juce:stop', id, generationId),
+  seek: (id: string, timeSec: number, generationId?: number) => ipcRenderer.invoke('juce:seek', id, timeSec, generationId),
+  setRate: (id: string, rate: number, generationId?: number) => ipcRenderer.invoke('juce:setRate', id, rate, generationId),
+  setTimeStretch: (id: string, ratio: number, generationId?: number) => ipcRenderer.invoke('juce:setTimeStretch', id, ratio, generationId),
+  setVolume: (id: string, value: number, generationId?: number) => ipcRenderer.invoke('juce:setVolume', id, value, generationId),
+  queryState: (id: string, generationId?: number) => ipcRenderer.invoke('juce:queryState', id, generationId),
   dispose: () => ipcRenderer.invoke('juce:dispose'),
   onEvent: (cb: (evt: JuceEvent) => void) => { juceEventListeners.add(cb); },
   offEvent: (cb: (evt: JuceEvent) => void) => { juceEventListeners.delete(cb); },

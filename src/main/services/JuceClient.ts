@@ -55,7 +55,7 @@ export class JuceClient implements Transport {
   }
 
   // --- Public Transport API ---
-  async load(id: TransportId, filePath: string): Promise<{success: boolean, error?: string}> {
+  async load(id: TransportId, filePath: string, generationId?: number): Promise<{success: boolean, error?: string}> {
     // Add comprehensive diagnostic logging
     console.log(`[JUCE] load() called with:`, {
       id,
@@ -89,7 +89,7 @@ export class JuceClient implements Transport {
       this.pendingCommands.set(commandKey, { resolve, reject, timeout });
 
       try {
-        this.send({ type: 'load', id, path: resolvedPath }).then(() => {
+        this.send({ type: 'load', id, path: resolvedPath, generationId }).then(() => {
           // Store command info for response matching
           this.currentLoadCommand = { commandKey, id };
         }).catch(error => {
@@ -105,7 +105,7 @@ export class JuceClient implements Transport {
     });
   }
 
-  async updateEdl(id: TransportId, revision: number, clips: EdlClip[]): Promise<{ success: boolean; revision?: number; counts?: { words: number; spacers: number; spacersWithOriginal: number; total: number; } }> {
+  async updateEdl(id: TransportId, revision: number, clips: EdlClip[], generationId?: number): Promise<{ success: boolean; revision?: number; counts?: { words: number; spacers: number; spacersWithOriginal: number; total: number; } }> {
     await this.ensureStarted();
 
     const stats = this.summarizeSegments(clips);
@@ -123,7 +123,7 @@ export class JuceClient implements Transport {
       console.warn('[JUCE] ⚠️ No spacer segments found in updateEdl payload for revision', revision);
     }
 
-    const { command, cleanup } = await this.prepareEdlCommand(id, revision, clips, stats);
+    const { command, cleanup } = await this.prepareEdlCommand(id, revision, clips, stats, generationId);
     try {
       await this.send(command);
       if (cleanup) {
@@ -158,67 +158,67 @@ export class JuceClient implements Transport {
     };
   }
 
-  async play(id: TransportId): Promise<void> {
+  async play(id: TransportId, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'play', id });
+      await this.send({ type: 'play', id, generationId });
     } catch (error) {
       throw new Error(`play failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  async pause(id: TransportId): Promise<void> {
+  async pause(id: TransportId, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'pause', id });
+      await this.send({ type: 'pause', id, generationId });
     } catch (error) {
       throw new Error(`pause failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  async stop(id: TransportId): Promise<void> {
+  async stop(id: TransportId, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'stop', id });
+      await this.send({ type: 'stop', id, generationId });
     } catch (error) {
       throw new Error(`stop failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  async seek(id: TransportId, timeSec: number): Promise<void> {
+  async seek(id: TransportId, timeSec: number, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'seek', id, timeSec });
+      await this.send({ type: 'seek', id, timeSec, generationId });
     } catch (error) {
       throw new Error(`seek failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  async setRate(id: TransportId, rate: number): Promise<void> {
+  async setRate(id: TransportId, rate: number, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'setRate', id, rate });
+      await this.send({ type: 'setRate', id, rate, generationId });
     } catch (error) {
       throw new Error(`setRate failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  async setTimeStretch(id: TransportId, ratio: number): Promise<void> {
+  async setTimeStretch(id: TransportId, ratio: number, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'setTimeStretch', id, ratio });
+      await this.send({ type: 'setTimeStretch', id, ratio, generationId });
     } catch (error) {
       throw new Error(`setTimeStretch failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  async setVolume(id: TransportId, value: number): Promise<void> {
+  async setVolume(id: TransportId, value: number, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'setVolume', id, value });
+      await this.send({ type: 'setVolume', id, value, generationId });
     } catch (error) {
       throw new Error(`setVolume failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  async queryState(id: TransportId): Promise<void> {
+  async queryState(id: TransportId, generationId?: number): Promise<void> {
     await this.ensureStarted();
     try {
-      await this.send({ type: 'queryState', id });
+      await this.send({ type: 'queryState', id, generationId });
     } catch (error) {
       throw new Error(`queryState failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -636,9 +636,10 @@ export class JuceClient implements Transport {
         originalStartSec?: number;
         originalEndSec?: number;
       }>;
-    }
+    },
+    generationId?: number
   ): Promise<{ command: JuceCommand; cleanup?: () => Promise<void> }> {
-    const inlinePayload: JuceCommand = { type: 'updateEdl', id, revision, clips };
+    const inlinePayload: JuceCommand = { type: 'updateEdl', id, revision, clips, generationId };
     const inlinePayloadJson = JSON.stringify(inlinePayload);
     const payloadSize = Buffer.byteLength(inlinePayloadJson);
 
@@ -685,7 +686,7 @@ export class JuceClient implements Transport {
         }
       }
     };
-    const fileCommand: JuceCommand = { type: 'updateEdlFromFile', id, revision, path: filePath };
+    const fileCommand: JuceCommand = { type: 'updateEdlFromFile', id, revision, path: filePath, generationId };
     return { command: fileCommand, cleanup };
   }
 

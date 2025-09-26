@@ -351,15 +351,15 @@ export class TranscriptionImportService {
       if (nextWord) {
         const gapDuration = nextWord.start - word.end;
 
-        console.log('[Import][Spacer] Gap analysis', {
+        console.log('[Import] gap', {
+          prev: word.word,
+          end: Number(word.end.toFixed(3)),
+          next: nextWord.word,
+          start: Number(nextWord.start.toFixed(3)),
+          gapSec: Number(gapDuration.toFixed(3)),
+          threshold: Number(SPACER_THRESHOLD_SECONDS.toFixed(3)),
           clipOrder: order,
           speaker,
-          currentWord: word.word,
-          nextWord: nextWord.word,
-          previousEndSec: Number(word.end.toFixed(3)),
-          nextStartSec: Number(nextWord.start.toFixed(3)),
-          gapSec: Number(gapDuration.toFixed(3)),
-          thresholdSec: SPACER_THRESHOLD_SECONDS,
         });
 
         if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
@@ -370,14 +370,15 @@ export class TranscriptionImportService {
 
           const spacerDuration = spacerEnd - spacerStart;
           console.log('🟦 Spacer created', {
+            prev: word.word,
+            next: nextWord.word,
+            start: Number(word.end.toFixed(3)),
+            end: Number(nextWord.start.toFixed(3)),
+            duration: Number(spacerDuration.toFixed(3)),
             clipOrder: order,
             speaker,
-            gapSec: Number(gapDuration.toFixed(3)),
-            startSec: Number(spacerStart.toFixed(3)),
-            endSec: Number(spacerEnd.toFixed(3)),
-            durationSec: Number(spacerDuration.toFixed(3)),
-            absoluteStartSec: Number(word.end.toFixed(3)),
-            absoluteEndSec: Number(nextWord.start.toFixed(3))
+            clipRelativeStart: Number(spacerStart.toFixed(3)),
+            clipRelativeEnd: Number(spacerEnd.toFixed(3)),
           });
 
           const spacerSegment = createSpacerSegment(
