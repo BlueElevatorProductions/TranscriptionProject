@@ -18,6 +18,8 @@ import UserPreferencesService from './services/UserPreferences';
 import JuceClient from './services/JuceClient';
 import { ProjectDataStore } from './services/ProjectDataStore';
 import { TranscriptionServiceV2 } from './services/TranscriptionServiceV2';
+import { prepareAudioForImport } from './services/ImportAudioService';
+import { ImportValidationError } from '../shared/operations';
 import { installTransportLogBridge } from './utils/transportLogBridge';
 import type { JuceEvent, EdlClip } from '../shared/types/transport';
 import type { EditOperation, ProjectData } from '../shared/types';
@@ -1928,20 +1930,20 @@ class App {
       const segmentCount = Array.isArray(segments) ? segments.length : 0;
       const speakerCount = speakers && typeof speakers === 'object' ? Object.keys(speakers).length : 0;
       const incomingPath = audioMetadata?.audioPath || audioMetadata?.originalPath || audioMetadata?.fileName;
+      const stage = { current: 'init' };
 
-      console.log('[Import] Begin transcription import', {
+      console.log('[Import][Project] begin', {
         segments: segmentCount,
         speakers: speakerCount,
         incomingPath,
-        audioMetadata: {
-          fileName: audioMetadata?.fileName,
-          duration: audioMetadata?.duration,
-          format: audioMetadata?.format,
-          size: audioMetadata?.size,
-        },
       });
 
       try {
+        stage.current = 'audio';
+        const prepared = await prepareAudioForImport(incomingPath, audioMetadata);
+        const resolvedAudioPath = prepared.resolvedPath;
+
+        stage.current = 'load-service';
         const { TranscriptionImportService } = await import('../renderer/services/TranscriptionImportService');
         const transcriptionResult = {
           segments,
@@ -1950,72 +1952,50 @@ class App {
           language: 'en',
         };
 
-        let audioPath = incomingPath;
-        if (audioPath && !audioPath.startsWith('/')) {
-          const possiblePaths = [
-            `/Users/chrismcleod/Development/ClaudeAccess/Working Audio/${audioPath}`,
-            `/Users/chrismcleod/Development/ChatAppAccess/Working Audio/${audioPath}`,
-            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/${audioPath}`,
-            `/Users/chrismcleod/Development/ClaudeAccess/ClaudeTranscriptionProject/audio/${audioPath}`,
-          ];
-
-          for (const possiblePath of possiblePaths) {
-            if (fs.existsSync(possiblePath)) {
-              console.log('[Import] Resolved relative audio path candidate', { possiblePath });
-              audioPath = possiblePath;
-              break;
-            }
-          }
-        }
-
-        if (audioPath && audioPath !== 'unknown' && !fs.existsSync(audioPath)) {
-          console.warn('[Import] ⚠️ Source audio file not found at resolved path', { audioPath });
-          const workingAudioDir = '/Users/chrismcleod/Development/ClaudeAccess/Working Audio';
-          try {
-            const files = fs.readdirSync(workingAudioDir);
-            console.log('[Import] Working Audio directory listing', { files });
-          } catch (e) {
-            console.warn('[Import] ⚠️ Working Audio directory not accessible', {
-              error: e instanceof Error ? e.message : String(e),
-            });
-          }
-        }
-
         const properAudioMetadata = {
-          originalFile: audioPath || 'unknown',
+          originalFile: prepared.originalPath || resolvedAudioPath,
           originalName: audioMetadata?.fileName || 'Untitled Audio',
           embeddedPath: undefined,
-          path: audioPath,
-          duration: audioMetadata?.duration || 0,
-          format: audioMetadata?.format || 'unknown',
+          path: resolvedAudioPath,
+          duration: audioMetadata?.duration || prepared.metadata.durationSec,
+          format: audioMetadata?.format || 'wav',
           size: audioMetadata?.size || 0,
           embedded: false,
+          sampleRate: prepared.metadata.sampleRate,
+          channels: prepared.metadata.channels,
+          bitDepth: prepared.metadata.bitDepth,
+          jobId: audioMetadata?.jobId,
         };
 
-        console.log('[Import] Resolved audio metadata for import', {
-          original: audioMetadata?.audioPath,
-          resolved: audioPath,
-          exists: audioPath && audioPath !== 'unknown' ? fs.existsSync(audioPath) : false,
-        });
-
+        stage.current = 'import';
         const projectData = TranscriptionImportService.importTranscription(
           transcriptionResult,
-          audioPath,
+          resolvedAudioPath,
           properAudioMetadata
         );
 
         const clipCount = projectData?.clips?.clips?.length ?? 0;
-        console.log('[Import] Transcription import produced project', {
+        stage.current = 'store';
+        this.projectDataStore.loadProject(projectData);
+        console.log('[Import][Project] store updated', {
           clipCount,
           segmentCount,
         });
 
-        this.projectDataStore.loadProject(projectData);
-        console.log('[Import] ProjectDataStore loaded imported transcription');
-
         return { success: true };
       } catch (error) {
-        console.error('[Import][Error] Failed to import transcription result', {
+        if (error instanceof ImportValidationError) {
+          const first = error.failures[0];
+          console.error('[Import][Error] Validation failed', {
+            reason: 'segments',
+            count: error.failures.length,
+            firstSample: first,
+          });
+          return { success: false, error: 'Segment validation failed' };
+        }
+
+        console.error('[Import][Error]', {
+          stage: stage.current,
           message: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined,
           segments: segmentCount,

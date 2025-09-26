@@ -245,6 +245,185 @@ export function validateSegments(segments: Segment[], clipDuration: number, opti
   };
 }
 
+export interface SegmentNormalizationResult {
+  segments: Segment[];
+  trimmedCount: number;
+  shiftedCount: number;
+  removedCount: number;
+}
+
+export interface SegmentValidationFailure {
+  reason: 'order' | 'negative-duration' | 'overlap';
+  index: number;
+  prev?: { idx: number; start: number; end: number; text?: string };
+  curr: { idx: number; start: number; end: number; text?: string };
+}
+
+export class ImportValidationError extends Error {
+  public readonly failures: SegmentValidationFailure[];
+
+  constructor(message: string, failures: SegmentValidationFailure[]) {
+    super(message);
+    this.name = 'ImportValidationError';
+    this.failures = failures;
+  }
+}
+
+function cloneSegmentForNormalization(segment: Segment): Segment {
+  if (segment.type === 'spacer') {
+    return { ...segment };
+  }
+  return { ...segment };
+}
+
+function sanitizeTime(value: number): number {
+  if (!Number.isFinite(value) || Number.isNaN(value) || value < 0) {
+    return 0;
+  }
+  return Number(value);
+}
+
+function refreshSpacerDuration(segment: Segment): void {
+  if (segment.type === 'spacer') {
+    segment.duration = Number(Math.max(0, segment.end - segment.start).toFixed(6));
+  }
+}
+
+export function normalizeSegmentsForImport(rawSegments: Segment[]): SegmentNormalizationResult {
+  const sorted = rawSegments.map(cloneSegmentForNormalization).sort((a, b) => sanitizeTime(a.start) - sanitizeTime(b.start));
+  const normalized: Segment[] = [];
+
+  let trimmedCount = 0;
+  let shiftedCount = 0;
+  let removedCount = 0;
+
+  sorted.forEach((segment, index) => {
+    const sanitizedStart = sanitizeTime(segment.start);
+    const sanitizedEndRaw = sanitizeTime(segment.end);
+    const sanitizedEnd = sanitizedEndRaw >= sanitizedStart ? sanitizedEndRaw : sanitizedStart;
+
+    const safeSegment: Segment = {
+      ...segment,
+      start: Number(sanitizedStart.toFixed(6)),
+      end: Number(sanitizedEnd.toFixed(6)),
+    } as Segment;
+
+    if (safeSegment.type === 'spacer') {
+      safeSegment.duration = Number(Math.max(0, safeSegment.end - safeSegment.start).toFixed(6));
+    }
+
+    const previous = normalized[normalized.length - 1];
+    if (previous) {
+      const overlap = safeSegment.start - previous.end;
+      if (overlap < 0) {
+        const canTrimPrevious = overlap >= -0.005;
+        if (canTrimPrevious) {
+          const prevEndOld = previous.end;
+          previous.end = Number(Math.max(previous.start, safeSegment.start).toFixed(6));
+          refreshSpacerDuration(previous);
+          trimmedCount += 1;
+          console.log('[Import][Normalize] trimmed', {
+            index: normalized.length - 1,
+            prevEndOld: Number(prevEndOld.toFixed(6)),
+            prevEndNew: previous.end,
+            nextStart: safeSegment.start,
+          });
+        } else {
+          const startOld = safeSegment.start;
+          safeSegment.start = Number(previous.end.toFixed(6));
+          if (safeSegment.end < safeSegment.start) {
+            safeSegment.end = safeSegment.start;
+          }
+          refreshSpacerDuration(safeSegment);
+          shiftedCount += 1;
+          console.log('[Import][Normalize] shifted', {
+            index,
+            startOld: Number(startOld.toFixed(6)),
+            startNew: safeSegment.start,
+            prevEnd: previous.end,
+          });
+        }
+      }
+    }
+
+    const duration = safeSegment.end - safeSegment.start;
+    if (duration < 1e-6) {
+      removedCount += 1;
+      console.log('[Import][Normalize] removed', {
+        index,
+        reason: 'zero-duration',
+        start: safeSegment.start,
+        end: safeSegment.end,
+      });
+      return;
+    }
+
+    normalized.push(safeSegment);
+  });
+
+  console.log('[Import][Normalize] summary', {
+    trimmedCount,
+    shiftedCount,
+    removedCount,
+    totalSegments: normalized.length,
+  });
+
+  return {
+    segments: normalized,
+    trimmedCount,
+    shiftedCount,
+    removedCount,
+  };
+}
+
+export function validateNormalizedSegments(segments: Segment[]): void {
+  const failures: SegmentValidationFailure[] = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    const curr = segments[i];
+    if (curr.end < curr.start) {
+      failures.push({
+        reason: 'negative-duration',
+        index: i,
+        curr: { idx: i, start: curr.start, end: curr.end, text: (curr as WordSegment).text },
+      });
+      continue;
+    }
+
+    if (i > 0) {
+      const prev = segments[i - 1];
+      if (curr.start < prev.end) {
+        failures.push({
+          reason: 'overlap',
+          index: i,
+          prev: { idx: i - 1, start: prev.start, end: prev.end, text: (prev as WordSegment).text },
+          curr: { idx: i, start: curr.start, end: curr.end, text: (curr as WordSegment).text },
+        });
+      }
+      if (curr.start < prev.start) {
+        failures.push({
+          reason: 'order',
+          index: i,
+          prev: { idx: i - 1, start: prev.start, end: prev.end, text: (prev as WordSegment).text },
+          curr: { idx: i, start: curr.start, end: curr.end, text: (curr as WordSegment).text },
+        });
+      }
+    }
+  }
+
+  if (failures.length > 0) {
+    failures.forEach((failure) => {
+      console.error('[Import][Validate] fail', {
+        reason: failure.reason,
+        at: failure.index,
+        prev: failure.prev,
+        curr: failure.curr,
+      });
+    });
+    throw new ImportValidationError('Segment validation failed', failures);
+  }
+}
+
 /**
  * Get total text from segments (words only)
  */

@@ -118,6 +118,10 @@ export class TranscriptionServiceV2 {
         options,
         activeJobCount: this.activeJobs.size
       });
+      console.log('[Import][Transcribe] start', {
+        jobId,
+        filePath: projectAudioPath,
+      });
 
       // Start transcription asynchronously
       console.log('🔄 TranscriptionServiceV2: Starting async processing...');
@@ -184,6 +188,16 @@ export class TranscriptionServiceV2 {
       return;
     }
 
+    let lastLoggedProgress = 0;
+
+    const logProgress = (progress: number) => {
+      const rounded = Math.round(progress);
+      if (rounded !== lastLoggedProgress) {
+        lastLoggedProgress = rounded;
+        console.log('[Import][Transcribe] progress', { jobId, pct: rounded });
+      }
+    };
+
     try {
       console.log('📝 TranscriptionServiceV2: Found job, updating status to processing...');
 
@@ -191,6 +205,7 @@ export class TranscriptionServiceV2 {
       job.status = 'processing';
       job.progress = 10;
       this.emitJobUpdate(job);
+      logProgress(job.progress);
 
       console.log('⚡ TranscriptionServiceV2: Processing job:', {
         jobId,
@@ -206,6 +221,7 @@ export class TranscriptionServiceV2 {
         // Update progress
         job.progress = 25;
         this.emitJobUpdate(job);
+        logProgress(job.progress);
 
         // Use SimpleCloudTranscriptionService with API keys
         console.log('🔑 TranscriptionServiceV2: Using API keys for cloud service');
@@ -216,27 +232,32 @@ export class TranscriptionServiceV2 {
         rawResult = await cloudService.transcribeWithOpenAI(job.filePath, (progress) => {
           job.progress = 25 + (Number(progress) * 0.5); // Progress from 25% to 75%
           this.emitJobUpdate(job);
+          logProgress(job.progress);
         });
 
         // Update progress
         job.progress = 75;
         this.emitJobUpdate(job);
+        logProgress(job.progress);
 
       } else {
         // Local transcription using Python whisper service
         console.log('🔧 TranscriptionServiceV2: Starting local transcription');
         job.progress = 25;
         this.emitJobUpdate(job);
+        logProgress(job.progress);
 
         // Call Python whisper service
         rawResult = await this.runLocalTranscription(job.filePath, options, (progress) => {
           job.progress = 25 + (progress * 0.5); // Progress from 25% to 75%
           this.emitJobUpdate(job);
+          logProgress(job.progress);
         });
 
         // Update progress after transcription
         job.progress = 75;
         this.emitJobUpdate(job);
+        logProgress(job.progress);
       }
 
       // Convert raw result to v2.0 segments
@@ -250,6 +271,7 @@ export class TranscriptionServiceV2 {
       job.segments = segments;
       job.speakers = speakers;
       job.completedAt = new Date().toISOString();
+      logProgress(job.progress);
 
       // Ensure audioMetadata includes duration from transcription result if available
       if (job.audioMetadata && rawResult?.duration) {
@@ -261,11 +283,21 @@ export class TranscriptionServiceV2 {
         segmentCount: segments.length,
         speakerCount: Object.keys(speakers).length
       });
+      console.log('[Import][Transcribe] done', {
+        jobId,
+        segments: segments.length,
+        speakers: Object.keys(speakers).length,
+      });
 
       this.emitJobUpdate(job);
 
     } catch (error) {
       console.error('❌ TranscriptionServiceV2: Job failed', jobId, error);
+      console.error('[Import][Error]', {
+        stage: 'transcribe',
+        jobId,
+        message: error instanceof Error ? error.message : String(error),
+      });
 
       job.status = 'error';
       job.error = error instanceof Error ? error.message : 'Transcription failed';

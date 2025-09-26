@@ -26,7 +26,10 @@ import {
   createWordSegment,
   createSpacerSegment,
   validateSegments,
-  getSegmentText
+  getSegmentText,
+  normalizeSegmentsForImport,
+  validateNormalizedSegments,
+  ImportValidationError
 } from '../../shared/operations';
 
 // ==================== Configuration ====================
@@ -46,10 +49,17 @@ export class TranscriptionImportService {
     audioFilePath: string,
     audioMetadata: any
   ): ProjectData {
-    console.log('🔄 Starting transcription import with segment-based architecture');
-    console.log('🎵 Audio file path:', audioFilePath);
-    console.log('🎵 Audio metadata:', audioMetadata);
-    console.log(`[Import] Spacer threshold (seconds): ${SPACER_THRESHOLD_SECONDS}`);
+    console.log('[Import][Transcribe] done', {
+      jobId: audioMetadata?.jobId ?? 'unknown',
+      words: transcriptionResult?.segments?.reduce((acc: number, seg) => acc + (seg.words?.length || 0), 0) ?? 0,
+      rawSegments: transcriptionResult?.segments?.length ?? 0,
+    });
+    console.log('[Import][Audio] resolved metadata forwarded to renderer', {
+      audioPath: audioFilePath,
+      duration: audioMetadata?.duration,
+      format: audioMetadata?.format,
+    });
+    console.log('[Import][Spacer] threshold', { seconds: SPACER_THRESHOLD_SECONDS });
 
     const { segments: rawSegments, speakers, speakerSegments } = transcriptionResult;
 
@@ -78,7 +88,7 @@ export class TranscriptionImportService {
 
     // Step 2: Group words by speaker and create clips
     const clips = this.createClipsFromWords(normalizedWords, speakers || {});
-    console.log(`🎬 Created ${clips.length} clips from speaker groups`);
+    console.log('[Import][Clip] grouping complete', { clipCount: clips.length });
 
     let totalWordSegments = 0;
     let totalSpacerSegments = 0;
@@ -105,15 +115,30 @@ export class TranscriptionImportService {
           totalWordSegments += 1;
         }
       }
-      console.log(`📊 Clip[${index}] ${clip.id.slice(-8)} — ${words} words / ${spacers} spacers`);
+      console.log('[Import][Spacer] summary', {
+        clipOrder: clip.order ?? index,
+        speaker: clip.speaker,
+        microSpacerCount: clip.segments.filter(segment => segment.type === 'spacer' && segment.duration < SPACER_THRESHOLD_SECONDS).length,
+        totalSpacerCount: spacers,
+      });
+      console.log('[Import][Clip] built', {
+        clipId: clip.id,
+        order: clip.order ?? index,
+        segmentCount: clip.segments.length,
+        durationSec: Number(clip.duration.toFixed(3)),
+        speaker: clip.speaker,
+      });
     });
 
     if (firstSpacerExample) {
-      console.log('🧩 First spacer example:', firstSpacerExample);
+      console.log('[Import][Spacer] example', firstSpacerExample);
     } else {
-      console.warn('⚠️ No spacer segments were generated during import.');
+      console.warn('[Import][Spacer] warning No spacer segments were generated during import.');
     }
-    console.log(`📦 Segment totals after import: ${totalWordSegments} words, ${totalSpacerSegments} spacers`);
+    console.log('[Import][Clip] totals', {
+      wordSegments: totalWordSegments,
+      spacerSegments: totalSpacerSegments,
+    });
 
     // Step 3: Build project data structure
     const projectData: ProjectData = {
@@ -180,7 +205,21 @@ export class TranscriptionImportService {
       }
     };
 
-    console.log('✅ Transcription import completed');
+    console.log('[Import][Project] audioPath set', {
+      path: audioFilePath,
+      exists: !!audioFilePath,
+    });
+    const totalSegments = clips.reduce((sum, clip) => sum + clip.segments.length, 0);
+    console.log('[Import][Project] assembled', {
+      clipCount: clips.length,
+      segmentCount: totalSegments,
+      audioPath: audioFilePath,
+      durationSec: audioMetadata?.duration ?? 0,
+    });
+    console.log('[Import][Complete] success', {
+      clipCount: clips.length,
+      segmentCount: totalSegments,
+    });
     return projectData;
   }
 
@@ -297,12 +336,16 @@ export class TranscriptionImportService {
       const gapDuration = word.start - previousWord.end;
 
       if (gapDuration >= SPACER_THRESHOLD_SECONDS) {
-        console.log('[Import][Spacer] Gap detected within clip — spacer will be created', {
-          clipPreviewIndex: clips.length,
+        console.log('[Import][Gap]', {
+          clipOrder: clips.length,
           speaker: currentSpeaker,
+          prevToken: previousWord.word,
+          nextToken: word.word,
+          prevEnd: Number(previousWord.end.toFixed(3)),
+          nextStart: Number(word.start.toFixed(3)),
           gapSec: Number(gapDuration.toFixed(3)),
-          previousWordEnd: Number(previousWord.end.toFixed(3)),
-          nextWordStart: Number(word.start.toFixed(3))
+          thresholdSec: Number(SPACER_THRESHOLD_SECONDS.toFixed(3)),
+          decision: 'spacer',
         });
       }
 
@@ -315,7 +358,7 @@ export class TranscriptionImportService {
       clips.push(clip);
     }
 
-    console.log(`🏗️ Built ${clips.length} clips with segment arrays`);
+    console.log('[Import][Clip] build complete', { clipCount: clips.length });
     return clips;
   }
 
@@ -323,9 +366,7 @@ export class TranscriptionImportService {
    * Create a single clip with proper segment array from words
    */
   private static createClipFromWords(words: Word[], clipStartTime: number, speaker: string, order: number): Clip {
-    const segments: Segment[] = [];
-    let spacerCount = 0;
-    let microSpacerCount = 0;
+    let segments: Segment[] = [];
     let currentTime = 0; // Clip-relative time
 
     for (let i = 0; i < words.length; i++) {
@@ -362,13 +403,13 @@ export class TranscriptionImportService {
             ? 'micro-spacer'
             : 'contiguous';
 
-        console.log('[Import] gap', {
-          prev: word.word,
-          end: Number(word.end.toFixed(3)),
-          next: nextWord.word,
-          start: Number(nextWord.start.toFixed(3)),
+        console.log('[Import][Gap]', {
+          prevToken: word.word,
+          nextToken: nextWord.word,
+          prevEnd: Number(word.end.toFixed(3)),
+          nextStart: Number(nextWord.start.toFixed(3)),
           gapSec: Number(sanitizedGap.toFixed(3)),
-          threshold: Number(SPACER_THRESHOLD_SECONDS.toFixed(3)),
+          thresholdSec: Number(SPACER_THRESHOLD_SECONDS.toFixed(3)),
           clipOrder: order,
           speaker,
           rawGap: Number.isFinite(gapRaw) ? Number(gapRaw.toFixed(6)) : null,
@@ -376,23 +417,8 @@ export class TranscriptionImportService {
         });
 
         if (sanitizedGap >= SPACER_THRESHOLD_SECONDS) {
-          // Create spacer segment for significant gap (≥1s)
-          // Use clip-relative timing for both start and end
-          const spacerStart = wordEnd; // Start right after current word ends (clip-relative)
+          const spacerStart = wordEnd;
           const spacerEnd = spacerStart + sanitizedGap;
-          const spacerDuration = Number((spacerEnd - spacerStart).toFixed(6));
-          console.log('🟦 Spacer created', {
-            prev: word.word,
-            next: nextWord.word,
-            start: Number(word.end.toFixed(3)),
-            end: Number(nextWord.start.toFixed(3)),
-            duration: Number(spacerDuration.toFixed(3)),
-            clipOrder: order,
-            speaker,
-            clipRelativeStart: Number(spacerStart.toFixed(3)),
-            clipRelativeEnd: Number(spacerEnd.toFixed(3)),
-          });
-
           const spacerSegment = createSpacerSegment(
             spacerStart,
             spacerEnd,
@@ -400,68 +426,76 @@ export class TranscriptionImportService {
           );
 
           segments.push(spacerSegment);
+          console.log('[Import][Spacer] segment', {
+            start: Number(spacerSegment.start.toFixed(3)),
+            end: Number(spacerSegment.end.toFixed(3)),
+            duration: Number(spacerSegment.duration.toFixed(3)),
+            label: spacerSegment.label,
+            clipOrder: order,
+            speaker,
+            kind: 'gap',
+          });
           currentTime = spacerEnd;
-          spacerCount += 1;
+          // counted after normalization in summary logs
         } else if (sanitizedGap > 0) {
           const spacerStart = wordEnd;
           const spacerEnd = spacerStart + sanitizedGap;
-          const microDuration = Number((spacerEnd - spacerStart).toFixed(6));
           const spacerSegment = createSpacerSegment(
             spacerStart,
             spacerEnd,
             `${sanitizedGap.toFixed(2)}s`
           );
 
-          console.log('🟦 Micro-spacer inserted', {
-            prev: word.word,
-            next: nextWord.word,
-            start: Number(word.end.toFixed(3)),
-            end: Number(nextWord.start.toFixed(3)),
-            duration: Number(microDuration.toFixed(3)),
+          segments.push(spacerSegment);
+          console.log('[Import][Spacer] segment', {
+            start: Number(spacerSegment.start.toFixed(3)),
+            end: Number(spacerSegment.end.toFixed(3)),
+            duration: Number(spacerSegment.duration.toFixed(3)),
+            label: spacerSegment.label,
             clipOrder: order,
             speaker,
-            clipRelativeStart: Number(spacerStart.toFixed(3)),
-            clipRelativeEnd: Number(spacerEnd.toFixed(3)),
+            kind: 'micro-gap',
           });
-
-          segments.push(spacerSegment);
           currentTime = spacerEnd;
-          spacerCount += 1;
-          microSpacerCount += 1;
+          // counted after normalization in summary logs
+        } else if (sanitizedGap === 0) {
+          const spacerSegment = createSpacerSegment(wordEnd, wordEnd, '0.00s');
+          segments.push(spacerSegment);
+          console.log('[Import][Spacer] segment', {
+            start: Number(spacerSegment.start.toFixed(3)),
+            end: Number(spacerSegment.end.toFixed(3)),
+            duration: Number(spacerSegment.duration.toFixed(3)),
+            label: spacerSegment.label,
+            clipOrder: order,
+            speaker,
+            kind: 'contiguous',
+          });
         }
       }
     }
+    const normalization = normalizeSegmentsForImport(segments);
+    segments = normalization.segments;
 
-    const firstWord = words[0];
-    const lastWord = words[words.length - 1];
-    const clipDuration = currentTime;
-
-    if (spacerCount === 0 && words.length > 0) {
-      console.warn('[Import][Spacer] Clip created no spacer segments', {
-        clipOrder: order,
-        speaker,
-        wordCount: words.length,
-        clipDuration: Number(clipDuration.toFixed(3))
-      });
-    } else if (microSpacerCount > 0) {
-      console.log('[Import][Spacer] Micro spacer summary', {
-        clipOrder: order,
-        speaker,
-        microSpacerCount,
-        totalSpacerCount: spacerCount,
-      });
+    try {
+      validateNormalizedSegments(segments);
+    } catch (error) {
+      if (error instanceof ImportValidationError) {
+        throw error;
+      }
+      throw new ImportValidationError('Segment validation failed', []);
     }
 
-    // Validate segments with lenient import mode
+    const clipDuration = segments.length > 0 ? segments[segments.length - 1].end : currentTime;
+
     const validation = validateSegments(segments, clipDuration, {
       isImport: true,
       spacerThreshold: SPACER_THRESHOLD_SECONDS
     });
     if (!validation.isValid) {
-      console.warn(`⚠️ Clip validation failed:`, validation.errors);
+      console.warn('[Import][Validate] post-normalize warnings', validation.errors);
     }
     if (validation.warnings.length > 0) {
-      console.warn(`⚠️ Clip validation warnings:`, validation.warnings);
+      console.warn('[Import][Validate] post-normalize warnings', validation.warnings);
     }
 
     const clip: Clip = {
@@ -477,8 +511,6 @@ export class TranscriptionImportService {
       order,
       status: 'active'
     };
-
-    console.log(`📑 Created clip: ${segments.length} segments, ${clipDuration.toFixed(2)}s duration`);
     return clip;
   }
 
