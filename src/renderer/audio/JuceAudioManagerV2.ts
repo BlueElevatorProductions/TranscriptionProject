@@ -84,6 +84,27 @@ type ReadinessBlockers = {
   isReady: boolean;
 };
 
+type LoadAckWaitContext = 'recovery' | 'general';
+
+interface PendingLoadAck {
+  generation: number;
+  context: LoadAckWaitContext;
+  promise: Promise<void>;
+  resolve: () => void;
+  timeoutId: number | null;
+  details?: Record<string, unknown>;
+}
+
+interface PendingEdlAck {
+  generation: number;
+  revision: number;
+  context: LoadAckWaitContext;
+  promise: Promise<void>;
+  resolve: () => void;
+  timeoutId: number | null;
+  details?: Record<string, unknown>;
+}
+
 // ==================== JUCE Audio Manager V2 ====================
 
 export class JuceAudioManagerV2 {
@@ -143,6 +164,10 @@ export class JuceAudioManagerV2 {
   // Revision tracking for sequencing guarantees
   private lastUpdateRevision: number = 0;
   private lastAppliedRevision: number = 0;
+
+  // Ack waiters for transport synchronization
+  private pendingLoadAck: PendingLoadAck | null = null;
+  private pendingEdlAck: PendingEdlAck | null = null;
 
   constructor(options: JuceAudioManagerV2Options | AudioCallbacksV2) {
     // Handle both old callback-only and new options-based constructors
@@ -242,6 +267,8 @@ export class JuceAudioManagerV2 {
       this.isInitializing = true;
 
       this.audioPath = resolvedPath;
+      this.clearPendingLoadAck('new-load');
+      this.clearPendingEdlAck('new-load');
       this.resetInitialSyncState();
       this.updateState({ isLoading: true, readyStatus: 'loading', isReady: false, error: null });
 
@@ -593,6 +620,12 @@ export class JuceAudioManagerV2 {
     const blockers = (readinessDetails.blockers as ReadinessBlockers) ?? {};
     const activeBlockers = (readinessDetails.activeBlockers as Record<string, boolean>) ?? {};
     const gateSnapshot = this.computePlayGateSnapshot();
+    let blockersJson: string | undefined;
+    try {
+      blockersJson = JSON.stringify(blockers);
+    } catch (error) {
+      console.warn('[AudioManager] Failed to serialize blockers for logging', error);
+    }
     const canDispatch =
       !!this.transport &&
       this.state.isReady &&
@@ -634,6 +667,7 @@ export class JuceAudioManagerV2 {
         isReady: this.state.isReady,
         readyStatus: this.state.readyStatus,
         blockers,
+        blockersJson,
         activeBlockers,
         gateSnapshot,
         diagnostics: readinessDetails,
@@ -1027,6 +1061,7 @@ export class JuceAudioManagerV2 {
           error: null,
         });
         this.flushPendingClips();
+        this.resolvePendingLoadAck(this.loadedGenerationId ?? this.currentGenerationId, 'juce-loaded');
         break;
       }
 
@@ -1085,6 +1120,15 @@ export class JuceAudioManagerV2 {
         this.awaitingEdlRevision = null;
         this.awaitingEdlGeneration = null;
         this.processPendingSeek();
+        if (this.loadedGenerationId !== this.currentGenerationId) {
+          console.log('[AudioManager] Inferring load acknowledgement from edlApplied event', {
+            revision,
+            generation: this.currentGenerationId,
+          });
+          this.loadedGenerationId = this.currentGenerationId;
+          this.resolvePendingLoadAck(this.currentGenerationId, 'edl-applied');
+        }
+        this.resolvePendingEdlAck(revision, this.currentGenerationId, 'juce-edlApplied');
         break;
       }
 
@@ -1294,6 +1338,8 @@ export class JuceAudioManagerV2 {
       this.inflightLoadGeneration = null;
       this.inflightLoadPromise = null;
       this.inflightLoadPath = null;
+      this.clearPendingLoadAck('backend-down');
+      this.clearPendingEdlAck('backend-down');
       this.loadedGenerationId = null;
       this.readyGenerationId = null;
       this.awaitingEdlRevision = null;
@@ -1375,14 +1421,38 @@ export class JuceAudioManagerV2 {
     this.lastErrorTime = 0;
     this.lastFailedPath = null;
 
+    const expectedGeneration = this.generationCounter + 1;
+    console.log('[Recovery] replay load', {
+      path: this.audioPath,
+      gen: expectedGeneration,
+    });
+
     await this.initialize(this.audioPath);
 
+    const loadGeneration = this.currentGenerationId;
+    await this.waitForLoadAck(loadGeneration, 'recovery', 4000, {
+      path: this.audioPath,
+    });
+
     if (clipsToRestore && clipsToRestore.length > 0) {
-      console.log('[AudioManager] Reapplying last known EDL after backend restart', {
-        revision: this.lastAppliedRevision,
+      const previousRevision = this.lastAppliedRevision;
+      const expectedRevision = previousRevision > 0 ? previousRevision : this.sentRevisionCounter + 1;
+      console.log('[Recovery] replay EDL', {
+        revision: expectedRevision,
         clipCount: clipsToRestore.length,
       });
+      if (expectedRevision > 0) {
+        this.sentRevisionCounter = Math.max(this.sentRevisionCounter, expectedRevision - 1);
+        this.expectedRevision = Math.max(this.expectedRevision, expectedRevision - 1);
+        this.lastUpdateRevision = Math.max(this.lastUpdateRevision, expectedRevision - 1);
+      }
       await this.updateClips(clipsToRestore);
+      const awaitedRevision = this.lastUpdateRevision || expectedRevision;
+      if (awaitedRevision > 0) {
+        await this.waitForEdlAck(awaitedRevision, this.currentGenerationId, 'recovery', 4000, {
+          revision: awaitedRevision,
+        });
+      }
     }
   }
 
@@ -1459,6 +1529,194 @@ export class JuceAudioManagerV2 {
     this.inflightLoadPath = null;
   }
 
+  private waitForLoadAck(
+    generation: number,
+    context: LoadAckWaitContext = 'general',
+    timeoutMs: number = 2000,
+    details: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (this.loadedGenerationId === generation) {
+      return Promise.resolve();
+    }
+
+    const existing = this.pendingLoadAck;
+    if (existing && existing.generation === generation) {
+      return existing.promise;
+    }
+
+    if (existing) {
+      this.clearPendingLoadAck('superseded');
+    }
+
+    let resolveFn: () => void = () => {};
+    let timeoutId: number | null = null;
+    const promise = new Promise<void>((resolve) => {
+      resolveFn = () => {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        resolve();
+      };
+      timeoutId = window.setTimeout(() => {
+        console.warn('[AudioManager] ⚠️ Timeout waiting for JUCE load acknowledgement', {
+          generation,
+          context,
+        });
+        if (this.pendingLoadAck && this.pendingLoadAck.generation === generation) {
+          this.pendingLoadAck = null;
+        }
+        resolveFn();
+      }, timeoutMs);
+    });
+
+    this.pendingLoadAck = {
+      generation,
+      context,
+      promise,
+      resolve: resolveFn,
+      timeoutId,
+      details,
+    };
+
+    return promise;
+  }
+
+  private resolvePendingLoadAck(generation: number, source: string): void {
+    const pending = this.pendingLoadAck;
+    if (!pending || pending.generation !== generation) {
+      return;
+    }
+
+    if (pending.timeoutId !== null) {
+      window.clearTimeout(pending.timeoutId);
+    }
+    this.pendingLoadAck = null;
+    if (pending.context === 'recovery') {
+      console.log('[Recovery] replay load → [JUCE] loaded', {
+        ...pending.details,
+        gen: generation,
+        source,
+      });
+    }
+    pending.resolve();
+  }
+
+  private clearPendingLoadAck(reason: string): void {
+    const pending = this.pendingLoadAck;
+    if (!pending) {
+      return;
+    }
+    if (pending.timeoutId !== null) {
+      window.clearTimeout(pending.timeoutId);
+    }
+    console.log('[AudioManager] Clearing pending load acknowledgement wait', {
+      reason,
+      generation: pending.generation,
+      context: pending.context,
+    });
+    this.pendingLoadAck = null;
+    pending.resolve();
+  }
+
+  private waitForEdlAck(
+    revision: number,
+    generation: number,
+    context: LoadAckWaitContext = 'general',
+    timeoutMs: number = 3000,
+    details: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (this.lastAppliedRevision >= revision && this.readyGenerationId === generation) {
+      return Promise.resolve();
+    }
+
+    const existing = this.pendingEdlAck;
+    if (existing && existing.revision === revision && existing.generation === generation) {
+      return existing.promise;
+    }
+
+    if (existing) {
+      this.clearPendingEdlAck('superseded');
+    }
+
+    let resolveFn: () => void = () => {};
+    let timeoutId: number | null = null;
+    const promise = new Promise<void>((resolve) => {
+      resolveFn = () => {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        resolve();
+      };
+      timeoutId = window.setTimeout(() => {
+        console.warn('[AudioManager] ⚠️ Timeout waiting for JUCE edlApplied acknowledgement', {
+          revision,
+          generation,
+          context,
+        });
+        if (this.pendingEdlAck && this.pendingEdlAck.revision === revision && this.pendingEdlAck.generation === generation) {
+          this.pendingEdlAck = null;
+        }
+        resolveFn();
+      }, timeoutMs);
+    });
+
+    this.pendingEdlAck = {
+      generation,
+      revision,
+      context,
+      promise,
+      resolve: resolveFn,
+      timeoutId,
+      details,
+    };
+
+    return promise;
+  }
+
+  private resolvePendingEdlAck(revision: number | null, generation: number, source: string): void {
+    if (revision === null) {
+      return;
+    }
+    const pending = this.pendingEdlAck;
+    if (!pending || pending.revision !== revision || pending.generation !== generation) {
+      return;
+    }
+
+    if (pending.timeoutId !== null) {
+      window.clearTimeout(pending.timeoutId);
+    }
+    this.pendingEdlAck = null;
+    if (pending.context === 'recovery') {
+      console.log('[Recovery] replay EDL → [IPC][JUCE] edlApplied', {
+        revision,
+        gen: generation,
+        source,
+        ...pending.details,
+      });
+    }
+    pending.resolve();
+  }
+
+  private clearPendingEdlAck(reason: string): void {
+    const pending = this.pendingEdlAck;
+    if (!pending) {
+      return;
+    }
+    if (pending.timeoutId !== null) {
+      window.clearTimeout(pending.timeoutId);
+    }
+    console.log('[AudioManager] Clearing pending edlApplied acknowledgement wait', {
+      reason,
+      generation: pending.generation,
+      revision: pending.revision,
+      context: pending.context,
+    });
+    this.pendingEdlAck = null;
+    pending.resolve();
+  }
+
   private scheduleReadyFallback(generation: number, revision: number): void {
     if (this.readyGenerationId === generation) {
       return;
@@ -1495,6 +1753,7 @@ export class JuceAudioManagerV2 {
       this.expectedRevision = Math.max(this.expectedRevision, revision);
       this.lastAppliedRevision = Math.max(this.lastAppliedRevision, revision);
     }
+    this.resolvePendingEdlAck(typeof revision === 'number' ? revision : null, generation, mode);
     this.updateState({
       isLoading: false,
       isReady: true,

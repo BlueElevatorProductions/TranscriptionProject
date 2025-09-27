@@ -379,6 +379,8 @@ class App {
       const pendingAppliedById = new Map<string, number>();
       const pendingCountsById = new Map<string, { words: number; spacers: number; total: number }>();
       const generationById = new Map<string, number>();
+      const loadedGenerationById = new Map<string, number>();
+      const appliedRevisionById = new Map<string, number>();
       const getRev = (id: string) => edlRevisionById.get(id) ?? 0;
       const bumpRev = (id: string) => { const r = getRev(id) + 1; edlRevisionById.set(id, r); return r; };
       const getGeneration = (id: string) => generationById.get(id);
@@ -503,7 +505,19 @@ class App {
         }
       };
       this.juceClient.setEventHandlers({
-        onLoaded: forward,
+        onLoaded: (event) => {
+          const id = (event as any).id as string | undefined;
+          if (id) {
+            const payloadGen = (event as any).generationId;
+            const generation = typeof payloadGen === 'number'
+              ? payloadGen
+              : generationById.get(id);
+            if (typeof generation === 'number') {
+              loadedGenerationById.set(id, generation);
+            }
+          }
+          forward(event);
+        },
         onState: forward,
         onBackendStatus: (event) => {
           this.backendAlive = event.status === 'alive';
@@ -514,6 +528,10 @@ class App {
             signal: event.signal ?? null,
             stderrTail: event.stderrTail?.length ?? 0,
           });
+          if (event.status === 'dead') {
+            loadedGenerationById.clear();
+            appliedRevisionById.clear();
+          }
           emitToWindows(event as JuceEvent);
         },
         onEdlApplied: (e) => {
@@ -532,6 +550,14 @@ class App {
           if (!enrichedEvent) {
             pendingCountsById.delete(id);
             return;
+          }
+          const appliedRevision = (eventWithCounts as any).revision;
+          if (typeof appliedRevision === 'number') {
+            appliedRevisionById.set(id, appliedRevision);
+          }
+          const enrichedGeneration = (enrichedEvent as any).generationId;
+          if (typeof enrichedGeneration === 'number') {
+            loadedGenerationById.set(id, enrichedGeneration);
           }
           console.log('[IPC][JUCE] edlApplied event', {
             id,
@@ -561,6 +587,11 @@ class App {
                 spacerCount: pendingCounts?.spacers ?? 0,
               } as any);
               if (synthetic) {
+                appliedRevisionById.set(id, appliedRev);
+                const syntheticGeneration = (synthetic as any).generationId;
+                if (typeof syntheticGeneration === 'number') {
+                  loadedGenerationById.set(id, syntheticGeneration);
+                }
                 emitToWindows(synthetic);
               }
               pendingAppliedById.delete(id);
@@ -599,6 +630,8 @@ class App {
             pendingCountsById.delete(id);
             edlRevisionById.set(id, 0);
           }
+          loadedGenerationById.delete(id);
+          appliedRevisionById.delete(id);
           console.log('[Load] start', { id, gen: generationId, path: filePath, source: ext });
           const result = await this.juceClient!.load(id, filePath, generationId);
           return result;
@@ -632,6 +665,7 @@ class App {
           }
           const rev = incomingRevision ?? bumpRev(id);
           edlRevisionById.set(id, rev);
+          appliedRevisionById.delete(id);
           const stats = summarizeSegments(clips);
           pendingCountsById.set(id, {
             words: stats.wordSegments,
@@ -698,14 +732,11 @@ class App {
       ipcMain.handle('juce:play', async (_e, id: string, generationId?: number) => {
         try {
           const currentGen = generationById.get(id);
+          const generation = typeof generationId === 'number' ? generationId : currentGen;
           console.log('[Main] play received', { id, requestedGen: generationId, currentGen });
 
           if (!this.backendAlive) {
-            console.warn('[Main] play rejected — backend unavailable', {
-              id,
-              requestedGen: generationId,
-              currentGen,
-            });
+            console.warn('[Main] play rejected', { reason: 'backendDown', gen: generation ?? null, sessionId: id });
             return { success: false, error: 'backend unavailable' };
           }
 
@@ -715,7 +746,22 @@ class App {
               return { success: false, error: 'stale generation' };
             }
           }
-          const generation = generationId ?? currentGen;
+
+          if (typeof generation === 'number') {
+            const loadedGen = loadedGenerationById.get(id);
+            if (loadedGen !== generation) {
+              console.warn('[Main] play rejected', { reason: 'notLoaded', gen: generation, sessionId: id });
+              return { success: false, error: 'not loaded' };
+            }
+
+            const expectedRevision = edlRevisionById.get(id) ?? 0;
+            const appliedRevision = appliedRevisionById.get(id) ?? 0;
+            if (pendingAppliedById.has(id) || (expectedRevision > 0 && appliedRevision !== expectedRevision)) {
+              console.warn('[Main] play rejected', { reason: 'noEdl', gen: generation, sessionId: id });
+              return { success: false, error: 'edl not applied' };
+            }
+          }
+
           console.log('[Main] play → JUCE', { id, generation });
           await this.juceClient!.play(id, generationId);
           return { success: true };
@@ -832,6 +878,8 @@ class App {
           pendingCountsById.clear();
           pendingAppliedById.clear();
           generationById.clear();
+          loadedGenerationById.clear();
+          appliedRevisionById.clear();
         }
       });
     } catch (e) {
