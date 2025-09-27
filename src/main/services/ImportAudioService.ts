@@ -7,6 +7,8 @@ export interface PreparedAudioResult {
   resolvedPath: string;
   metadata: WavMetadata;
   wasConverted: boolean;
+  candidates: string[];
+  probedDirs: string[];
 }
 
 export interface WavMetadata {
@@ -88,6 +90,8 @@ export async function prepareAudioForImport(
     resolvedPath: finalPath,
     metadata: inspection,
     wasConverted,
+    candidates,
+    probedDirs,
   };
 }
 

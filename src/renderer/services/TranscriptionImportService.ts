@@ -426,7 +426,7 @@ export class TranscriptionImportService {
           );
 
           segments.push(spacerSegment);
-          console.log('[Import][Spacer] segment', {
+          console.log('[Import][Spacer] segment created', {
             start: Number(spacerSegment.start.toFixed(3)),
             end: Number(spacerSegment.end.toFixed(3)),
             duration: Number(spacerSegment.duration.toFixed(3)),
@@ -447,7 +447,7 @@ export class TranscriptionImportService {
           );
 
           segments.push(spacerSegment);
-          console.log('[Import][Spacer] segment', {
+          console.log('[Import][Spacer] segment created', {
             start: Number(spacerSegment.start.toFixed(3)),
             end: Number(spacerSegment.end.toFixed(3)),
             duration: Number(spacerSegment.duration.toFixed(3)),
@@ -461,7 +461,7 @@ export class TranscriptionImportService {
         } else if (sanitizedGap === 0) {
           const spacerSegment = createSpacerSegment(wordEnd, wordEnd, '0.00s');
           segments.push(spacerSegment);
-          console.log('[Import][Spacer] segment', {
+          console.log('[Import][Spacer] segment created', {
             start: Number(spacerSegment.start.toFixed(3)),
             end: Number(spacerSegment.end.toFixed(3)),
             duration: Number(spacerSegment.duration.toFixed(3)),

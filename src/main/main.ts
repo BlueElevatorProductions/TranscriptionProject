@@ -1983,6 +1983,24 @@ class App {
           properAudioMetadata
         );
 
+        stage.current = 'validate-audio-path';
+        const assembledAudioPath = projectData?.project?.audio?.path;
+        if (!assembledAudioPath) {
+          console.error('[Import][Error] missing audio path post-assembly', {
+            projectId: projectData?.project?.projectId,
+            incomingPath,
+            resolvedAudioPath,
+            candidates: prepared.candidates,
+            probedDirs: prepared.probedDirs,
+          });
+          throw new Error('Missing audio path after import assembly');
+        }
+
+        console.log('[Import][Project] audioPath verified for transport', {
+          path: assembledAudioPath,
+          exists: fs.existsSync(assembledAudioPath),
+        });
+
         const clipCount = projectData?.clips?.clips?.length ?? 0;
         stage.current = 'store';
         this.projectDataStore.loadProject(projectData);

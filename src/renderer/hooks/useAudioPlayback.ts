@@ -62,10 +62,28 @@ export interface UseAudioPlaybackReturn {
   controls: PlaybackControls;
 }
 
+interface PendingLoadRequest {
+  path: string;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  promise: Promise<void>;
+}
+
 // ==================== Hook Implementation ====================
 
-export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string): UseAudioPlaybackReturn {
-  console.log('🎵 useAudioPlayback: Hook initializing with clips:', clips.length, 'projectDirectory:', projectDirectory);
+export function useAudioPlayback(
+  clips: Clip[] = [],
+  projectDirectory?: string,
+  projectAudioPath?: string | null
+): UseAudioPlaybackReturn {
+  console.log(
+    '🎵 useAudioPlayback: Hook initializing',
+    {
+      clipCount: clips.length,
+      projectDirectory,
+      projectAudioPath,
+    }
+  );
 
   // Load persisted settings
   const getPersistedSettings = () => {
@@ -104,6 +122,8 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
   const audioManagerRef = useRef<JuceAudioManagerV2 | null>(null);
   const clipsRef = useRef<Clip[]>(clips);
   const inflightLoadRef = useRef<{ path: string; promise: Promise<void> } | null>(null);
+  const pendingLoadRef = useRef<PendingLoadRequest | null>(null);
+  const lastAutoLoadPathRef = useRef<string | null>(null);
 
   // Update clips ref when clips change
   useEffect(() => {
@@ -157,6 +177,76 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
 
     return { clipId: null, segmentIndex: null };
   }, []);
+
+  const performLoadAudio = useCallback(async (audioPath: string): Promise<void> => {
+    if (!audioManagerRef.current) {
+      throw new Error('Audio manager not initialized');
+    }
+
+    if (!audioPath) {
+      console.warn('🎵 performLoadAudio: Ignoring empty audio path');
+      return;
+    }
+
+    if (inflightLoadRef.current && inflightLoadRef.current.path === audioPath) {
+      console.log('🎵 performLoadAudio: reusing in-flight load promise for path', audioPath);
+      return inflightLoadRef.current.promise;
+    }
+
+    setState(prevState => ({
+      ...prevState,
+      isLoading: true,
+      readyStatus: 'loading',
+      error: null,
+    }));
+
+    const initializePromise = audioManagerRef.current.initialize(audioPath);
+
+    const wrappedPromise = (initializePromise
+      .then(() => {
+        console.log('🎵 Audio loaded:', audioPath);
+      })
+      .catch(error => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('superseded')) {
+          console.info('🎵 performLoadAudio: load superseded by newer request', { audioPath });
+          return;
+        }
+        console.error('Failed to load audio:', error);
+        setState(prevState => ({
+          ...prevState,
+          error: message,
+          isLoading: false,
+          readyStatus: 'idle',
+        }));
+        throw error;
+      })
+      .finally(() => {
+        if (inflightLoadRef.current?.path === audioPath) {
+          inflightLoadRef.current = null;
+        }
+      })) as Promise<void>;
+
+    inflightLoadRef.current = { path: audioPath, promise: wrappedPromise };
+    return wrappedPromise;
+  }, []);
+
+  const flushPendingLoad = useCallback(() => {
+    const pending = pendingLoadRef.current;
+    if (!pending || !audioManagerRef.current) {
+      return;
+    }
+
+    console.log('🎵 useAudioPlayback: Executing deferred load request', { path: pending.path });
+    performLoadAudio(pending.path)
+      .then(() => pending.resolve())
+      .catch(error => pending.reject(error))
+      .finally(() => {
+        if (pendingLoadRef.current?.path === pending.path) {
+          pendingLoadRef.current = null;
+        }
+      });
+  }, [performLoadAudio]);
 
   // Initialize audio manager
   useEffect(() => {
@@ -224,8 +314,13 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
         projectDirectory
       });
       console.log('🎵 useAudioPlayback: Audio Manager successfully initialized with projectDirectory:', projectDirectory);
+      flushPendingLoad();
     } catch (error) {
       console.error('🎵 useAudioPlayback: Failed to initialize Audio Manager:', error);
+      if (pendingLoadRef.current) {
+        pendingLoadRef.current.reject(error);
+        pendingLoadRef.current = null;
+      }
       setState(prevState => ({
         ...prevState,
         error: error instanceof Error ? error.message : String(error)
@@ -238,8 +333,9 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
         audioManagerRef.current.dispose();
         audioManagerRef.current = null;
       }
+      pendingLoadRef.current = null;
     };
-  }, [calculateTotalDuration, findCurrentClipAndSegment, projectDirectory]);
+  }, [calculateTotalDuration, findCurrentClipAndSegment, projectDirectory, flushPendingLoad]);
 
   // Update clips when they change
   useEffect(() => {
@@ -375,57 +471,95 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
     }
   }, []);
 
-  const loadAudio = useCallback((audioPath: string) => {
-    if (!audioManagerRef.current) {
-      return Promise.reject(new Error('Audio manager not initialized'));
-    }
+  const loadAudio = useCallback(
+    (audioPath: string): Promise<void> => {
+      if (!audioPath) {
+        console.warn('🎵 loadAudio: Ignoring empty audio path request');
+        return Promise.resolve();
+      }
 
-    if (!audioPath) {
-      return Promise.resolve();
-    }
+      if (audioManagerRef.current) {
+        return performLoadAudio(audioPath);
+      }
 
-    if (inflightLoadRef.current && inflightLoadRef.current.path === audioPath) {
-      console.log('🎵 loadAudio: reusing in-flight load promise for path', audioPath);
-      return inflightLoadRef.current.promise;
-    }
-
-    setState(prevState => ({
-      ...prevState,
-      isLoading: true,
-      readyStatus: 'loading',
-      error: null
-    }));
-
-    const initializePromise = audioManagerRef.current.initialize(audioPath);
-
-    const wrappedPromise = (initializePromise
-      .then(() => {
-        console.log('🎵 Audio loaded:', audioPath);
-      })
-      .catch(error => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes('superseded')) {
-          console.info('🎵 loadAudio: load superseded by newer request', { audioPath });
-          return;
+      if (pendingLoadRef.current) {
+        if (pendingLoadRef.current.path === audioPath) {
+          console.log('🎵 loadAudio: awaiting existing deferred load for path', audioPath);
+          return pendingLoadRef.current.promise;
         }
-        console.error('Failed to load audio:', error);
-        setState(prevState => ({
-          ...prevState,
-          error: message,
-          isLoading: false,
-          readyStatus: 'idle'
-        }));
-        throw error;
-      })
-      .finally(() => {
-        if (inflightLoadRef.current?.path === audioPath) {
-          inflightLoadRef.current = null;
-        }
-      })) as Promise<void>;
+        console.warn('🎵 loadAudio: replacing pending deferred load request', {
+          previousPath: pendingLoadRef.current.path,
+          nextPath: audioPath,
+        });
+        pendingLoadRef.current.reject(new Error('pending load superseded'));
+        pendingLoadRef.current = null;
+      }
 
-    inflightLoadRef.current = { path: audioPath, promise: wrappedPromise };
-    return wrappedPromise;
-  }, []);
+      console.log('🎵 loadAudio: deferring load until audio manager is ready', { audioPath });
+
+      let deferredResolve: () => void;
+      let deferredReject: (error: unknown) => void;
+      const deferredPromise = new Promise<void>((resolve, reject) => {
+        deferredResolve = resolve;
+        deferredReject = reject;
+      });
+
+      pendingLoadRef.current = {
+        path: audioPath,
+        resolve: deferredResolve!,
+        reject: deferredReject!,
+        promise: deferredPromise,
+      };
+
+      return deferredPromise;
+    },
+    [performLoadAudio]
+  );
+
+  useEffect(() => {
+    if (!projectAudioPath) {
+      if (lastAutoLoadPathRef.current !== null) {
+        console.log('[Renderer][AudioPath] cleared');
+      }
+      lastAutoLoadPathRef.current = null;
+      return;
+    }
+
+    if (projectAudioPath === '/demo/audio.wav') {
+      console.log('[Renderer][AudioPath] skipping demo audio path auto-load');
+      lastAutoLoadPathRef.current = projectAudioPath;
+      return;
+    }
+
+    if (lastAutoLoadPathRef.current === projectAudioPath) {
+      return;
+    }
+
+    lastAutoLoadPathRef.current = projectAudioPath;
+
+    const isAbsolute = typeof window.electronAPI?.path?.isAbsolute === 'function'
+      ? window.electronAPI.path.isAbsolute(projectAudioPath)
+      : projectAudioPath.includes(':') || projectAudioPath.startsWith('/');
+
+    const lowerPath = projectAudioPath.toLowerCase();
+    if (!lowerPath.endsWith('.wav')) {
+      console.warn('[Renderer][AudioPath] auto-load skipped — non-WAV candidate', { path: projectAudioPath });
+      return;
+    }
+
+    console.log('[Renderer][AudioPath] selected', {
+      path: projectAudioPath,
+      exists: true,
+      isAbsolute,
+    });
+
+    loadAudio(projectAudioPath).catch(error => {
+      console.error('[Renderer][AudioPath] auto-load failed', {
+        path: projectAudioPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [projectAudioPath, loadAudio]);
 
   const updateClipsControl = useCallback(async (newClips: Clip[]) => {
     if (!audioManagerRef.current) return;
@@ -464,6 +598,8 @@ export function useAudioPlayback(clips: Clip[] = [], projectDirectory?: string):
         error: null
       });
     }
+    pendingLoadRef.current = null;
+    lastAutoLoadPathRef.current = null;
   }, []);
 
   const controls = useMemo<PlaybackControls>(() => ({

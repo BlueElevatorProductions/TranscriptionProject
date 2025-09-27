@@ -55,6 +55,28 @@ export interface SeekIntent {
   timestamp: number;
 }
 
+type ReadinessBlockers = {
+  missingTransport: boolean;
+  missingAudioPath: boolean;
+  missingLoad: boolean;
+  missingReadyAck: boolean;
+  awaitingEdlAck: boolean;
+  edlMissing: boolean;
+  loadInFlight: boolean;
+  initializing: boolean;
+  fallbackWaiting: boolean;
+  errorCooldownActive: boolean;
+  audioPath: string | null;
+  hasTransport: boolean;
+  inflightLoadGeneration: number | null;
+  loadedGenerationId: number | null;
+  readyGenerationId: number | null;
+  awaitingEdlRevision: number | null;
+  expectedRevision: number;
+  readyStatus: AudioStateV2['readyStatus'];
+  isReady: boolean;
+};
+
 // ==================== JUCE Audio Manager V2 ====================
 
 export class JuceAudioManagerV2 {
@@ -224,6 +246,7 @@ export class JuceAudioManagerV2 {
         source,
       };
       console.log('[CMD] load', loadPayload);
+      console.log('[IPC send] load', { ...loadPayload, dispatched: true });
 
       const loadPromise = this.loadFile(this.sessionId, resolvedPath, newGeneration);
       const trackedPromise = loadPromise.finally(() => {
@@ -301,6 +324,11 @@ export class JuceAudioManagerV2 {
    * Provide diagnostic information about readiness state for logging.
    */
   public getReadinessDebugInfo(): Record<string, unknown> {
+    const blockers = this.describeReadinessBlockers(this.state);
+    const activeBlockers = Object.fromEntries(
+      Object.entries(blockers).filter(([, value]) => typeof value === 'boolean' && value === true)
+    );
+
     const info = {
       isReady: this.state.isReady,
       readyStatus: this.state.readyStatus,
@@ -315,7 +343,8 @@ export class JuceAudioManagerV2 {
       awaitingEdlGeneration: this.awaitingEdlGeneration,
       expectedRevision: this.expectedRevision,
       sentRevisionCounter: this.sentRevisionCounter,
-      blockers: this.describeReadinessBlockers(this.state),
+      blockers,
+      activeBlockers,
     };
 
     console.log('[AudioManager][Readiness] debug info requested', info);
@@ -323,55 +352,41 @@ export class JuceAudioManagerV2 {
     return info;
   }
 
-  private describeReadinessBlockers(stateOverride?: AudioStateV2): string[] {
-    const reasons: string[] = [];
+  private describeReadinessBlockers(stateOverride?: AudioStateV2): ReadinessBlockers {
     const state = stateOverride ?? this.state;
+    const missingTransport = !this.transport;
+    const missingAudioPath = !this.audioPath;
+    const loadInFlight = this.inflightLoadGeneration !== null;
+    const missingLoad = this.loadedGenerationId === null || this.loadedGenerationId !== this.currentGenerationId;
+    const missingReadyAck = this.readyGenerationId === null || this.readyGenerationId !== this.currentGenerationId;
+    const awaitingEdlAck = this.awaitingEdlRevision !== null;
+    const edlMissing = !this.currentEDL;
+    const initializing = this.isInitializing;
+    const fallbackWaiting = this.readyFallbackTimer !== null;
+    const errorCooldownActive = this.lastErrorTime > 0 && Date.now() - this.lastErrorTime < this.errorCooldown;
 
-    if (!this.transport) {
-      reasons.push('transport-unavailable');
-    }
-
-    if (!this.audioPath) {
-      reasons.push('audio-path-missing');
-    }
-
-    if (this.inflightLoadGeneration !== null) {
-      reasons.push('load-inflight');
-    }
-
-    if (this.loadedGenerationId === null || this.loadedGenerationId !== this.currentGenerationId) {
-      reasons.push('generation-not-loaded');
-    }
-
-    if (this.readyGenerationId === null || this.readyGenerationId !== this.currentGenerationId) {
-      reasons.push('generation-not-ready');
-    }
-
-    if (this.awaitingEdlRevision !== null) {
-      reasons.push('awaiting-edl-ack');
-    }
-
-    if (!this.currentEDL) {
-      reasons.push('edl-missing');
-    }
-
-    if (this.isInitializing) {
-      reasons.push('initializing');
-    }
-
-    if (this.readyFallbackTimer !== null) {
-      reasons.push('ready-fallback-wait');
-    }
-
-    if (this.lastErrorTime > 0 && Date.now() - this.lastErrorTime < this.errorCooldown) {
-      reasons.push('error-cooldown');
-    }
-
-    if (!state.isReady) {
-      reasons.push(`ready-status:${state.readyStatus}`);
-    }
-
-    return [...new Set(reasons)];
+    return {
+      missingTransport,
+      missingAudioPath,
+      missingLoad,
+      missingReadyAck,
+      awaitingEdlAck,
+      edlMissing,
+      loadInFlight,
+      initializing,
+      fallbackWaiting,
+      errorCooldownActive,
+      audioPath: this.audioPath,
+      hasTransport: !!this.transport,
+      inflightLoadGeneration: this.inflightLoadGeneration,
+      loadedGenerationId: this.loadedGenerationId,
+      readyGenerationId: this.readyGenerationId,
+      awaitingEdlRevision: this.awaitingEdlRevision,
+      expectedRevision: this.expectedRevision,
+      // Provide state context for logging clarity
+      readyStatus: state.readyStatus as any,
+      isReady: state.isReady,
+    };
   }
 
   /**
@@ -503,7 +518,8 @@ export class JuceAudioManagerV2 {
   public async play(): Promise<void> {
     const generation = this.currentGenerationId;
     const readinessDetails = this.getReadinessDebugInfo();
-    const blockers = (readinessDetails.blockers as string[]) ?? [];
+    const blockers = (readinessDetails.blockers as ReadinessBlockers) ?? {};
+    const activeBlockers = (readinessDetails.activeBlockers as Record<string, boolean>) ?? {};
     const canDispatch = !!this.transport && this.state.isReady;
 
     console.log('[CMD] play', {
@@ -512,6 +528,7 @@ export class JuceAudioManagerV2 {
       readyStatus: this.state.readyStatus,
       isReady: this.state.isReady,
       blockers,
+      activeBlockers,
       diagnostics: readinessDetails,
     });
 
@@ -521,6 +538,7 @@ export class JuceAudioManagerV2 {
       audioPath: this.audioPath,
       dispatched: canDispatch,
       blockers,
+      activeBlockers,
       readyStatus: this.state.readyStatus,
       diagnostics: readinessDetails,
     });
@@ -535,12 +553,19 @@ export class JuceAudioManagerV2 {
         isReady: this.state.isReady,
         readyStatus: this.state.readyStatus,
         blockers,
+        activeBlockers,
         diagnostics: readinessDetails,
+      });
+      this.logReadinessSnapshot('play-blocked', this.state, {
+        reason: 'gate-blocked',
+        generation,
+        blockers,
+        activeBlockers,
       });
     }
 
     if (!this.transport) {
-      console.warn('[CMD] play skipped — transport unavailable', { gen: generation, blockers });
+      console.warn('[CMD] play skipped — transport unavailable', { gen: generation, blockers, activeBlockers });
       return;
     }
 
@@ -549,6 +574,13 @@ export class JuceAudioManagerV2 {
         gen: generation,
         readyStatus: this.state.readyStatus,
         blockers,
+        activeBlockers,
+      });
+      this.logReadinessSnapshot('play-blocked', this.state, {
+        reason: 'transport-not-ready',
+        generation,
+        blockers,
+        activeBlockers,
       });
       return;
     }
@@ -1080,6 +1112,9 @@ export class JuceAudioManagerV2 {
   ): void {
     const baseState = stateOverride ?? this.state;
     const blockers = this.describeReadinessBlockers(baseState);
+    const activeBlockers = Object.fromEntries(
+      Object.entries(blockers).filter(([, value]) => typeof value === 'boolean' && value === true)
+    );
     const summary = {
       isReady: baseState.isReady,
       readyStatus: baseState.readyStatus,
@@ -1089,6 +1124,7 @@ export class JuceAudioManagerV2 {
 
     const diagnostics = {
       blockers,
+      activeBlockers,
       currentGenerationId: this.currentGenerationId,
       loadedGenerationId: this.loadedGenerationId,
       readyGenerationId: this.readyGenerationId,

@@ -7,7 +7,7 @@
  * - Atomic edit operations
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { FileText, FolderOpen, Save, Settings, Upload, Music, Download, ChevronDown, Users, Scissors, Type, Palette, Play } from 'lucide-react';
 import { useProjectV2 } from '../../contexts/ProjectContextV2';
@@ -35,6 +35,36 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
 
   const { addToast } = useNotifications() as any;
   console.log('🏠 NewUIShellV2: Notifications context loaded');
+
+  const projectAudioPath = useMemo(() => {
+    const audio = projectState.projectData?.project?.audio;
+    if (!audio) {
+      return null;
+    }
+
+    const candidates = [
+      audio?.path,
+      audio?.extractedPath,
+      audio?.embeddedPath,
+      audio?.originalFile,
+    ].filter((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0);
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const wavCandidate = candidates.find(candidate => candidate.toLowerCase().endsWith('.wav'));
+    if (wavCandidate) {
+      return wavCandidate;
+    }
+
+    return candidates[0] ?? null;
+  }, [
+    projectState.projectData?.project?.audio?.path,
+    projectState.projectData?.project?.audio?.extractedPath,
+    projectState.projectData?.project?.audio?.embeddedPath,
+    projectState.projectData?.project?.audio?.originalFile,
+  ]);
 
   const [activePanel, setActivePanel] = useState<string>('transcript');
 
@@ -68,7 +98,8 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
   console.log('🏠 NewUIShellV2: Initializing audio playback hook...');
   const { state: audioState, controls: audioControls } = useAudioPlayback(
     projectState.clips,
-    projectState.currentProjectPath
+    projectState.currentProjectPath,
+    projectAudioPath
   );
   console.log('🏠 NewUIShellV2: Audio playback hook initialized, state:', {
     isReady: audioState.isReady,
@@ -89,6 +120,20 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
 
   // Edit Audio Mode state
   const [audioPath, setAudioPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (projectAudioPath) {
+      setAudioPath(projectAudioPath);
+    } else {
+      setAudioPath(null);
+    }
+  }, [projectAudioPath]);
+
+  useEffect(() => {
+    if (!projectAudioPath && projectState.clips.length > 0) {
+      console.warn('[Renderer][AudioPath] missing while clips are present');
+    }
+  }, [projectAudioPath, projectState.clips.length]);
 
   // Demo mode effect - simulates audio playback for Listen Mode testing (when no real audio)
   useEffect(() => {
@@ -123,20 +168,15 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
   // Auto-setup audio path when entering Edit Audio Mode
   useEffect(() => {
     if (currentMode === 'edit-audio') {
-      // In a real implementation, this would get the actual audio file path
-      // For demo purposes, we'll use a mock path
-      const audio = projectState.projectData?.project?.audio;
-      const audioPath = audio?.path || audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
-      console.log('🎵 NewUIShellV2: Resolving audio path from project data:', {
-        path: audio?.path,
-        extractedPath: audio?.extractedPath,
-        embeddedPath: audio?.embeddedPath,
-        originalFile: audio?.originalFile,
-        resolved: audioPath
-      });
-      setAudioPath(audioPath || '/demo/audio.wav');
+      if (projectAudioPath) {
+        console.log('🎵 NewUIShellV2: Edit-audio mode using project audio path', { path: projectAudioPath });
+        setAudioPath(projectAudioPath);
+      } else {
+        console.warn('🎵 NewUIShellV2: Edit-audio mode fallback — no project audio path available');
+        setAudioPath('/demo/audio.wav');
+      }
     }
-  }, [currentMode, projectState.clips.length, projectState.projectData]);
+  }, [currentMode, projectAudioPath]);
 
   // Initialize v2.0 system
   useEffect(() => {
@@ -258,65 +298,6 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
     root.style.setProperty('--transcript-font-family', fontSettings.fontFamily);
     root.style.setProperty('--transcript-font-size', `${fontSettings.fontSize}px`);
   }, [fontSettings]);
-
-  // Load audio when project has audio file
-  useEffect(() => {
-    const audio = projectState.projectData?.project?.audio;
-    const projectAudioPath = audio?.path || audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
-    if (projectAudioPath && projectAudioPath !== '/demo/audio.wav' && projectAudioPath !== audioPath) {
-      console.log('🎵 Loading audio from project:', projectAudioPath);
-      setAudioPath(projectAudioPath);
-      audioControls.loadAudio(projectAudioPath).catch(error => {
-        console.error('Failed to load project audio:', error);
-        addToast?.({
-          type: 'error',
-          title: 'Audio Load Failed',
-          message: `Failed to load audio file: ${projectAudioPath}`,
-        });
-      });
-    } else if (!projectAudioPath && projectState.clips && projectState.clips.length > 0) {
-      console.warn('🎵 Project has clips but no audio path - audio playback unavailable');
-    }
-  }, [
-    projectState.projectData?.project?.audio?.path,
-    projectState.projectData?.project?.audio?.extractedPath,
-    projectState.projectData?.project?.audio?.embeddedPath,
-    projectState.projectData?.project?.audio?.originalFile,
-    audioControls,
-    addToast,
-    projectState.clips
-  ]);
-
-  // Initialize audio if not ready but clips exist and audio path is available
-  useEffect(() => {
-    const audio = projectState.projectData?.project?.audio;
-    const projectAudioPath = audio?.path || audio?.extractedPath || audio?.embeddedPath || audio?.originalFile;
-    const hasClips = audioState.isReady === false &&
-                   projectState.clips &&
-                   projectState.clips.length > 0;
-
-    if (projectAudioPath && projectAudioPath !== '/demo/audio.wav' && hasClips && !audioState.isLoading) {
-      console.log('🎵 Auto-initializing audio with existing clips, path:', projectAudioPath);
-      audioControls.loadAudio(projectAudioPath).catch(error => {
-        console.error('Failed to auto-initialize audio:', error);
-        addToast?.({
-          type: 'error',
-          title: 'Audio Auto-Init Failed',
-          message: `Failed to initialize audio playback: ${error instanceof Error ? error.message : String(error)}`,
-        });
-      });
-    }
-  }, [
-    projectState.projectData?.project?.audio?.path,
-    projectState.projectData?.project?.audio?.extractedPath,
-    projectState.projectData?.project?.audio?.embeddedPath,
-    projectState.projectData?.project?.audio?.originalFile,
-    projectState.clips,
-    audioState.isReady,
-    audioState.isLoading,
-    audioControls,
-    addToast
-  ]);
 
   // Audio player handlers
   const handlePlayPause = useCallback(async () => {
