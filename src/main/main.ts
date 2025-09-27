@@ -567,6 +567,15 @@ class App {
       // IPC command handlers
       ipcMain.handle('juce:load', async (_e, id: string, filePath: string, generationId?: number) => {
         try {
+          console.log('[Main] load received', { id, gen: generationId, path: filePath });
+          const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
+          const exists = filePath ? fs.existsSync(absolutePath) : false;
+          console.log('[Main] load resolved path', {
+            id,
+            gen: generationId,
+            absolutePath,
+            exists,
+          });
           const ext = (path.extname(filePath || '') || '').replace('.', '').toLowerCase() || 'unknown';
           if (typeof generationId === 'number') {
             const prevGen = generationById.get(id);

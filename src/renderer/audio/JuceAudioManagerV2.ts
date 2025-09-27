@@ -216,6 +216,14 @@ export class JuceAudioManagerV2 {
         gen: newGeneration,
       });
       console.log('[Load] start', { gen: newGeneration, path: resolvedPath, source });
+      const loadPayload = {
+        sessionId: this.sessionId,
+        gen: newGeneration,
+        path: resolvedPath,
+        originalPath: audioPath,
+        source,
+      };
+      console.log('[CMD] load', loadPayload);
 
       const loadPromise = this.loadFile(this.sessionId, resolvedPath, newGeneration);
       const trackedPromise = loadPromise.finally(() => {
@@ -516,6 +524,20 @@ export class JuceAudioManagerV2 {
       readyStatus: this.state.readyStatus,
       diagnostics: readinessDetails,
     });
+
+    if (!canDispatch) {
+      console.warn('[IPC send] play skipped — gate blocked', {
+        gen: generation,
+        sessionId: this.sessionId,
+        dispatched: false,
+        audioPath: this.audioPath,
+        hasTransport: !!this.transport,
+        isReady: this.state.isReady,
+        readyStatus: this.state.readyStatus,
+        blockers,
+        diagnostics: readinessDetails,
+      });
+    }
 
     if (!this.transport) {
       console.warn('[CMD] play skipped — transport unavailable', { gen: generation, blockers });
@@ -1031,15 +1053,21 @@ export class JuceAudioManagerV2 {
       updates.readyStatus !== undefined ||
       updates.error !== undefined;
 
+    const updatedKeys = Object.keys(updates);
+    const snapshotExtras: Record<string, unknown> = {
+      updates,
+      updatedKeys,
+    };
+
     if (readinessFieldsUpdated) {
-      this.logReadinessSnapshot('state-transition', nextState, {
-        previous: {
-          isReady: previousState.isReady,
-          readyStatus: previousState.readyStatus,
-          blockers: this.describeReadinessBlockers(previousState),
-        },
-      });
+      snapshotExtras.previous = {
+        isReady: previousState.isReady,
+        readyStatus: previousState.readyStatus,
+        blockers: this.describeReadinessBlockers(previousState),
+      };
     }
+
+    this.logReadinessSnapshot('state-change', nextState, snapshotExtras);
 
     this.state = nextState;
     this.callbacks.onStateChange(this.state);

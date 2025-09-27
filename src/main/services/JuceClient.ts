@@ -855,6 +855,18 @@ export class JuceClient implements Transport {
 
   private handleLoadedEvent(evt: JuceEvent) {
     const eventGeneration = (evt as any).generationId;
+    const durationSec = typeof (evt as any).durationSec === 'number'
+      ? Number((evt as any).durationSec.toFixed(3))
+      : (evt as any).durationSec;
+    const sampleRate = (evt as any).sampleRate;
+    const channels = (evt as any).channels;
+    console.log('[JUCE] loaded', {
+      id: evt.id,
+      generationId: eventGeneration,
+      durationSec,
+      sampleRate,
+      channels,
+    });
     if (this.currentLoadCommand && this.currentLoadCommand.id === evt.id) {
       if (
         this.currentLoadCommand.generationId !== undefined &&
