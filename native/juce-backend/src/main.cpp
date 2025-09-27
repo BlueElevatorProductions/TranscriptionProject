@@ -71,9 +71,74 @@ static void juceDLog(const std::string& line) {
   } catch (...) {}
 }
 
+static std::string jsonEscape(const std::string& value) {
+  std::ostringstream escaped;
+  for (char ch : value) {
+    switch (ch) {
+      case '"': escaped << "\\\""; break;
+      case '\\': escaped << "\\\\"; break;
+      case '\b': escaped << "\\b"; break;
+      case '\f': escaped << "\\f"; break;
+      case '\n': escaped << "\\n"; break;
+      case '\r': escaped << "\\r"; break;
+      case '\t': escaped << "\\t"; break;
+      default:
+        if (static_cast<unsigned char>(ch) <= 0x1F) {
+          escaped << "\\u" << std::hex << std::uppercase << std::setw(4) << std::setfill('0')
+                  << static_cast<int>(static_cast<unsigned char>(ch));
+          escaped << std::dec << std::nouppercase << std::setfill(' ');
+        } else {
+          escaped << ch;
+        }
+        break;
+    }
+  }
+  return escaped.str();
+}
+
 static void emit(const std::string& json) {
   std::cout << json << "\n";
   std::cout.flush();
+}
+
+static void emitEdlAppliedEvent(
+  int revision,
+  size_t wordSegments,
+  size_t spacerSegments,
+  size_t totalSegments,
+  const std::string& mode,
+  const std::string& status = "ok",
+  const std::string& message = ""
+) {
+  std::ostringstream evt;
+  evt << "{\"type\":\"edlApplied\",\"id\":\"" << g.id << "\",\"revision\":" << revision
+      << ",\"wordCount\":" << wordSegments
+      << ",\"spacerCount\":" << spacerSegments
+      << ",\"totalSegments\":" << totalSegments;
+  if (!mode.empty()) {
+    evt << ",\"mode\":\"" << mode << "\"";
+  }
+  if (!status.empty()) {
+    evt << ",\"status\":\"" << status << "\"";
+  }
+  if (!message.empty()) {
+    evt << ",\"message\":\"" << jsonEscape(message) << "\"";
+  }
+  evt << "}";
+  if (status != "ok") {
+    juceDLog(std::string("[JUCE] Emitting edlApplied event with status=") + status +
+             ", revision=" + std::to_string(revision) +
+             ", message=" + message);
+    try {
+      std::ofstream debugFile(juceDebugPath(), std::ios::app);
+      debugFile << "[JUCE] Emitting edlApplied event (status=" << status << ")" << std::endl;
+      debugFile << "        id=" << g.id << std::endl;
+      debugFile << "        revision=" << revision << std::endl;
+      debugFile << "        message=" << message << std::endl;
+      debugFile.flush();
+    } catch (...) {}
+  }
+  emit(evt.str());
 }
 
 static void emitLoaded(double sampleRate = 48000.0, int channels = 2) {
@@ -1027,7 +1092,7 @@ public:
 
     debugFile << "[JUCE] updateEdl segment breakdown complete for revision " << revision
               << ", mode=" << mode << std::endl;
-    debugFile << "[JUCE] Emitting edlApplied event" << std::endl;
+    debugFile << "[JUCE] Emitting edlApplied event (status=ok)" << std::endl;
     debugFile << "        id=" << g.id
               << ", revision=" << revision
               << ", words=" << wordSegments
@@ -1036,15 +1101,7 @@ public:
               << ", mode=" << mode << std::endl;
     debugFile.flush();
 
-    {
-      std::ostringstream evt;
-      evt << "{\"type\":\"edlApplied\",\"id\":\"" << g.id << "\",\"revision\":" << revision
-          << ",\"wordCount\":" << wordSegments
-          << ",\"spacerCount\":" << spacerSegments
-          << ",\"totalSegments\":" << totalSegments
-          << ",\"mode\":\"" << mode << "\"}";
-      emit(evt.str());
-    }
+    emitEdlAppliedEvent(revision, wordSegments, spacerSegments, totalSegments, mode, "ok");
   }
 
   void hiResTimerCallback() override {
@@ -1375,15 +1432,60 @@ int main() {
     }
     if (contains("\"type\":\"updateEdlFromFile\"")) {
       std::string pathValue = extract("path");
+      std::string revisionString = extract("revision");
+      std::string generationString = extract("generationId");
+      int requestedRevision = 0;
+      try {
+        if (!revisionString.empty()) {
+          requestedRevision = std::stoi(revisionString);
+        }
+      } catch (...) {}
+
+      juceDLog(std::string("[JUCE] updateEdlFromFile command received: path=") + pathValue +
+                ", requestedRevision=" + std::to_string(requestedRevision) +
+                ", generation=" + generationString);
+      {
+        std::ofstream debugFile(juceDebugPath(), std::ios::app);
+        debugFile << "[JUCE] updateEdlFromFile received" << std::endl;
+        debugFile << "        path=" << pathValue << std::endl;
+        debugFile << "        requestedRevision=" << requestedRevision << std::endl;
+        if (!generationString.empty()) {
+          debugFile << "        generation=" << generationString << std::endl;
+        }
+        debugFile.flush();
+      }
+
+      auto cleanupTempFile = [&]() {
+        if (!pathValue.empty()) {
+          std::remove(pathValue.c_str());
+        }
+      };
+
       if (pathValue.empty()) {
-        emit("{\"type\":\"error\",\"message\":\"Missing EDL file path\"}");
+        const std::string message = "Missing EDL file path";
+        juceDLog("[JUCE] updateEdlFromFile error: " + message);
+        emitEdlAppliedEvent(requestedRevision, 0, 0, 0, "", "error", message);
         continue;
       }
 
-      std::ifstream edlFile(pathValue);
+      std::ifstream edlFile(pathValue, std::ios::binary | std::ios::ate);
       if (!edlFile.good()) {
-        emit("{\"type\":\"error\",\"message\":\"Unable to read EDL file\"}");
+        const std::string message = "Unable to read EDL file";
+        juceDLog("[JUCE] updateEdlFromFile error: " + message + ": " + pathValue);
+        emitEdlAppliedEvent(requestedRevision, 0, 0, 0, "", "error", message);
+        cleanupTempFile();
         continue;
+      }
+
+      const std::streampos fileSizePos = edlFile.tellg();
+      const long long fileSize = fileSizePos >= 0 ? static_cast<long long>(fileSizePos) : -1;
+      edlFile.seekg(0, std::ios::beg);
+
+      {
+        std::ofstream debugFile(juceDebugPath(), std::ios::app);
+        debugFile << "[JUCE] updateEdlFromFile reading payload" << std::endl;
+        debugFile << "        bytes=" << fileSize << std::endl;
+        debugFile.flush();
       }
 
       std::stringstream buffer;
@@ -1391,14 +1493,56 @@ int main() {
       edlFile.close();
 
       std::vector<Clip> clips;
-      int revision = 0;
-      if (!parseClipsFromJsonPayload(buffer.str(), clips, &revision)) {
-        emit("{\"type\":\"error\",\"message\":\"Invalid EDL file contents\"}");
+      int parsedRevision = 0;
+      if (!parseClipsFromJsonPayload(buffer.str(), clips, &parsedRevision)) {
+        const std::string message = "Invalid EDL file contents";
+        juceDLog("[JUCE] updateEdlFromFile parse failure: " + message);
+        emitEdlAppliedEvent(requestedRevision, 0, 0, 0, "", "error", message);
+        cleanupTempFile();
         continue;
       }
 
-      backend.updateEdl(std::move(clips), revision);
-      std::remove(pathValue.c_str());
+      if (parsedRevision > 0 && parsedRevision != requestedRevision) {
+        juceDLog("[JUCE] updateEdlFromFile revision mismatch: command=" + std::to_string(requestedRevision) +
+                 ", parsed=" + std::to_string(parsedRevision));
+      }
+
+      const int revision = parsedRevision > 0 ? parsedRevision : requestedRevision;
+
+      juceDLog("[JUCE] updateEdlFromFile parsed " + std::to_string(clips.size()) +
+               " clips for revision " + std::to_string(revision));
+      {
+        std::ofstream debugFile(juceDebugPath(), std::ios::app);
+        debugFile << "[JUCE] updateEdlFromFile parsed payload" << std::endl;
+        debugFile << "        revision=" << revision << std::endl;
+        debugFile << "        clipCount=" << clips.size() << std::endl;
+        debugFile.flush();
+      }
+
+      try {
+        backend.updateEdl(std::move(clips), revision);
+        juceDLog("[JUCE] updateEdlFromFile completed successfully for revision " + std::to_string(revision));
+      } catch (const std::exception& ex) {
+        const std::string message = std::string("Exception applying EDL: ") + ex.what();
+        juceDLog("[JUCE] updateEdlFromFile exception: " + message);
+        {
+          std::ofstream debugFile(juceDebugPath(), std::ios::app);
+          debugFile << "[JUCE] updateEdlFromFile exception" << std::endl;
+          debugFile << "        message=" << message << std::endl;
+          debugFile.flush();
+        }
+        emitEdlAppliedEvent(revision, 0, 0, 0, "", "error", message);
+        cleanupTempFile();
+        continue;
+      } catch (...) {
+        const std::string message = "Unknown exception applying EDL";
+        juceDLog("[JUCE] updateEdlFromFile exception: " + message);
+        emitEdlAppliedEvent(revision, 0, 0, 0, "", "error", message);
+        cleanupTempFile();
+        continue;
+      }
+
+      cleanupTempFile();
       continue;
     }
 
@@ -1406,10 +1550,14 @@ int main() {
       std::vector<Clip> clips;
       int revision = 0;
       if (!parseClipsFromJsonPayload(line, clips, &revision)) {
-        emit("{\"type\":\"error\",\"message\":\"Invalid EDL payload\"}");
+        const std::string message = "Invalid EDL payload";
+        juceDLog("[JUCE] updateEdl inline parse failure: " + message);
+        emitEdlAppliedEvent(revision, 0, 0, 0, "", "error", message);
         continue;
       }
 
+      juceDLog("[JUCE] updateEdl inline parsed " + std::to_string(clips.size()) +
+               " clips for revision " + std::to_string(revision));
       backend.updateEdl(std::move(clips), revision);
       continue;
     }

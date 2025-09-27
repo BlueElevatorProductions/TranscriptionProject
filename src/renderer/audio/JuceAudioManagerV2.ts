@@ -1087,9 +1087,32 @@ export class JuceAudioManagerV2 {
       }
 
       case 'edlApplied': {
+        const status = typeof (event as any).status === 'string' ? (event as any).status : 'ok';
+        const message = typeof (event as any).message === 'string' ? (event as any).message : undefined;
         const revision = typeof event.revision === 'number' && Number.isFinite(event.revision)
           ? Math.floor(event.revision)
           : this.sentRevisionCounter;
+        if (status !== 'ok') {
+          console.error('[AudioManager] JUCE reported EDL apply failure', {
+            revision,
+            expected: this.expectedRevision,
+            generation: this.currentGenerationId,
+            status,
+            message,
+          });
+          this.clearReadyFallbackTimer();
+          this.clearPendingEdlAck('juce-edlApplied-error');
+          this.awaitingEdlRevision = null;
+          this.awaitingEdlGeneration = null;
+          const errorMessage = message || 'JUCE failed to apply the latest EDL';
+          this.updateState({
+            isReady: false,
+            readyStatus: 'error',
+            error: errorMessage,
+          });
+          this.callbacks.onError(errorMessage);
+          break;
+        }
         console.info('[AudioManager] EDL applied by JUCE', {
           revision,
           expected: this.expectedRevision,
@@ -1759,6 +1782,14 @@ export class JuceAudioManagerV2 {
       isReady: true,
       readyStatus: mode,
     });
+    if (mode === 'fallback') {
+      const gateSnapshot = this.computePlayGateSnapshot();
+      console.info('[AudioManager] Transport fallback enabled despite missing edlApplied acknowledgement', {
+        revision,
+        generation,
+        gateSnapshot,
+      });
+    }
   }
 
   private clearReadyFallbackTimer(): void {
