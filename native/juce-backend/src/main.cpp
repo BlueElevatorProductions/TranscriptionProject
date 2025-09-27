@@ -1538,7 +1538,7 @@ int main() {
         }
       };
 
-      auto emitFailure = [&](const std::string& message, const std::string& diagnostic = std::string(), int revisionHint = requestedRevision) {
+      auto emitFailure = [&](const std::string& message, int revisionHint, const std::string& diagnostic = std::string()) {
         const std::string combined = diagnostic.empty() ? message : (message + " | " + diagnostic);
         juceDLog("[JUCE] updateEdlFromFile failure: " + combined);
         try {
@@ -1555,13 +1555,13 @@ int main() {
       };
 
       if (pathValue.empty()) {
-        emitFailure("Missing EDL file path");
+        emitFailure("Missing EDL file path", requestedRevision);
         continue;
       }
 
       std::ifstream edlFile(pathValue, std::ios::binary | std::ios::ate);
       if (!edlFile.good()) {
-        emitFailure("Unable to read EDL file", std::string("path=") + pathValue);
+        emitFailure("Unable to read EDL file", requestedRevision, std::string("path=") + pathValue);
         continue;
       }
 
@@ -1587,15 +1587,15 @@ int main() {
       try {
         parsedOk = parseClipsFromJsonPayload(payload, clips, &parsedRevision);
       } catch (const std::exception& ex) {
-        emitFailure("Exception parsing EDL payload", ex.what());
+        emitFailure("Exception parsing EDL payload", requestedRevision, ex.what());
         continue;
       } catch (...) {
-        emitFailure("Unknown exception parsing EDL payload");
+        emitFailure("Unknown exception parsing EDL payload", requestedRevision);
         continue;
       }
 
       if (!parsedOk) {
-        emitFailure("Invalid EDL file contents", std::string("bytes=") + std::to_string(payload.size()));
+        emitFailure("Invalid EDL file contents", requestedRevision, std::string("bytes=") + std::to_string(payload.size()));
         continue;
       }
 
@@ -1620,10 +1620,10 @@ int main() {
         backend.updateEdl(std::move(clips), revision);
         juceDLog("[JUCE] updateEdlFromFile completed successfully for revision " + std::to_string(revision));
       } catch (const std::exception& ex) {
-        emitFailure("Exception applying EDL", ex.what(), revision);
+        emitFailure("Exception applying EDL", revision, ex.what());
         continue;
       } catch (...) {
-        emitFailure("Unknown exception applying EDL", "", revision);
+        emitFailure("Unknown exception applying EDL", revision);
         continue;
       }
 
