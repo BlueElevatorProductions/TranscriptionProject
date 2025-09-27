@@ -911,7 +911,7 @@ export class JuceClient implements Transport {
     return { command: fileCommand, cleanup };
   }
 
-  private handleLoadedEvent(evt: JuceEvent) {
+  private handleLoadedEvent(evt: Extract<JuceEvent, { type: 'loaded' }>) {
     const eventGeneration = (evt as any).generationId;
     const durationSec = typeof (evt as any).durationSec === 'number'
       ? Number((evt as any).durationSec.toFixed(3))
@@ -948,7 +948,7 @@ export class JuceClient implements Transport {
     }
   }
 
-  private handleErrorEvent(evt: JuceEvent) {
+  private handleErrorEvent(evt: Extract<JuceEvent, { type: 'error' }>) {
     if (!this.currentLoadCommand || evt.type !== 'error') {
       return;
     }
