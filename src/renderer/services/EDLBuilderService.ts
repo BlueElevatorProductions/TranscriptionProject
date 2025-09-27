@@ -225,6 +225,7 @@ export class EDLBuilderService {
    */
   private static sanitizeClipSegments(clip: Clip): { segments: EdlSegment[]; duration: number } {
     const TOLERANCE = 0.0005;
+    const MIN_SPACER_DURATION = 0.05;
     const rawDuration = Number.isFinite(clip.duration)
       ? Math.max(0, clip.duration)
       : Math.max(0, clip.endTime - clip.startTime);
@@ -257,21 +258,49 @@ export class EDLBuilderService {
         endSec = startSec;
       }
 
-      if (startSec > cursor + TOLERANCE) {
-        edlSegments.push({
-          type: 'spacer',
-          startSec: cursor,
-          endSec: startSec,
-          originalStartSec: clip.startTime + cursor,
-          originalEndSec: clip.startTime + startSec
-        });
-        cursor = startSec;
+      const rawGap = Math.max(0, (Number.isFinite(rawStart) ? rawStart : cursor) - cursor);
+      const sanitizedGap = startSec - cursor;
+
+      if (sanitizedGap > TOLERANCE) {
+        const spacerEnd = Math.min(cursor + Math.max(sanitizedGap, MIN_SPACER_DURATION), rawDuration);
+        if (spacerEnd > cursor + TOLERANCE) {
+          edlSegments.push({
+            type: 'spacer',
+            startSec: cursor,
+            endSec: spacerEnd,
+            originalStartSec: clip.startTime + cursor,
+            originalEndSec: clip.startTime + spacerEnd
+          });
+          cursor = spacerEnd;
+        }
+        if (startSec < cursor) {
+          startSec = cursor;
+        }
+      } else if (rawGap > 0) {
+        const spacerEnd = Math.min(cursor + Math.max(rawGap, MIN_SPACER_DURATION), rawDuration);
+        if (spacerEnd > cursor + TOLERANCE) {
+          edlSegments.push({
+            type: 'spacer',
+            startSec: cursor,
+            endSec: spacerEnd,
+            originalStartSec: clip.startTime + cursor,
+            originalEndSec: clip.startTime + spacerEnd
+          });
+          cursor = spacerEnd;
+        }
+        if (startSec < cursor) {
+          startSec = cursor;
+        }
       } else if (startSec < cursor) {
         startSec = cursor;
       }
 
       if (endSec <= cursor + TOLERANCE) {
         continue;
+      }
+
+      if (endSec < cursor) {
+        endSec = cursor;
       }
 
       const fallbackOriginalStart = clip.startTime + startSec;
@@ -322,14 +351,16 @@ export class EDLBuilderService {
     }
 
     if (cursor + TOLERANCE < normalizedDuration) {
+      const desiredEnd = Math.max(normalizedDuration, cursor + MIN_SPACER_DURATION);
       edlSegments.push({
         type: 'spacer',
         startSec: cursor,
-        endSec: normalizedDuration,
+        endSec: desiredEnd,
         originalStartSec: clip.startTime + cursor,
-        originalEndSec: clip.startTime + normalizedDuration
+        originalEndSec: clip.startTime + desiredEnd
       });
-      cursor = normalizedDuration;
+      cursor = desiredEnd;
+      normalizedDuration = desiredEnd;
     } else if (normalizedDuration < cursor) {
       normalizedDuration = cursor;
     }

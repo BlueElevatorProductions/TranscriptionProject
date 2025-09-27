@@ -10,6 +10,7 @@ import {
   JuceEvent,
   isJuceEvent,
   EdlClip,
+  BackendStatusEvent,
 } from '../../shared/types/transport';
 import { app } from 'electron';
 
@@ -29,6 +30,8 @@ export class JuceClient implements Transport {
   private child: ChildProcessWithoutNullStreams | null = null;
   private readonly options: Required<JuceClientOptions>;
   private stdoutBuffer = '';
+  private stderrRingBuffer: string[] = [];
+  private readonly stderrRingSize = 200;
   private restarting = false;
   private killed = false;
   private restartAttempts = 0;
@@ -480,6 +483,7 @@ export class JuceClient implements Transport {
     if (this.child) return;
     this.killed = false;
     this.stdoutBuffer = '';
+    this.stderrRingBuffer = [];
     const { binaryPath, args, env, name } = this.options;
     try {
       console.log(`[JUCE] Spawning backend '${name}' at: ${binaryPath}`);
@@ -490,6 +494,9 @@ export class JuceClient implements Transport {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       console.log(`[JUCE] Spawned PID: ${this.child.pid}`);
+      console.log('[JUCE][proc] start', { pid: this.child.pid, path: binaryPath });
+      this.restartAttempts = 0;
+      this.emitBackendStatus('alive', { pid: this.child.pid ?? null });
     } catch (e) {
       this.emitError(`Failed to spawn JUCE backend (${name}) at ${binaryPath}: ${e}`);
       throw e;
@@ -499,9 +506,16 @@ export class JuceClient implements Transport {
     this.child.stdout.on('data', (chunk: string) => this.onStdout(chunk));
     this.child.stderr.setEncoding('utf8');
     this.child.stderr.on('data', (chunk: string) => {
-      // Forward stderr lines as error logs but do not crash parsing
       const text = chunk.toString();
-      if (text.trim().length > 0) this.emitError(`[JUCE stderr] ${text.trim()}`);
+      const lines = text.split(/\r?\n/);
+      for (const rawLine of lines) {
+        const trimmed = rawLine.trim();
+        if (!trimmed) continue;
+        this.recordStderrLine(trimmed);
+        const bucket = /assert/i.test(trimmed) ? '[JUCE][assert]' : '[JUCE][error]';
+        console.error(`${bucket} ${trimmed}`);
+        this.emitError(`[JUCE stderr] ${trimmed}`);
+      }
     });
     this.child.on('error', (err) => {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -514,9 +528,18 @@ export class JuceClient implements Transport {
       }
     });
     this.child.on('exit', (code, signal) => {
+      const previousPid = this.child?.pid ?? null;
       this.child = null;
       if (this.killed) return; // explicit dispose
       const msg = `JUCE process exited code=${code} signal=${signal}`;
+      console.log('[JUCE][proc] exit', { code, signal, pid: previousPid });
+      const stderrTail = this.stderrRingBuffer.slice(-20);
+      this.emitBackendStatus('dead', {
+        code: code ?? null,
+        signal: (signal as NodeJS.Signals | null) ?? null,
+        stderrTail: stderrTail.length ? stderrTail : undefined,
+        pid: previousPid,
+      });
       this.emitError(msg);
       if (this.options.autoRestart && this.restartAttempts < this.maxRestartAttempts) {
         this.scheduleRestart();
@@ -608,6 +631,14 @@ export class JuceClient implements Transport {
             this.handlers.onPosition?.(evt);
             break;
           case 'edlApplied':
+            console.log('[JUCE] EDL summary', {
+              id: evt.id,
+              revision: (evt as any).revision,
+              wordCount: (evt as any).wordCount,
+              spacerCount: (evt as any).spacerCount,
+              totalSegments: (evt as any).totalSegments,
+              mode: (evt as any).mode,
+            });
             this.handlers.onEdlApplied?.(evt as any);
             break;
           case 'ended':
@@ -647,6 +678,33 @@ export class JuceClient implements Transport {
       this.commandQueue.push({ command: cmd, resolve, reject });
       this.processCommandQueue();
     });
+  }
+
+  private recordStderrLine(line: string) {
+    if (!line) {
+      return;
+    }
+    this.stderrRingBuffer.push(line);
+    if (this.stderrRingBuffer.length > this.stderrRingSize) {
+      this.stderrRingBuffer.splice(0, this.stderrRingBuffer.length - this.stderrRingSize);
+    }
+  }
+
+  private emitBackendStatus(
+    status: BackendStatusEvent['status'],
+    info: Partial<Omit<BackendStatusEvent, 'type' | 'status'>> = {}
+  ) {
+    const event: BackendStatusEvent = {
+      type: 'backendStatus',
+      status,
+      pid: info.pid ?? (this.child?.pid ?? null),
+      code: info.code ?? null,
+      signal: info.signal ?? null,
+      stderrTail: info.stderrTail ?? undefined,
+      timestamp: info.timestamp ?? Date.now(),
+    };
+    this.emitter.emit('event', event);
+    this.handlers.onBackendStatus?.(event);
   }
 
   private processCommandQueue() {

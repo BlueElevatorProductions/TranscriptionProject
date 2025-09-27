@@ -48,6 +48,16 @@ type JuceEventBase = {
   generationId?: number;
 };
 
+export type BackendStatusEvent = {
+  type: 'backendStatus';
+  status: 'alive' | 'dead';
+  pid?: number | null;
+  code?: number | null;
+  signal?: NodeJS.Signals | null;
+  stderrTail?: string[];
+  timestamp?: number;
+};
+
 export type JuceEvent =
   | ({ type: 'loaded'; durationSec: number; sampleRate: number; channels: number } & JuceEventBase)
   | ({ type: 'state'; playing: boolean } & JuceEventBase)
@@ -61,7 +71,8 @@ export type JuceEvent =
         mode?: 'contiguous' | 'standard' | string;
       } & JuceEventBase)
   | ({ type: 'ended' } & JuceEventBase)
-  | { type: 'error'; id?: TransportId; code?: string | number; message: string; generationId?: number };
+  | { type: 'error'; id?: TransportId; code?: string | number; message: string; generationId?: number }
+  | BackendStatusEvent;
 
 // Renderer-facing transport interface (to be bridged via preload)
 export interface TransportEvents {
@@ -71,6 +82,7 @@ export interface TransportEvents {
   onEnded?: (e: Extract<JuceEvent, { type: 'ended' }>) => void;
   onError?: (e: Extract<JuceEvent, { type: 'error' }>) => void;
   onEdlApplied?: (e: Extract<JuceEvent, { type: 'edlApplied' }>) => void;
+  onBackendStatus?: (e: Extract<JuceEvent, { type: 'backendStatus' }>) => void;
 }
 
 export interface Transport {
@@ -126,6 +138,8 @@ export function isJuceEvent(obj: any): obj is JuceEvent {
       return typeof obj.id === 'string';
     case 'error':
       return typeof obj.message === 'string';
+    case 'backendStatus':
+      return obj.status === 'alive' || obj.status === 'dead';
     default:
       return false;
   }

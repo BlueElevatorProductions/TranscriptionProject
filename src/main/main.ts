@@ -142,6 +142,7 @@ class App {
   private peaksPort: number | null = null;
   private juceClient: JuceClient | null = null;
   private currentClips: any[] = [];
+  private backendAlive: boolean = false;
 
   constructor() {
     // Initialize encryption key (derived from machine-specific info)
@@ -504,6 +505,17 @@ class App {
       this.juceClient.setEventHandlers({
         onLoaded: forward,
         onState: forward,
+        onBackendStatus: (event) => {
+          this.backendAlive = event.status === 'alive';
+          console.log('[Main][Backend] status', {
+            status: event.status,
+            pid: event.pid ?? null,
+            code: event.code ?? null,
+            signal: event.signal ?? null,
+            stderrTail: event.stderrTail?.length ?? 0,
+          });
+          emitToWindows(event as JuceEvent);
+        },
         onEdlApplied: (e) => {
           const id = (e as any).id as string;
           if (typeof e.revision === 'number') {
@@ -687,6 +699,15 @@ class App {
         try {
           const currentGen = generationById.get(id);
           console.log('[Main] play received', { id, requestedGen: generationId, currentGen });
+
+          if (!this.backendAlive) {
+            console.warn('[Main] play rejected — backend unavailable', {
+              id,
+              requestedGen: generationId,
+              currentGen,
+            });
+            return { success: false, error: 'backend unavailable' };
+          }
 
           if (typeof generationId === 'number') {
             if (currentGen !== undefined && currentGen !== generationId) {

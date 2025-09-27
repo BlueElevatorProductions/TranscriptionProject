@@ -66,13 +66,20 @@ type ReadinessBlockers = {
   initializing: boolean;
   fallbackWaiting: boolean;
   errorCooldownActive: boolean;
+  backendDown: boolean;
+  recoveringBackend: boolean;
   audioPath: string | null;
   hasTransport: boolean;
+  hasBackend: boolean;
+  hasLoadedFile: boolean;
+  hasAppliedEdl: boolean;
   inflightLoadGeneration: number | null;
   loadedGenerationId: number | null;
   readyGenerationId: number | null;
   awaitingEdlRevision: number | null;
   expectedRevision: number;
+  lastAppliedRevision: number;
+  lastUpdateRevision: number;
   readyStatus: AudioStateV2['readyStatus'];
   isReady: boolean;
 };
@@ -98,6 +105,7 @@ export class JuceAudioManagerV2 {
 
   // Pending clips cache for race condition fix
   private pendingClips: Clip[] | null = null;
+  private lastAppliedClips: Clip[] | null = null;
 
   // JUCE transport interface
   private transport = (window as any).juceTransport;
@@ -125,6 +133,16 @@ export class JuceAudioManagerV2 {
   private awaitingEdlGeneration: number | null = null;
   private readyFallbackTimer: number | null = null;
   private readyFallbackToken: { generation: number; revision: number | null } | null = null;
+
+  // Backend lifecycle tracking
+  private backendAlive: boolean = false;
+  private backendRecoveryPending: boolean = false;
+  private backendRecoveryInFlight: Promise<void> | null = null;
+  private lastBackendExit: { code: number | null; signal: string | null; pid: number | null; stderrTail?: string[]; timestamp: number } | null = null;
+
+  // Revision tracking for sequencing guarantees
+  private lastUpdateRevision: number = 0;
+  private lastAppliedRevision: number = 0;
 
   constructor(options: JuceAudioManagerV2Options | AudioCallbacksV2) {
     // Handle both old callback-only and new options-based constructors
@@ -343,6 +361,12 @@ export class JuceAudioManagerV2 {
       awaitingEdlGeneration: this.awaitingEdlGeneration,
       expectedRevision: this.expectedRevision,
       sentRevisionCounter: this.sentRevisionCounter,
+      backendAlive: this.backendAlive,
+      backendRecoveryPending: this.backendRecoveryPending,
+      backendRecoveryInFlight: !!this.backendRecoveryInFlight,
+      lastBackendExit: this.lastBackendExit,
+      lastAppliedRevision: this.lastAppliedRevision,
+      lastUpdateRevision: this.lastUpdateRevision,
       blockers,
       activeBlockers,
     };
@@ -364,6 +388,13 @@ export class JuceAudioManagerV2 {
     const initializing = this.isInitializing;
     const fallbackWaiting = this.readyFallbackTimer !== null;
     const errorCooldownActive = this.lastErrorTime > 0 && Date.now() - this.lastErrorTime < this.errorCooldown;
+    const backendDown = !this.backendAlive;
+    const recoveringBackend = this.backendRecoveryPending || this.backendRecoveryInFlight !== null;
+    const hasLoadedFile = this.loadedGenerationId !== null && this.loadedGenerationId === this.currentGenerationId;
+    const hasAppliedEdl =
+      this.lastAppliedRevision >= this.lastUpdateRevision &&
+      this.lastUpdateRevision > 0 &&
+      this.readyGenerationId === this.currentGenerationId;
 
     return {
       missingTransport,
@@ -376,13 +407,20 @@ export class JuceAudioManagerV2 {
       initializing,
       fallbackWaiting,
       errorCooldownActive,
+      backendDown,
+      recoveringBackend,
       audioPath: this.audioPath,
       hasTransport: !!this.transport,
+      hasBackend: this.backendAlive,
+      hasLoadedFile,
+      hasAppliedEdl,
       inflightLoadGeneration: this.inflightLoadGeneration,
       loadedGenerationId: this.loadedGenerationId,
       readyGenerationId: this.readyGenerationId,
       awaitingEdlRevision: this.awaitingEdlRevision,
       expectedRevision: this.expectedRevision,
+      lastAppliedRevision: this.lastAppliedRevision,
+      lastUpdateRevision: this.lastUpdateRevision,
       // Provide state context for logging clarity
       readyStatus: state.readyStatus as any,
       isReady: state.isReady,
@@ -417,6 +455,7 @@ export class JuceAudioManagerV2 {
 
       // Increment revision for tracking
       const revision = ++this.sentRevisionCounter;
+      this.lastUpdateRevision = revision;
       console.info(`[AudioManager] Sending EDL to JUCE (revision ${revision}, gen ${generation})`);
 
       const result = await this.transport.updateEdl(this.sessionId, revision, legacyClips, generation);
@@ -443,6 +482,7 @@ export class JuceAudioManagerV2 {
 
       this.sentRevisionCounter = Math.max(this.sentRevisionCounter, acknowledgedRevision);
       this.expectedRevision = acknowledgedRevision;
+      this.lastUpdateRevision = acknowledgedRevision;
 
       console.log('[Flush] EDL', { gen: generation, revision: acknowledgedRevision });
 
@@ -464,6 +504,7 @@ export class JuceAudioManagerV2 {
       });
 
       console.log('🎬 EDL updated:', EDLBuilderService.getEDLSummary(this.currentEDL));
+      this.lastAppliedClips = this.cloneClips(clips);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -512,6 +553,37 @@ export class JuceAudioManagerV2 {
     }
   }
 
+  private cloneClips(clips: Clip[]): Clip[] {
+    return clips.map((clip) => ({
+      ...clip,
+      segments: Array.isArray(clip.segments)
+        ? clip.segments.map((segment) => ({ ...segment }))
+        : [],
+    }));
+  }
+
+  private computePlayGateSnapshot() {
+    const recovering = this.backendRecoveryPending || this.backendRecoveryInFlight !== null;
+    const hasLoadedFile = this.loadedGenerationId !== null && this.loadedGenerationId === this.currentGenerationId;
+    const hasAppliedEdl =
+      this.lastAppliedRevision >= this.lastUpdateRevision &&
+      this.lastUpdateRevision > 0 &&
+      this.readyGenerationId === this.currentGenerationId;
+
+    return {
+      hasBackend: this.backendAlive,
+      hasLoadedFile,
+      hasAppliedEdl,
+      isReady: this.state.isReady,
+      isPlaying: this.state.isPlaying,
+      isRecovering: recovering,
+      lastError: this.state.error,
+      lastAppliedRevision: this.lastAppliedRevision,
+      lastUpdateRevision: this.lastUpdateRevision,
+      awaitingEdlRevision: this.awaitingEdlRevision,
+    };
+  }
+
   /**
    * Play audio
    */
@@ -520,7 +592,14 @@ export class JuceAudioManagerV2 {
     const readinessDetails = this.getReadinessDebugInfo();
     const blockers = (readinessDetails.blockers as ReadinessBlockers) ?? {};
     const activeBlockers = (readinessDetails.activeBlockers as Record<string, boolean>) ?? {};
-    const canDispatch = !!this.transport && this.state.isReady;
+    const gateSnapshot = this.computePlayGateSnapshot();
+    const canDispatch =
+      !!this.transport &&
+      this.state.isReady &&
+      gateSnapshot.hasBackend &&
+      gateSnapshot.hasLoadedFile &&
+      gateSnapshot.hasAppliedEdl &&
+      !gateSnapshot.isRecovering;
 
     console.log('[CMD] play', {
       gen: generation,
@@ -529,6 +608,7 @@ export class JuceAudioManagerV2 {
       isReady: this.state.isReady,
       blockers,
       activeBlockers,
+      gateSnapshot,
       diagnostics: readinessDetails,
     });
 
@@ -539,6 +619,7 @@ export class JuceAudioManagerV2 {
       dispatched: canDispatch,
       blockers,
       activeBlockers,
+      gateSnapshot,
       readyStatus: this.state.readyStatus,
       diagnostics: readinessDetails,
     });
@@ -554,6 +635,7 @@ export class JuceAudioManagerV2 {
         readyStatus: this.state.readyStatus,
         blockers,
         activeBlockers,
+        gateSnapshot,
         diagnostics: readinessDetails,
       });
       this.logReadinessSnapshot('play-blocked', this.state, {
@@ -561,11 +643,17 @@ export class JuceAudioManagerV2 {
         generation,
         blockers,
         activeBlockers,
+        gateSnapshot,
       });
     }
 
     if (!this.transport) {
-      console.warn('[CMD] play skipped — transport unavailable', { gen: generation, blockers, activeBlockers });
+      console.warn('[CMD] play skipped — transport unavailable', {
+        gen: generation,
+        blockers,
+        activeBlockers,
+        gateSnapshot,
+      });
       return;
     }
 
@@ -575,12 +663,82 @@ export class JuceAudioManagerV2 {
         readyStatus: this.state.readyStatus,
         blockers,
         activeBlockers,
+        gateSnapshot,
       });
       this.logReadinessSnapshot('play-blocked', this.state, {
         reason: 'transport-not-ready',
         generation,
         blockers,
         activeBlockers,
+        gateSnapshot,
+      });
+      return;
+    }
+
+    if (!gateSnapshot.hasBackend) {
+      console.warn('[CMD] play blocked — backend unavailable', {
+        gen: generation,
+        gateSnapshot,
+        blockers,
+        activeBlockers,
+      });
+      this.logReadinessSnapshot('play-blocked', this.state, {
+        reason: 'backend-down',
+        generation,
+        blockers,
+        activeBlockers,
+        gateSnapshot,
+      });
+      return;
+    }
+
+    if (!gateSnapshot.hasLoadedFile) {
+      console.warn('[CMD] play blocked — load not acknowledged', {
+        gen: generation,
+        gateSnapshot,
+        blockers,
+        activeBlockers,
+      });
+      this.logReadinessSnapshot('play-blocked', this.state, {
+        reason: 'load-missing',
+        generation,
+        blockers,
+        activeBlockers,
+        gateSnapshot,
+      });
+      return;
+    }
+
+    if (!gateSnapshot.hasAppliedEdl) {
+      console.warn('[CMD] play blocked — awaiting EDL acknowledgement', {
+        gen: generation,
+        gateSnapshot,
+        blockers,
+        activeBlockers,
+      });
+      this.logReadinessSnapshot('play-blocked', this.state, {
+        reason: 'edl-not-applied',
+        generation,
+        blockers,
+        activeBlockers,
+        gateSnapshot,
+      });
+      return;
+    }
+
+    if (gateSnapshot.isRecovering) {
+      console.warn('[CMD] play blocked — backend recovering', {
+        gen: generation,
+        gateSnapshot,
+        blockers,
+        activeBlockers,
+      });
+      this.logReadinessSnapshot('play-blocked', this.state, {
+        reason: 'backend-recovering',
+        generation,
+        blockers,
+        activeBlockers,
+        gateSnapshot,
       });
       return;
     }
@@ -872,6 +1030,11 @@ export class JuceAudioManagerV2 {
         break;
       }
 
+      case 'backendStatus': {
+        this.handleBackendStatusEvent(event as Extract<JuceEvent, { type: 'backendStatus' }>);
+        break;
+      }
+
       case 'state': {
         this.updateState({
           isPlaying: !!event.playing,
@@ -900,6 +1063,7 @@ export class JuceAudioManagerV2 {
           wordCount: (event as any).wordCount,
           spacerCount: (event as any).spacerCount,
         });
+        this.lastAppliedRevision = revision;
         this.sentRevisionCounter = Math.max(this.sentRevisionCounter, revision);
         if (this.readyGenerationId !== this.currentGenerationId) {
           this.expectedRevision = revision;
@@ -1105,6 +1269,123 @@ export class JuceAudioManagerV2 {
     this.callbacks.onStateChange(this.state);
   }
 
+  private handleBackendStatusEvent(event: Extract<JuceEvent, { type: 'backendStatus' }>): void {
+    const timestamp = event.timestamp ?? Date.now();
+    if (event.status === 'dead') {
+      console.warn('[AudioManager] Backend reported exit', {
+        code: event.code ?? null,
+        signal: event.signal ?? null,
+        pid: event.pid ?? null,
+        stderrTail: event.stderrTail?.length ?? 0,
+      });
+      this.backendAlive = false;
+      this.backendRecoveryPending = true;
+      this.backendRecoveryInFlight = null;
+      this.lastBackendExit = {
+        code: event.code ?? null,
+        signal: event.signal ?? null,
+        pid: event.pid ?? null,
+        stderrTail: event.stderrTail,
+        timestamp,
+      };
+      if (this.inflightLoadGeneration !== null) {
+        this.cancelInflightLoad('dispose', this.inflightLoadGeneration);
+      }
+      this.inflightLoadGeneration = null;
+      this.inflightLoadPromise = null;
+      this.inflightLoadPath = null;
+      this.loadedGenerationId = null;
+      this.readyGenerationId = null;
+      this.awaitingEdlRevision = null;
+      this.awaitingEdlGeneration = null;
+      this.readyFallbackToken = null;
+      this.clearReadyFallbackTimer();
+      this.isApplyingEDL = false;
+      this.updateState({ isPlaying: false, isReady: false, readyStatus: 'idle' });
+      this.logReadinessSnapshot('backend-down', this.state, {
+        exitInfo: this.lastBackendExit,
+        gateSnapshot: this.computePlayGateSnapshot(),
+      });
+      return;
+    }
+
+    console.log('[AudioManager] Backend reported alive', {
+      pid: event.pid ?? null,
+      pendingRecovery: this.backendRecoveryPending,
+    });
+    this.backendAlive = true;
+    this.logReadinessSnapshot('backend-alive', this.state, {
+      pid: event.pid ?? null,
+      pendingRecovery: this.backendRecoveryPending,
+    });
+    if (this.backendRecoveryPending) {
+      this.startBackendRecovery(event.pid ?? null);
+    }
+  }
+
+  private startBackendRecovery(pid: number | null): void {
+    if (!this.backendRecoveryPending) {
+      return;
+    }
+    if (this.backendRecoveryInFlight) {
+      console.log('[AudioManager] Backend recovery already running', {
+        pid,
+      });
+      return;
+    }
+    const recoveryPromise = this.performBackendRecovery(pid);
+    this.backendRecoveryInFlight = recoveryPromise;
+    recoveryPromise
+      .then(() => {
+        console.log('[AudioManager] Backend recovery complete');
+        this.backendRecoveryPending = false;
+        this.logReadinessSnapshot('backend-recovery:success', this.state, {
+          gateSnapshot: this.computePlayGateSnapshot(),
+        });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('[AudioManager] Backend recovery failed', message);
+        this.backendRecoveryPending = false;
+        this.logReadinessSnapshot('backend-recovery:failed', this.state, {
+          error: message,
+          gateSnapshot: this.computePlayGateSnapshot(),
+        });
+        this.handleError('Backend recovery failed', error);
+      })
+      .finally(() => {
+        this.backendRecoveryInFlight = null;
+      });
+  }
+
+  private async performBackendRecovery(pid: number | null): Promise<void> {
+    if (!this.audioPath) {
+      console.warn('[AudioManager] Backend recovery skipped — no audio path to restore');
+      return;
+    }
+
+    const clipsToRestore = this.lastAppliedClips ? this.cloneClips(this.lastAppliedClips) : null;
+    this.logReadinessSnapshot('backend-recovery:start', this.state, {
+      pid,
+      audioPath: this.audioPath,
+      clipsToRestore: clipsToRestore?.length ?? 0,
+      lastAppliedRevision: this.lastAppliedRevision,
+    });
+
+    this.lastErrorTime = 0;
+    this.lastFailedPath = null;
+
+    await this.initialize(this.audioPath);
+
+    if (clipsToRestore && clipsToRestore.length > 0) {
+      console.log('[AudioManager] Reapplying last known EDL after backend restart', {
+        revision: this.lastAppliedRevision,
+        clipCount: clipsToRestore.length,
+      });
+      await this.updateClips(clipsToRestore);
+    }
+  }
+
   private logReadinessSnapshot(
     context: string,
     stateOverride?: AudioStateV2,
@@ -1134,6 +1415,12 @@ export class JuceAudioManagerV2 {
       awaitingEdlGeneration: this.awaitingEdlGeneration,
       hasTransport: !!this.transport,
       audioPath: this.audioPath,
+      backendAlive: this.backendAlive,
+      backendRecoveryPending: this.backendRecoveryPending,
+      backendRecoveryInFlight: !!this.backendRecoveryInFlight,
+      lastBackendExit: this.lastBackendExit,
+      lastAppliedRevision: this.lastAppliedRevision,
+      lastUpdateRevision: this.lastUpdateRevision,
     };
 
     console.log('[AudioManager][Readiness] snapshot', {
@@ -1153,6 +1440,8 @@ export class JuceAudioManagerV2 {
     this.awaitingEdlGeneration = null;
     this.readyFallbackToken = null;
     this.clearReadyFallbackTimer();
+    this.lastUpdateRevision = 0;
+    this.lastAppliedRevision = 0;
   }
 
   private cancelInflightLoad(reason: 'supersede' | 'dispose', generation: number): void {
@@ -1204,6 +1493,7 @@ export class JuceAudioManagerV2 {
     if (typeof revision === 'number') {
       this.sentRevisionCounter = Math.max(this.sentRevisionCounter, revision);
       this.expectedRevision = Math.max(this.expectedRevision, revision);
+      this.lastAppliedRevision = Math.max(this.lastAppliedRevision, revision);
     }
     this.updateState({
       isLoading: false,
