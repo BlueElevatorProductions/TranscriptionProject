@@ -72,6 +72,12 @@ export type JuceEvent =
         status?: 'ok' | 'error' | string;
         message?: string;
       } & JuceEventBase)
+  | ({
+        type: 'edlApplyFailed';
+        revision?: number;
+        status?: 'error' | string;
+        message?: string;
+      } & JuceEventBase)
   | ({ type: 'ended' } & JuceEventBase)
   | { type: 'error'; id?: TransportId; code?: string | number; message: string; generationId?: number }
   | BackendStatusEvent;
@@ -84,6 +90,7 @@ export interface TransportEvents {
   onEnded?: (e: Extract<JuceEvent, { type: 'ended' }>) => void;
   onError?: (e: Extract<JuceEvent, { type: 'error' }>) => void;
   onEdlApplied?: (e: Extract<JuceEvent, { type: 'edlApplied' }>) => void;
+  onEdlApplyFailed?: (e: Extract<JuceEvent, { type: 'edlApplyFailed' }>) => void;
   onBackendStatus?: (e: Extract<JuceEvent, { type: 'backendStatus' }>) => void;
 }
 
@@ -135,6 +142,13 @@ export function isJuceEvent(obj: any): obj is JuceEvent {
         (obj.spacerCount === undefined || typeof obj.spacerCount === 'number') &&
         (obj.totalSegments === undefined || typeof obj.totalSegments === 'number') &&
         (obj.mode === undefined || typeof obj.mode === 'string') &&
+        (obj.status === undefined || typeof obj.status === 'string') &&
+        (obj.message === undefined || typeof obj.message === 'string')
+      );
+    case 'edlApplyFailed':
+      return (
+        typeof obj.id === 'string' &&
+        (obj.revision === undefined || typeof obj.revision === 'number') &&
         (obj.status === undefined || typeof obj.status === 'string') &&
         (obj.message === undefined || typeof obj.message === 'string')
       );

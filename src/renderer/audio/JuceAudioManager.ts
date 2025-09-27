@@ -615,7 +615,21 @@ export class JuceAudioManager {
         }
         break;
       }
-        
+
+      case 'edlApplyFailed': {
+        const revision = (evt as any).revision;
+        const message = (evt as any).message || 'JUCE failed to apply the latest EDL';
+        console.error('[JuceAudioManager] Received edlApplyFailed event from JUCE', {
+          revision,
+          message,
+        });
+        this.edlApplying = false;
+        this.dispatch({ type: 'UPDATE_PLAYBACK', payload: { edlApplying: false } as any });
+        if (this.edlApplyFallbackTid) { clearTimeout(this.edlApplyFallbackTid); this.edlApplyFallbackTid = null; }
+        this.callbacks.onError(message);
+        break;
+      }
+
       case 'position': {
         const rev = (evt as any).revision;
         if (typeof rev === 'number' && rev < this.lastAppliedRevision) break;
@@ -967,7 +981,30 @@ export class JuceAudioManager {
       console.log('[EDL] Spacer preview:', segmentStats.preview);
     }
 
-    const res = await this.transport!.updateEdl(this.sessionId, revision, edl);
+    const transport = this.transport;
+    if (!transport) {
+      console.error('[JuceAudioManager] Cannot push EDL: juceTransport is not available', {
+        sessionId: this.sessionId,
+        revision,
+        clipCount: edl.length,
+      });
+      throw new Error('juceTransport unavailable');
+    }
+
+    console.info('[JuceAudioManager] Invoking juceTransport.updateEdl', {
+      sessionId: this.sessionId,
+      revision,
+      clipCount: edl.length,
+    });
+
+    const res = await transport.updateEdl(this.sessionId, revision, edl);
+    console.info('[JuceAudioManager] juceTransport.updateEdl resolved', {
+      sessionId: this.sessionId,
+      requestedRevision: revision,
+      acknowledgedRevision: res?.revision,
+      success: res?.success,
+      counts: res?.counts,
+    });
     if (!res.success) throw new Error(res.error || 'updateEdl failed');
     if (res.revision !== undefined && res.revision !== revision) {
       console.warn('[EDL] ⚠️ Revision mismatch between renderer and main process', {

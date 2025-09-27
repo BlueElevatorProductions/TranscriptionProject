@@ -536,6 +536,8 @@ class App {
         },
         onEdlApplied: (e) => {
           const id = (e as any).id as string;
+          const status = typeof (e as any).status === 'string' ? (e as any).status : 'ok';
+          const message = typeof (e as any).message === 'string' ? (e as any).message : undefined;
           if (typeof e.revision === 'number') {
             edlRevisionById.set(id, e.revision);
           }
@@ -551,23 +553,49 @@ class App {
             pendingCountsById.delete(id);
             return;
           }
-          const appliedRevision = (eventWithCounts as any).revision;
-          if (typeof appliedRevision === 'number') {
-            appliedRevisionById.set(id, appliedRevision);
-          }
+          const appliedRevisionValue = (eventWithCounts as any).revision;
+          const appliedRevision = typeof appliedRevisionValue === 'number'
+            ? Math.floor(appliedRevisionValue)
+            : undefined;
           const enrichedGeneration = (enrichedEvent as any).generationId;
-          if (typeof enrichedGeneration === 'number') {
-            loadedGenerationById.set(id, enrichedGeneration);
+          if (status !== 'error') {
+            if (typeof appliedRevision === 'number') {
+              appliedRevisionById.set(id, appliedRevision);
+            }
+            if (typeof enrichedGeneration === 'number') {
+              loadedGenerationById.set(id, enrichedGeneration);
+            }
+          } else {
+            appliedRevisionById.delete(id);
           }
-          console.log('[IPC][JUCE] edlApplied event', {
+          const logPayload = {
             id,
-            revision: (eventWithCounts as any).revision,
+            revision: appliedRevisionValue,
             wordCount: (eventWithCounts as any).wordCount,
             spacerCount: (eventWithCounts as any).spacerCount,
             mode: (eventWithCounts as any).mode,
             generation: (enrichedEvent as any).generationId,
-          });
+            status,
+            message,
+          };
+          if (status === 'error') {
+            console.error('[IPC][JUCE] edlApplied failure', logPayload);
+          } else {
+            console.log('[IPC][JUCE] edlApplied event', logPayload);
+          }
           emitToWindows(enrichedEvent);
+          if (status === 'error') {
+            const failureEvent = attachGeneration({
+              type: 'edlApplyFailed',
+              id,
+              revision: appliedRevision ?? edlRevisionById.get(id) ?? 0,
+              status,
+              message: message ?? 'JUCE failed to apply the requested EDL',
+            } as JuceEvent);
+            if (failureEvent) {
+              emitToWindows(failureEvent);
+            }
+          }
           pendingCountsById.delete(id);
         },
         onPosition: (e) => {

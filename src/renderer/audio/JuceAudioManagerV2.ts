@@ -460,8 +460,25 @@ export class JuceAudioManagerV2 {
   public async updateClips(clips: Clip[]): Promise<void> {
     try {
       const generation = this.currentGenerationId;
+      console.log('[AudioManager] updateClips requested', {
+        clipCount: clips.length,
+        generation,
+        transportReady: !!this.transport,
+        loadedGeneration: this.loadedGenerationId,
+        readyStatus: this.state.readyStatus,
+      });
       if (!this.transport || this.loadedGenerationId !== generation) {
-        console.warn('⚠️ Cannot update clips: JUCE not ready for current generation, caching for later application', { generation });
+        console.warn('⚠️ Cannot update clips: JUCE not ready for current generation, caching for later application', {
+          generation,
+          hasTransport: !!this.transport,
+          loadedGeneration: this.loadedGenerationId,
+        });
+        this.logReadinessSnapshot('updateClips:transport-not-ready', this.state, {
+          generation,
+          hasTransport: !!this.transport,
+          loadedGeneration: this.loadedGenerationId,
+          pendingClips: clips.length,
+        });
         this.pendingClips = [...clips];
         return;
       }
@@ -484,8 +501,22 @@ export class JuceAudioManagerV2 {
       const revision = ++this.sentRevisionCounter;
       this.lastUpdateRevision = revision;
       console.info(`[AudioManager] Sending EDL to JUCE (revision ${revision}, gen ${generation})`);
+      console.info('[AudioManager] Invoking juceTransport.updateEdl', {
+        sessionId: this.sessionId,
+        revision,
+        generation,
+        clipCount: legacyClips.length,
+        segmentStats,
+      });
 
       const result = await this.transport.updateEdl(this.sessionId, revision, legacyClips, generation);
+      console.info('[AudioManager] juceTransport.updateEdl resolved', {
+        sessionId: this.sessionId,
+        revision,
+        acknowledgedRevision: result?.revision,
+        success: result?.success,
+        counts: result?.counts,
+      });
       if (!result || !result.success) {
         const message = result?.error || 'Failed to update EDL';
         if (message.includes('stale generation')) {
@@ -535,6 +566,11 @@ export class JuceAudioManagerV2 {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('[AudioManager] updateClips failed prior to EDL dispatch completion', {
+        error: errorMessage,
+        generation: this.currentGenerationId,
+        transportReady: !!this.transport,
+      });
       if (errorMessage.includes('stale generation')) {
         console.warn('[AudioManager] Ignoring stale updateClips error for superseded generation', {
           generation: this.currentGenerationId,
@@ -548,6 +584,11 @@ export class JuceAudioManagerV2 {
 
       // Process any pending seek intent
       this.processPendingSeek();
+      console.log('[AudioManager] updateClips cycle complete', {
+        generation: this.currentGenerationId,
+        readyStatus: this.state.readyStatus,
+        awaitingEdlRevision: this.awaitingEdlRevision,
+      });
     }
   }
 
@@ -1152,6 +1193,38 @@ export class JuceAudioManagerV2 {
           this.resolvePendingLoadAck(this.currentGenerationId, 'edl-applied');
         }
         this.resolvePendingEdlAck(revision, this.currentGenerationId, 'juce-edlApplied');
+        break;
+      }
+
+      case 'edlApplyFailed': {
+        const revision = typeof event.revision === 'number' ? Math.floor(event.revision) : null;
+        const status = typeof (event as any).status === 'string' ? (event as any).status : 'error';
+        const message = typeof (event as any).message === 'string'
+          ? (event as any).message
+          : 'JUCE failed to apply the requested EDL';
+        console.error('[AudioManager] Received edlApplyFailed event from JUCE', {
+          revision,
+          generation: this.currentGenerationId,
+          status,
+          message,
+        });
+        this.isApplyingEDL = false;
+        this.clearReadyFallbackTimer();
+        this.clearPendingEdlAck('juce-edlApplyFailed');
+        this.awaitingEdlRevision = null;
+        this.awaitingEdlGeneration = null;
+        this.lastErrorTime = Date.now();
+        this.updateState({
+          isReady: false,
+          readyStatus: 'error',
+          error: message,
+        });
+        this.logReadinessSnapshot('edl-apply-failed', this.state, {
+          revision,
+          message,
+          status,
+        });
+        this.callbacks.onError(message);
         break;
       }
 
