@@ -284,6 +284,10 @@ struct Clip {
   size_t segmentCount() const { return segments.size(); }
 };
 
+static void logParseDiagnostic(const std::string& message) {
+  juceDLog(std::string("[JUCE][EDL][parse] ") + message);
+}
+
 static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>& clipsOut, int* revisionOut = nullptr) {
   clipsOut.clear();
 
@@ -310,12 +314,21 @@ static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>
   size_t aStart = 0;
   size_t aEnd = 0;
   if (!findClipsArray(aStart, aEnd)) {
+    logParseDiagnostic("Failed to locate clips array in payload");
     return false;
   }
 
+  logParseDiagnostic("clips array located: start=" + std::to_string(aStart) + ", end=" + std::to_string(aEnd));
+
   std::vector<std::string> itemStrings;
   size_t cursor = aStart;
+  size_t maxIterations = 0;
   while (cursor < aEnd) {
+    if (++maxIterations > 1000000) {
+      logParseDiagnostic("Aborting clip extraction after 1M iterations (possible malformed JSON)");
+      return false;
+    }
+
     while (cursor < aEnd && (json[cursor] == ' ' || json[cursor] == ',' || json[cursor] == '\n' || json[cursor] == '\r' || json[cursor] == '\t')) cursor++;
     if (cursor >= aEnd) break;
     if (json[cursor] != '{') {
@@ -332,9 +345,27 @@ static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>
       cursor++;
     }
 
+    if (depth != 0) {
+      logParseDiagnostic("Unbalanced braces while scanning clip object at index " + std::to_string(itemStrings.size()));
+      return false;
+    }
+
     size_t objEnd = cursor;
-    itemStrings.push_back(json.substr(objStart, objEnd - objStart));
+    if (objEnd <= objStart) {
+      logParseDiagnostic("Invalid clip bounds: start=" + std::to_string(objStart) + ", end=" + std::to_string(objEnd));
+      return false;
+    }
+
+    const size_t length = objEnd - objStart;
+    if (length > json.size()) {
+      logParseDiagnostic("Clip length overflow detected (" + std::to_string(length) + ")");
+      return false;
+    }
+
+    itemStrings.push_back(json.substr(objStart, length));
   }
+
+  logParseDiagnostic("Found " + std::to_string(itemStrings.size()) + " clip objects");
 
   auto extractNumber = [&](const std::string& s, const char* key) -> double {
     size_t p = s.find(key);
@@ -369,6 +400,7 @@ static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>
     }
   }
 
+  size_t clipIndex = 0;
   for (const auto& clipJson : itemStrings) {
     Clip clip;
     clip.id = extractString(clipJson, "\"id\"");
@@ -380,6 +412,7 @@ static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>
 
     const double clipDur = sanitizeDuration(clip.endSec - clip.startSec);
     if (clipDur <= 0.0) {
+      clipIndex++;
       continue;
     }
 
@@ -413,62 +446,95 @@ static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>
         }
 
         if (segDepth == 0) {
-          std::string segArrayContent = clipJson.substr(segArrayStart + 1, segCursor - segArrayStart - 2);
-          size_t segPos = 0;
-          while (segPos < segArrayContent.size()) {
-            while (segPos < segArrayContent.size() && (segArrayContent[segPos] == ' ' || segArrayContent[segPos] == ',' || segArrayContent[segPos] == '\n' || segArrayContent[segPos] == '\r' || segArrayContent[segPos] == '\t')) segPos++;
-            if (segPos >= segArrayContent.size()) break;
-            if (segArrayContent[segPos] != '{') {
+          if (segCursor <= segArrayStart + 1) {
+            logParseDiagnostic("Clip " + std::to_string(clipIndex) + " has empty or malformed segment array bounds");
+          } else {
+            const size_t segLength = segCursor - segArrayStart - 1;
+            if (segLength > clipJson.size()) {
+              logParseDiagnostic("Clip " + std::to_string(clipIndex) + " segment array length overflow: " + std::to_string(segLength));
+              return false;
+            }
+
+            std::string segArrayContent = clipJson.substr(segArrayStart + 1, segLength - 1);
+            size_t segPos = 0;
+            size_t segIterations = 0;
+            while (segPos < segArrayContent.size()) {
+              if (++segIterations > 1000000) {
+                logParseDiagnostic("Clip " + std::to_string(clipIndex) + " exceeded 1M segment iterations");
+                return false;
+              }
+
+              while (segPos < segArrayContent.size() && (segArrayContent[segPos] == ' ' || segArrayContent[segPos] == ',' || segArrayContent[segPos] == '\n' || segArrayContent[segPos] == '\r' || segArrayContent[segPos] == '\t')) segPos++;
+              if (segPos >= segArrayContent.size()) break;
+              if (segArrayContent[segPos] != '{') {
+                segPos++;
+                continue;
+              }
+
+              int segDepth2 = 1;
+              size_t segObjStart = segPos;
               segPos++;
-              continue;
-            }
+              while (segPos < segArrayContent.size() && segDepth2 > 0) {
+                if (segArrayContent[segPos] == '{') segDepth2++;
+                else if (segArrayContent[segPos] == '}') segDepth2--;
+                segPos++;
+              }
 
-            int segDepth2 = 1;
-            size_t segObjStart = segPos;
-            segPos++;
-            while (segPos < segArrayContent.size() && segDepth2 > 0) {
-              if (segArrayContent[segPos] == '{') segDepth2++;
-              else if (segArrayContent[segPos] == '}') segDepth2--;
-              segPos++;
-            }
+              if (segDepth2 != 0) {
+                logParseDiagnostic("Clip " + std::to_string(clipIndex) + " segment braces unbalanced");
+                return false;
+              }
 
-            std::string segJson = segArrayContent.substr(segObjStart, segPos - segObjStart);
-            Segment segment;
-            segment.type = extractString(segJson, "\"type\"");
+              if (segPos <= segObjStart) {
+                logParseDiagnostic("Clip " + std::to_string(clipIndex) + " segment bounds invalid");
+                return false;
+              }
 
-            const double segStartRaw = extractNumber(segJson, "\"startSec\"");
-            const double segEndRaw = extractNumber(segJson, "\"endSec\"");
-            if (!(segStartRaw == segStartRaw && segEndRaw == segEndRaw)) {
-              continue;
-            }
+              const size_t segObjLen = segPos - segObjStart;
+              if (segObjLen > segArrayContent.size()) {
+                logParseDiagnostic("Clip " + std::to_string(clipIndex) + " segment length overflow: " + std::to_string(segObjLen));
+                return false;
+              }
 
-            const double segStartSafe = sanitizeTime(segStartRaw);
-            const double segEndSafe = sanitizeTime(segEndRaw, segStartSafe);
-            const double segDurSafe = sanitizeDuration(segEndSafe - segStartSafe);
-            if (segDurSafe <= 0.0) {
-              continue;
-            }
+              std::string segJson = segArrayContent.substr(segObjStart, segObjLen);
+              Segment segment;
+              segment.type = extractString(segJson, "\"type\"");
 
-            segment.start = segStartSafe;
-            segment.end = segStartSafe + segDurSafe;
-            segment.dur = segDurSafe;
-            segment.text = extractString(segJson, "\"text\"");
+              const double segStartRaw = extractNumber(segJson, "\"startSec\"");
+              const double segEndRaw = extractNumber(segJson, "\"endSec\"");
+              if (!(segStartRaw == segStartRaw && segEndRaw == segEndRaw)) {
+                continue;
+              }
 
-            segment.originalStart = extractNumber(segJson, "\"originalStartSec\"");
-            segment.originalEnd = extractNumber(segJson, "\"originalEndSec\"");
-            if (segment.originalStart == segment.originalStart && segment.originalEnd == segment.originalEnd) {
-              segment.originalStart = sanitizeTime(segment.originalStart, 0.0);
-              segment.originalEnd = sanitizeTime(segment.originalEnd, segment.originalStart);
-              if (sanitizeDuration(segment.originalEnd - segment.originalStart) <= 0.0) {
+              const double segStartSafe = sanitizeTime(segStartRaw);
+              const double segEndSafe = sanitizeTime(segEndRaw, segStartSafe);
+              const double segDurSafe = sanitizeDuration(segEndSafe - segStartSafe);
+              if (segDurSafe <= 0.0) {
+                continue;
+              }
+
+              segment.start = segStartSafe;
+              segment.end = segStartSafe + segDurSafe;
+              segment.dur = segDurSafe;
+              segment.text = extractString(segJson, "\"text\"");
+
+              segment.originalStart = extractNumber(segJson, "\"originalStartSec\"");
+              segment.originalEnd = extractNumber(segJson, "\"originalEndSec\"");
+              if (segment.originalStart == segment.originalStart && segment.originalEnd == segment.originalEnd) {
+                segment.originalStart = sanitizeTime(segment.originalStart, 0.0);
+                segment.originalEnd = sanitizeTime(segment.originalEnd, segment.originalStart);
+                if (sanitizeDuration(segment.originalEnd - segment.originalStart) <= 0.0) {
+                  segment.originalStart = -1;
+                  segment.originalEnd = -1;
+                }
+              } else {
                 segment.originalStart = -1;
                 segment.originalEnd = -1;
               }
-            } else {
-              segment.originalStart = -1;
-              segment.originalEnd = -1;
-            }
 
-            clip.segments.push_back(segment);
+              clip.segments.push_back(segment);
+            }
+            logParseDiagnostic("Clip " + std::to_string(clipIndex) + " parsed " + std::to_string(clip.segments.size()) + " segments");
           }
         }
       }
@@ -476,6 +542,11 @@ static bool parseClipsFromJsonPayload(const std::string& json, std::vector<Clip>
 
     if (!clip.segments.empty()) {
       clipsOut.push_back(clip);
+    }
+
+    clipIndex++;
+    if ((clipIndex % 1000) == 0) {
+      logParseDiagnostic("Processed " + std::to_string(clipIndex) + " clips so far");
     }
   }
 
@@ -1101,7 +1172,13 @@ public:
               << ", mode=" << mode << std::endl;
     debugFile.flush();
 
-    emitEdlAppliedEvent(revision, wordSegments, spacerSegments, totalSegments, mode, "ok");
+    std::ostringstream successDiag;
+    successDiag << "mode=" << mode
+                << ", clips=" << clips.size()
+                << ", words=" << wordSegments
+                << ", spacers=" << spacerSegments
+                << ", totalSegments=" << totalSegments;
+    emitEdlAppliedEvent(revision, wordSegments, spacerSegments, totalSegments, mode, "ok", successDiag.str());
   }
 
   void hiResTimerCallback() override {
@@ -1461,19 +1538,30 @@ int main() {
         }
       };
 
+      auto emitFailure = [&](const std::string& message, const std::string& diagnostic = std::string(), int revisionHint = requestedRevision) {
+        const std::string combined = diagnostic.empty() ? message : (message + " | " + diagnostic);
+        juceDLog("[JUCE] updateEdlFromFile failure: " + combined);
+        try {
+          std::ofstream debugFile(juceDebugPath(), std::ios::app);
+          debugFile << "[JUCE] updateEdlFromFile failure" << std::endl;
+          debugFile << "        message=" << message << std::endl;
+          if (!diagnostic.empty()) {
+            debugFile << "        diagnostic=" << diagnostic << std::endl;
+          }
+          debugFile.flush();
+        } catch (...) {}
+        emitEdlAppliedEvent(revisionHint, 0, 0, 0, "", "error", combined);
+        cleanupTempFile();
+      };
+
       if (pathValue.empty()) {
-        const std::string message = "Missing EDL file path";
-        juceDLog("[JUCE] updateEdlFromFile error: " + message);
-        emitEdlAppliedEvent(requestedRevision, 0, 0, 0, "", "error", message);
+        emitFailure("Missing EDL file path");
         continue;
       }
 
       std::ifstream edlFile(pathValue, std::ios::binary | std::ios::ate);
       if (!edlFile.good()) {
-        const std::string message = "Unable to read EDL file";
-        juceDLog("[JUCE] updateEdlFromFile error: " + message + ": " + pathValue);
-        emitEdlAppliedEvent(requestedRevision, 0, 0, 0, "", "error", message);
-        cleanupTempFile();
+        emitFailure("Unable to read EDL file", std::string("path=") + pathValue);
         continue;
       }
 
@@ -1491,14 +1579,23 @@ int main() {
       std::stringstream buffer;
       buffer << edlFile.rdbuf();
       edlFile.close();
+      const std::string payload = buffer.str();
 
       std::vector<Clip> clips;
       int parsedRevision = 0;
-      if (!parseClipsFromJsonPayload(buffer.str(), clips, &parsedRevision)) {
-        const std::string message = "Invalid EDL file contents";
-        juceDLog("[JUCE] updateEdlFromFile parse failure: " + message);
-        emitEdlAppliedEvent(requestedRevision, 0, 0, 0, "", "error", message);
-        cleanupTempFile();
+      bool parsedOk = false;
+      try {
+        parsedOk = parseClipsFromJsonPayload(payload, clips, &parsedRevision);
+      } catch (const std::exception& ex) {
+        emitFailure("Exception parsing EDL payload", ex.what());
+        continue;
+      } catch (...) {
+        emitFailure("Unknown exception parsing EDL payload");
+        continue;
+      }
+
+      if (!parsedOk) {
+        emitFailure("Invalid EDL file contents", std::string("bytes=") + std::to_string(payload.size()));
         continue;
       }
 
@@ -1523,28 +1620,17 @@ int main() {
         backend.updateEdl(std::move(clips), revision);
         juceDLog("[JUCE] updateEdlFromFile completed successfully for revision " + std::to_string(revision));
       } catch (const std::exception& ex) {
-        const std::string message = std::string("Exception applying EDL: ") + ex.what();
-        juceDLog("[JUCE] updateEdlFromFile exception: " + message);
-        {
-          std::ofstream debugFile(juceDebugPath(), std::ios::app);
-          debugFile << "[JUCE] updateEdlFromFile exception" << std::endl;
-          debugFile << "        message=" << message << std::endl;
-          debugFile.flush();
-        }
-        emitEdlAppliedEvent(revision, 0, 0, 0, "", "error", message);
-        cleanupTempFile();
+        emitFailure("Exception applying EDL", ex.what(), revision);
         continue;
       } catch (...) {
-        const std::string message = "Unknown exception applying EDL";
-        juceDLog("[JUCE] updateEdlFromFile exception: " + message);
-        emitEdlAppliedEvent(revision, 0, 0, 0, "", "error", message);
-        cleanupTempFile();
+        emitFailure("Unknown exception applying EDL", "", revision);
         continue;
       }
 
       cleanupTempFile();
       continue;
     }
+
 
     if (contains("\"type\":\"updateEdl\"")) {
       std::vector<Clip> clips;
