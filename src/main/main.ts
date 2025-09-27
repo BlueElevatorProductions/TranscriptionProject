@@ -1984,16 +1984,22 @@ class App {
         );
 
         stage.current = 'validate-audio-path';
-        const assembledAudioPath = projectData?.project?.audio?.path;
+        const audio = projectData?.project?.audio;
+        const assembledAudioPath =
+          (audio?.originalFile && fs.existsSync(audio.originalFile))
+            ? audio.originalFile
+            : null;
+
         if (!assembledAudioPath) {
-          console.error('[Import][Error] missing audio path post-assembly', {
+          console.error('[Import][Error] missing playable audio path after assembly', {
             projectId: projectData?.project?.projectId,
+            audioMeta: audio,
             incomingPath,
             resolvedAudioPath,
             candidates: prepared.candidates,
             probedDirs: prepared.probedDirs,
           });
-          throw new Error('Missing audio path after import assembly');
+          throw new Error('No playable audio path (expected absolute 48 kHz WAV in audio.originalFile)');
         }
 
         console.log('[Import][Project] audioPath verified for transport', {

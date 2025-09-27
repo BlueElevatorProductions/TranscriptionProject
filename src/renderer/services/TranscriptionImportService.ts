@@ -150,8 +150,8 @@ export class TranscriptionImportService {
         lastModified: new Date().toISOString(),
         version: '2.0',
         audio: {
-          ...audioMetadata,
-          path: audioFilePath // Ensure path is set for WAV conversion
+          ...audioMetadata
+          // originalFile should already be set correctly from audioMetadata
         },
         transcription: {
           service: 'openai', // TODO: Get from actual service

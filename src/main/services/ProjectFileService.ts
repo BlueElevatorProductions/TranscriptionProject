@@ -323,12 +323,13 @@ export class ProjectFileService {
         projectData.project.audio = {} as any;
       }
       
-      // Set both extractedPath and embeddedPath to the temp extraction location
-      // to remain compatible with renderer code that expects embeddedPath.
-      projectData.project.audio.extractedPath = extractedAudioPath;
-      projectData.project.audio.embeddedPath = extractedAudioPath;
+      // Set originalFile to the extracted absolute temp file path for JUCE playback
+      projectData.project.audio.originalFile = extractedAudioPath;
+      projectData.project.audio.extractedPath = extractedAudioPath; // Compatibility
+      projectData.project.audio.embeddedPath = 'audio/audio.wav'; // Reference path inside zip
+      projectData.project.audio.embedded = true;
       projectData.project.audio.tempDirectory = tempDir;
-      console.log('Set extractedPath and embeddedPath in project.audio:', extractedAudioPath);
+      console.log('Set originalFile for JUCE playback:', extractedAudioPath);
       
       // Keep original metadata if available
       if (projectData.audioMetadata) {

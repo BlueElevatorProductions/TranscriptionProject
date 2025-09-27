@@ -549,6 +549,7 @@ export function useAudioPlayback(
 
     console.log('[Renderer][AudioPath] selected', {
       path: projectAudioPath,
+      source: 'originalFile', // Track which field provided the path
       exists: true,
       isAbsolute,
     });

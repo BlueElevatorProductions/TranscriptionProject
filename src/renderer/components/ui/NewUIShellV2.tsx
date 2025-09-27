@@ -43,10 +43,10 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
     }
 
     const candidates = [
-      audio?.path,
-      audio?.extractedPath,
-      audio?.embeddedPath,
-      audio?.originalFile,
+      audio?.originalFile,  // Primary source - always the playable 48kHz WAV
+      audio?.extractedPath, // Fallback for compatibility
+      audio?.embeddedPath,  // Won't be used directly (it's inside zip)
+      audio?.path,         // Legacy fallback
     ].filter((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0);
 
     if (candidates.length === 0) {
@@ -60,10 +60,10 @@ const NewUIShellV2: React.FC<NewUIShellV2Props> = ({ onManualSave }) => {
 
     return candidates[0] ?? null;
   }, [
-    projectState.projectData?.project?.audio?.path,
+    projectState.projectData?.project?.audio?.originalFile,
     projectState.projectData?.project?.audio?.extractedPath,
     projectState.projectData?.project?.audio?.embeddedPath,
-    projectState.projectData?.project?.audio?.originalFile,
+    projectState.projectData?.project?.audio?.path,
   ]);
 
   const [activePanel, setActivePanel] = useState<string>('transcript');
