@@ -402,8 +402,40 @@ ipcRenderer.on('juce:event', (_event, evt: JuceEvent) => {
 
 contextBridge.exposeInMainWorld('juceTransport', {
   load: (id: string, path: string, generationId?: number) => ipcRenderer.invoke('juce:load', id, path, generationId),
-  updateEdl: (id: string, revision: number, clips: EdlClip[], generationId?: number) =>
-    ipcRenderer.invoke('juce:updateEdl', id, revision, clips, generationId),
+  updateEdl: (id: string, revision: number, clips: EdlClip[], generationId?: number) => {
+    const start = Date.now();
+    const clipCount = Array.isArray(clips) ? clips.length : 0;
+    console.log('[IPC send] updateEdl', {
+      id,
+      revision,
+      clipCount,
+      generationId,
+    });
+    return ipcRenderer
+      .invoke('juce:updateEdl', id, revision, clips, generationId)
+      .then((result) => {
+        console.log('[IPC ack] updateEdl', {
+          id,
+          revision,
+          generationId,
+          success: !!result?.success,
+          ackRevision: result?.revision,
+          counts: result?.counts,
+          durationMs: Date.now() - start,
+        });
+        return result;
+      })
+      .catch((error) => {
+        console.error('[IPC ack] updateEdl error', {
+          id,
+          revision,
+          generationId,
+          durationMs: Date.now() - start,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      });
+  },
   play: (id: string, generationId?: number) => {
     console.log('[IPC send] play', { id, generationId });
     return ipcRenderer.invoke('juce:play', id, generationId).then((result) => {
