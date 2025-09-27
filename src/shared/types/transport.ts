@@ -69,6 +69,8 @@ export type JuceEvent =
         spacerCount?: number;
         totalSegments?: number;
         mode?: 'contiguous' | 'standard' | string;
+        status?: 'ok' | 'error' | string;
+        message?: string;
       } & JuceEventBase)
   | ({ type: 'ended' } & JuceEventBase)
   | { type: 'error'; id?: TransportId; code?: string | number; message: string; generationId?: number }
@@ -132,7 +134,9 @@ export function isJuceEvent(obj: any): obj is JuceEvent {
         (obj.wordCount === undefined || typeof obj.wordCount === 'number') &&
         (obj.spacerCount === undefined || typeof obj.spacerCount === 'number') &&
         (obj.totalSegments === undefined || typeof obj.totalSegments === 'number') &&
-        (obj.mode === undefined || typeof obj.mode === 'string')
+        (obj.mode === undefined || typeof obj.mode === 'string') &&
+        (obj.status === undefined || typeof obj.status === 'string') &&
+        (obj.message === undefined || typeof obj.message === 'string')
       );
     case 'ended':
       return typeof obj.id === 'string';
